@@ -1,4 +1,21 @@
-# Mini Taiwan Pulse
+# Taiwan Wargame Platform · Mini Taiwan Pulse
+
+> **🎮 Live demo**: <https://s0914712.github.io/WarGame/>
+>
+> 預設進入兵棋平台。原 Mini Taiwan Pulse 視覺化加 `?mode=civilian` 後綴。
+
+## 兩種模式
+
+| URL | 模式 | 說明 |
+|---|---|---|
+| `/` | **兵棋** | 11 種單位、6 場景、戰鬥模擬、LLM 介接、自由 Plan Mode |
+| `/?mode=civilian` | 民用視覺化 | 原 Mini Taiwan Pulse — 23 圖層即時資料 |
+
+兵棋完整文件：[`WARGAME.md`](./WARGAME.md) · 專業兵棋 gap analysis：[`docs/wargame_professional_gaps.md`](./docs/wargame_professional_gaps.md)
+
+---
+
+## 原 Mini Taiwan Pulse（civilian）
 
 用開放資料，感受台灣的脈動。
 
@@ -541,11 +558,13 @@ npm run dev                # 開發模式
 npm run build              # 正式建置
 ```
 
-### 兵棋模式（Wargame）
+### 兵棋模式（Wargame，預設）
 
-`?mode=wargame` 進入兵棋平台 — 詳見 [`WARGAME.md`](./WARGAME.md)。
+`npm run dev` 預設打開 = 兵棋。`?mode=civilian` 才看原民用視覺化。
+詳細功能見 [`WARGAME.md`](./WARGAME.md)。
+
 LLM 介接需要 OpenAI / Anthropic / OpenRouter / Groq 等支援瀏覽器直連的 API key，
-在 UI 中「🤖 LLM 介接 → 自動駕駛」分頁手動設定。
+在 UI「🤖 LLM 介接 → 自動駕駛」分頁手動設定（存 localStorage、不上傳）。
 
 ### GitHub Pages 部署
 
@@ -560,7 +579,8 @@ LLM 介接需要 OpenAI / Anthropic / OpenRouter / Groq 等支援瀏覽器直連
 2. **Mapbox token 限域**（強烈建議）：
    - Mapbox dashboard → 你的 token → URL restrictions
    - 加入 `https://<username>.github.io/<repo-name>/*`
-3. **首次部署後**：訪問 `https://<username>.github.io/<repo-name>/?mode=wargame`
+3. **首次部署後**：訪問 `https://<username>.github.io/<repo-name>/` 直接進兵棋
+   - 加 `?mode=civilian` 看原民用版本
 4. **使用者設定 LLM**：每個訪客在 UI 自己貼 API key（存 localStorage、不會傳給第三方）
 
 **已知限制（瀏覽器直連 LLM）**：
