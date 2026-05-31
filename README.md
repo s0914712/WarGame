@@ -18,6 +18,81 @@
 ![兵棋畫面 1 — 戰場全覽](public/screenshots/Game1.png)
 ![兵棋畫面 2 — 戰況實作](public/screenshots/Game2.png)
 
+## MCP Server — 讓 Claude / 任何 MCP client 操作戰場
+
+`mcp-server/` 把 sim engine 包成 [Model Context Protocol](https://modelcontextprotocol.io/) server。整套引擎本身就是純函式（零 browser 依賴），所以 MCP 可以 headless 跑、不需要開瀏覽器。
+
+### 兩種用法
+
+1. **LLM 互動玩** — Claude / Cursor / 任何 MCP client 直接呼叫 tools：載入場景 → 推進時間 → 看戰況 → 下指令 → 計分
+2. **自動 benchmark** — 同一場景跨 N 個 model 自動跑完，回傳每個 model 的分數（適合比 `claude-sonnet-4.5` / `deepseek-v4-flash` / `qwen3.5-9b`）
+
+### Setup
+
+```bash
+cd mcp-server
+npm install
+npx tsx server.ts --self-test   # 驗 engine + 7 tools 都通
+```
+
+Claude Code 在專案根目錄會自動讀 `.mcp.json`；第一次跑 `/mcp` 會提示 approve `wargame` server，approve 後 7 個 tool 就上線。
+
+### 7 個 tools
+
+| Tool | 功能 |
+|---|---|
+| `list_scenarios` | 列 7 個內建場景 + tags |
+| `load_scenario` | 載入 + 重置，回傳 briefing / 勝利條件 |
+| `step` | 推進 N 秒 sim time，回傳這段時間內發生的 events |
+| `get_state` | LLM-friendly state；支援 `brief` / `onlySides` / `limit` / `bySideSummary` 把 90-unit 場景從 ~50KB 壓到 ~3KB |
+| `apply_commands` | 套用 `wargame-commands-v1` JSON 指令 |
+| `compute_score` | 算某方分數（同瀏覽器「比分」tab 算法） |
+| `run_benchmark` | 自動跑 N 個 LLM model 對同一場景，回傳 leaderboard |
+
+### Benchmark 範例
+
+```jsonc
+// wargame__run_benchmark
+{
+  "scenarioId": "invasion_h_hour_2030",
+  "models": ["claude-sonnet-4.5", "deepseek-v4-flash", "qwen3.5-9b"],
+  "endpoint": "https://api.apertis.ai/v1/chat/completions",
+  "apiKey": "sk-...",
+  "sideId": "red",
+  "decisionIntervalSec": 60,
+  "maxSimSec": 5400,
+  "runsPerModel": 1
+}
+```
+
+回傳每個 model 的 `finalScore / outcome / simElapsedMin / llmCallsMade`。
+
+### 減少手動 approve 的設定
+
+`.claude/settings.local.json`（gitignored）建議寫：
+```jsonc
+{
+  "permissions": {
+    "allow": [
+      "mcp__wargame__*",                                       // 6 個非 benchmark 的 tool 全收
+      "Read(C:\\Users\\<you>\\.claude\\projects\\**)"          // MCP 輸出檔 glob
+    ],
+    "ask": ["mcp__wargame__run_benchmark"]                      // 燒 API 錢的仍會問
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["wargame"]
+}
+```
+
+### 注意
+
+- **無 CORS 問題**：Node `fetch` 不做 preflight，可以直連任何 OpenAI-compatible endpoint（包括 Apertis）
+- **State process-global**：一個 MCP session 就是一場仗，`load_scenario` 重置
+- **Determinism**：engine 用 LCG RNG，同 seed + 同指令 = 完全可重現；但 LLM stochastic，建議 `runsPerModel: 3+` 取平均
+- **不會上 GitHub Pages**：MCP server 是 Node-side 工具，只在本機跑；網頁版只有 Browser-side 的「比分」tab
+
+詳見 [`mcp-server/README.md`](./mcp-server/README.md)。
+
 ---
 
 ## 原 Mini Taiwan Pulse（civilian）
