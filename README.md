@@ -13,6 +13,11 @@
 
 兵棋完整文件：[`WARGAME.md`](./WARGAME.md) · 專業兵棋 gap analysis：[`docs/wargame_professional_gaps.md`](./docs/wargame_professional_gaps.md)
 
+## Wargame Screenshots
+
+![兵棋畫面 1 — 戰場全覽](public/screenshots/Game1.png)
+![兵棋畫面 2 — 戰況實作](public/screenshots/Game2.png)
+
 ---
 
 ## 原 Mini Taiwan Pulse（civilian）
