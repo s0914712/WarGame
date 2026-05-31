@@ -12,13 +12,20 @@ import { SCHEMA_DOC } from "../wargame/llm/schemaDoc";
 import { aiConfigStore, isUsingEnvDefaults } from "../wargame/llm/aiConfig";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { callLlm } from "../wargame/llm/aiClient";
+import { computeMatchScore } from "../wargame/sim/matchScore";
+import { leaderboardStore } from "../wargame/llm/leaderboard";
+
+// Apertis 統一 endpoint preset — 一個 base URL / API key，model 切換即可比 3 個
+const APERTIS_ENDPOINT_DEV = "/llm-proxy/v1/chat/completions";   // Vite proxy
+const APERTIS_ENDPOINT_PROD = "https://api.apertis.ai/v1/chat/completions";
+const APERTIS_MODELS = ["claude-sonnet-4.5", "deepseek-v4-flash", "qwen3.5-9b"] as const;
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-type Tab = "state" | "commands" | "schema" | "adversary";
+type Tab = "state" | "commands" | "schema" | "adversary" | "scoreboard";
 
 export function LLMPanel({ open, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("state");
@@ -91,7 +98,7 @@ export function LLMPanel({ open, onClose }: Props) {
         <div style={{
           display: "flex", borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
         }}>
-          {(["state", "commands", "schema", "adversary"] as Tab[]).map((t) => (
+          {(["state", "commands", "schema", "adversary", "scoreboard"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -109,6 +116,7 @@ export function LLMPanel({ open, onClose }: Props) {
               {t === "commands" && "2. 套用指令"}
               {t === "schema" && "3. Schema"}
               {t === "adversary" && "4. 🤖 自動駕駛"}
+              {t === "scoreboard" && "5. 🏆 比分"}
             </button>
           ))}
         </div>
@@ -131,6 +139,7 @@ export function LLMPanel({ open, onClose }: Props) {
             <SchemaTab text={SCHEMA_DOC} onCopy={() => copy(SCHEMA_DOC)} />
           )}
           {tab === "adversary" && <AdversaryTab />}
+          {tab === "scoreboard" && <ScoreboardTab />}
         </div>
       </div>
     </div>
@@ -335,8 +344,29 @@ function AdversaryTab() {
           placeholder="https://api.openai.com/v1/chat/completions"
           style={inputStyle}
         />
-        <div style={{ fontSize: 14, color: "#64748b", marginTop: 4 }}>
-          常用：OpenAI / Anthropic (https://api.anthropic.com/v1/messages) / OpenRouter / Ollama (http://localhost:11434/v1/chat/completions)
+        <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 14, color: "#64748b" }}>快速套用：</span>
+          <button
+            onClick={() => aiConfigStore.updateConfig({
+              endpoint: (import.meta as ImportMeta).env?.DEV ? APERTIS_ENDPOINT_DEV : APERTIS_ENDPOINT_PROD,
+            })}
+            style={presetBtn}
+            title="Apertis 統一 endpoint — dev 走 Vite proxy，prod 直連（注意 CORS）"
+          >
+            Apertis
+          </button>
+          <button
+            onClick={() => aiConfigStore.updateConfig({ endpoint: "https://api.openai.com/v1/chat/completions" })}
+            style={presetBtn}
+          >
+            OpenAI
+          </button>
+          <button
+            onClick={() => aiConfigStore.updateConfig({ endpoint: "https://openrouter.ai/api/v1/chat/completions" })}
+            style={presetBtn}
+          >
+            OpenRouter
+          </button>
         </div>
       </div>
 
@@ -355,18 +385,36 @@ function AdversaryTab() {
         />
       </div>
 
-      {/* Model */}
+      {/* Model：Apertis 3 模型 dropdown + custom */}
       <div>
         <div style={{ fontSize: 15, color: "#94a3b8", marginBottom: 4, display: "flex", gap: 6, alignItems: "center" }}>
           Model
           {envSet.model && <EnvBadge />}
         </div>
-        <input
-          value={cfg.model}
-          onChange={(e) => aiConfigStore.updateConfig({ model: e.target.value })}
-          placeholder="gpt-4o-mini / gemma-4-31b-it:free / etc."
-          style={inputStyle}
-        />
+        <div style={{ display: "flex", gap: 6 }}>
+          <select
+            value={(APERTIS_MODELS as readonly string[]).includes(cfg.model) ? cfg.model : "__custom__"}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v !== "__custom__") aiConfigStore.updateConfig({ model: v });
+            }}
+            style={{ ...inputStyle, flex: "0 0 220px" }}
+          >
+            {APERTIS_MODELS.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+            <option value="__custom__">Custom…</option>
+          </select>
+          <input
+            value={cfg.model}
+            onChange={(e) => aiConfigStore.updateConfig({ model: e.target.value })}
+            placeholder="gpt-4o-mini / etc."
+            style={{ ...inputStyle, flex: 1 }}
+          />
+        </div>
+        <div style={{ fontSize: 14, color: "#64748b", marginTop: 4 }}>
+          Apertis 三模型同一 endpoint / API key — 選好後切到「🏆 比分」tab 紀錄分數比較
+        </div>
       </div>
 
       {/* Temperature（LLM only） */}
@@ -467,6 +515,158 @@ function AdversaryTab() {
     </div>
   );
 }
+
+// ── Tab: Scoreboard（多模型對戰比分） ───────────────────
+function ScoreboardTab() {
+  // 訂閱 scenarioStore（state 變即時更新分數）+ leaderboardStore
+  useSyncExternalStore(scenarioStore.subscribe, scenarioStore.getState, scenarioStore.getState);
+  useSyncExternalStore(leaderboardStore.subscribe, leaderboardStore.getEntries, leaderboardStore.getEntries);
+  useSyncExternalStore(aiConfigStore.subscribe, aiConfigStore.getConfig, aiConfigStore.getConfig);
+
+  const state = scenarioStore.getState();
+  const cfg = aiConfigStore.getConfig();
+  const entries = leaderboardStore.getEntries();
+  const score = computeMatchScore(state, cfg.sideId);
+
+  const handleRecord = () => {
+    leaderboardStore.add({
+      model: cfg.mode === "scripted" ? `scripted (${cfg.sideId})` : `${cfg.model} (${cfg.sideId})`,
+      scenarioId: state.scenario.id,
+      total: score.total,
+      breakdown: score,
+    });
+  };
+
+  // 排序：分數高 → 低
+  const sorted = [...entries].sort((a, b) => b.total - a.total);
+
+  return (
+    <div style={{ padding: 16, overflow: "auto", height: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* 當前場景 + AI side 標頭 */}
+      <div style={{
+        padding: 10, background: "rgba(59, 130, 246, 0.1)",
+        border: "1px solid rgba(59, 130, 246, 0.3)", borderRadius: 6,
+      }}>
+        <div style={{ fontSize: 14, color: "#94a3b8" }}>當前場景</div>
+        <div style={{ fontSize: 17, fontWeight: 600 }}>{state.scenario.displayName}</div>
+        <div style={{ fontSize: 14, color: "#94a3b8", marginTop: 2 }}>
+          AI 控制：{cfg.sideId} · Model：<code style={{ color: "#a5b4fc" }}>{cfg.mode === "scripted" ? "scripted" : cfg.model}</code>
+        </div>
+      </div>
+
+      {/* 即時分數卡 */}
+      <div style={{
+        padding: 14, background: "#020617",
+        border: "1px solid rgba(148, 163, 184, 0.2)", borderRadius: 6,
+        display: "flex", flexDirection: "column", gap: 8,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <span style={{ fontSize: 15, color: "#94a3b8" }}>即時分數（T+{score.simElapsedMin} min）</span>
+          <span style={{ fontSize: 36, fontWeight: 700, color: score.total >= 0 ? "#a7f3d0" : "#fca5a5" }}>
+            {score.total}
+          </span>
+        </div>
+        <div style={{ fontSize: 14, color: "#cbd5e1", lineHeight: 1.7 }}>
+          <ScoreRow label="灘頭達成" value={`${score.holdsCompleted} 完成 + ${score.holdsInProgress} 進行中`} pts={score.holdScore} />
+          <ScoreRow label="殲滅藍方" value={`${score.bluekills} 單位`} pts={score.bluekills * 2} />
+          <ScoreRow label="殲滅美方" value={`${score.uskills} 單位`} pts={score.uskills} />
+          <ScoreRow label="紅方倖存" value={`${score.redAlive} / ${score.redTotal}`} pts={score.survivorScore} />
+          <ScoreRow label="結果" value={score.outcomeLabel} pts={score.outcomeScore} />
+        </div>
+        <button
+          onClick={handleRecord}
+          disabled={!cfg.model.trim()}
+          style={{ ...primaryBtn, marginTop: 6, alignSelf: "flex-start" }}
+          title="把當前分數加進排行榜（同 model 可多次紀錄）"
+        >
+          📌 紀錄此分數到排行榜
+        </button>
+      </div>
+
+      {/* 排行榜 */}
+      <div style={{
+        padding: 12, background: "#020617",
+        border: "1px solid rgba(148, 163, 184, 0.2)", borderRadius: 6,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 16, fontWeight: 600 }}>🏆 排行榜（{sorted.length}）</span>
+          {entries.length > 0 && (
+            <button
+              onClick={() => { if (confirm("清空排行榜？")) leaderboardStore.clear(); }}
+              style={secondaryBtn}
+            >清空</button>
+          )}
+        </div>
+        {sorted.length === 0 ? (
+          <div style={{ fontSize: 14, color: "#64748b", padding: 12, textAlign: "center" }}>
+            還沒有紀錄。跑完一局後點「紀錄此分數」加入。
+          </div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ color: "#94a3b8", textAlign: "left" }}>
+                <th style={th}>#</th>
+                <th style={th}>Model</th>
+                <th style={th}>場景</th>
+                <th style={{ ...th, textAlign: "right" }}>分數</th>
+                <th style={th}>結果</th>
+                <th style={{ ...th, textAlign: "right" }}>T+min</th>
+                <th style={th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((e, i) => {
+                const origIdx = entries.indexOf(e);
+                return (
+                  <tr key={`${e.ts}-${i}`} style={{ borderTop: "1px solid rgba(148, 163, 184, 0.1)" }}>
+                    <td style={td}>{i + 1}</td>
+                    <td style={{ ...td, fontFamily: "ui-monospace, monospace", color: "#a5b4fc" }}>{e.model}</td>
+                    <td style={td}>{e.scenarioId}</td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 600, color: e.total >= 0 ? "#a7f3d0" : "#fca5a5" }}>
+                      {e.total}
+                    </td>
+                    <td style={td}>{e.breakdown.outcomeLabel.split("：")[0]}</td>
+                    <td style={{ ...td, textAlign: "right", color: "#94a3b8" }}>{e.breakdown.simElapsedMin}</td>
+                    <td style={td}>
+                      <button
+                        onClick={() => leaderboardStore.removeAt(origIdx)}
+                        style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14 }}
+                        title="刪除這筆"
+                      >×</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+        計分規則：+30/已成立灘頭、+15×進度/進行中、+2/藍殺、+1/美殺、+1/紅倖存、+50勝、-50敗、-10時限
+      </div>
+    </div>
+  );
+}
+
+function ScoreRow({ label, value, pts }: { label: string; value: string; pts: number }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between" }}>
+      <span><span style={{ color: "#94a3b8" }}>{label}：</span>{value}</span>
+      <span style={{ color: pts >= 0 ? "#a7f3d0" : "#fca5a5", fontFamily: "ui-monospace, monospace" }}>
+        {pts >= 0 ? "+" : ""}{pts}
+      </span>
+    </div>
+  );
+}
+
+const th: React.CSSProperties = { padding: "4px 6px", fontSize: 14, fontWeight: 500 };
+const td: React.CSSProperties = { padding: "6px", fontSize: 14 };
+const presetBtn: React.CSSProperties = {
+  padding: "2px 8px", background: "rgba(99, 102, 241, 0.15)",
+  color: "#a5b4fc", border: "1px solid rgba(99, 102, 241, 0.4)",
+  borderRadius: 4, fontSize: 13, cursor: "pointer", fontFamily: "ui-monospace, monospace",
+};
 
 function EnvBadge() {
   return (

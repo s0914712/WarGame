@@ -108,6 +108,25 @@ Hook 參數表**不收** `currentTime`。理由與節流表見 [`docs/developmen
 | `SUPABASE_SERVICE_ROLE_KEY` | 腳本（禁止進 bundle） |
 | `SUPABASE_DB_URL` | psql 直連 |
 | `VITE_DATA_SOURCE=supabase` | 啟用 Supabase（否則用 Pulse API） |
+| `VITE_BASE_PATH` | GitHub Pages 部署用，`deploy.yml` 自動從 repo 名稱算（如 `/WarGame/`），本地 dev 留空 |
+
+## Wargame 部署與整合（GitHub Pages）
+
+- **Pages base path**：`vite.config.ts` 用 `VITE_BASE_PATH || (mode === "production" ? "./" : "/")`；GH Actions 在 build 前 export `VITE_BASE_PATH=/{repo}/`。本地 build 預覽用 `./` 才能直接打開 `dist/index.html`。
+- **唯一 Pages workflow**：`.github/workflows/deploy.yml`。**禁止**讓 GitHub UI 自動建 `static.yml`（會跟 deploy.yml 在 `concurrency: pages` group race，上傳 raw source 蓋掉 build）。
+- **LLM API CORS 限制**：browser 直連 LLM 只能用 CORS-friendly 端點（OpenAI / Anthropic / OpenRouter / Groq）。Apertis 擋 preflight，**只能**在 dev 透過 Vite proxy 用。production build 走 `src/wargame/llm/aiConfig.ts`（localStorage 讀使用者自填的 endpoint + key），開發者的 `VITE_LLM_API_KEY` **不會**進 prod bundle。
+
+## Wargame 資料模型守則
+
+- `Unit.extensions: ExtensionAttributes` 保留 15 個固定 `ExtensionKey`（armor / stealthRcs / ecmStrength / ammoCapacity ... 等）— **schema room 是刻意保留**，v1 UI 沒曝露不代表能砍。新增屬性只加 enum，不要拆型別、不要動現有 instance 結構。
+
+## Wargame MCP server
+
+- `mcp-server/` — headless sim 包成 MCP，靠 `src/wargame/*` 純函式 engine（零 browser 依賴）。
+- `.mcp.json` 已 wire 到專案根 — Claude Code 開這個目錄會自動載入 `wargame` server。
+- 7 個 tools：`list_scenarios / load_scenario / step / get_state / apply_commands / compute_score / run_benchmark`。
+- 兩種用法：(a) Claude/MCP client 互動玩；(b) `run_benchmark` 自動跑多 model 比分。
+- 首次使用要先 `cd mcp-server && npm install`，再用 `npx tsx server.ts --self-test` 驗證。
 
 ## 參考文件
 

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "wargame": {
+      "command": "npx",
+      "args": ["-y", "tsx", "mcp-server/server.ts"],
+      "description": "Taiwan Wargame sim engine — let Claude play scenarios or auto-benchmark multiple LLMs."
+    }
+  }
+}

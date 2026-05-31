@@ -4,7 +4,7 @@
  * 純讀 — 沒副作用。LLM 拿到後可分析戰場做決策。
  */
 import { scenarioStore } from "../scenarioStore";
-import { wargameClock } from "../clock";
+import { wargameClock, formatTPlus } from "../clock";
 import { viewStore } from "../viewStore";
 import { UNIT_CATALOG } from "../catalog/units";
 import {
@@ -70,8 +70,11 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
     scenario: {
       id: state.scenario.id,
       name: state.scenario.displayName,
-      simTime: wargameClock.getTPlus(),
-      simTimeSec: Math.round(wargameClock.getSimTime()),
+      // 時戳以 scenarioStore.simTimeSec 為準（engine 寫入的權威時間）。
+      // wargameClock 只在 browser 透過 useSimLoop 同步推進；MCP / Node 直呼 step()
+      // 不會碰 clock，所以舊版讀 wargameClock 會永遠卡在 T+0（過去的 bug）。
+      simTime: formatTPlus(state.simTimeSec),
+      simTimeSec: Math.round(state.simTimeSec),
       paused: wargameClock.isPaused(),
     },
     sides: state.scenario.sides.map((s) => ({
