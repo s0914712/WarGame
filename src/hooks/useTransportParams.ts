@@ -1,0 +1,710 @@
+import { useMemo, useRef, useState } from "react";
+import type { ExpandableLayerKey, BusCity, BusColorMode, BusGroup } from "../types";
+import { BUS_GROUP_CITIES, BUS_GROUP_LABELS } from "../types";
+
+export interface SliderConfig {
+  type?: "slider";
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+}
+
+export interface ToggleConfig {
+  type: "toggle";
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}
+
+export interface SelectConfig {
+  type: "select";
+  label: string;
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (v: string) => void;
+}
+
+export type ParamControl = SliderConfig | ToggleConfig | SelectConfig;
+
+export function useTransportParams() {
+  // Flight
+  const [altExaggeration, setAltExaggeration] = useState(3);
+  const [altOffset, setAltOffset] = useState(50);
+  const [staticOpacity, setStaticOpacity] = useState(0.1);
+  const [orbScale, setOrbScale] = useState(0.000005);
+  const [airportOpacity, setAirportOpacity] = useState(0.12);
+  const [airportGlow, setAirportGlow] = useState(0.8);
+  // Ship
+  const [shipOrbScale, setShipOrbScale] = useState(0.000003);
+  const [shipTrailOpacity, setShipTrailOpacity] = useState(0.15);
+  // Rail
+  const [railAltOffset, setRailAltOffset] = useState(110);
+  const [railOrbScale, setRailOrbScale] = useState(0.00001);
+  const [railTrackOpacity, setRailTrackOpacity] = useState(0.35);
+  const [railTrainVisible, setRailTrainVisible] = useState(true);
+  const [railTrackMode, setRailTrackMode] = useState<"2d" | "3d">("3d");
+  const [stationScale, setStationScale] = useState(1);
+  // Bus
+  const [busScale, setBusScale] = useState(0.4);
+  const [busOrbScale, setBusOrbScale] = useState(0.000004);
+  // Bus groups（UI 層的 8 區域分組，全台）
+  const [busGroups, setBusGroups] = useState<Record<BusGroup, boolean>>({
+    TaipeiMetro:          true,
+    KeelungYilan:         false,
+    TaoyuanHsinchuMiaoli: false,
+    CentralTaiwan:        false,
+    YunChiaNan:           false,
+    Kaoping:              false,
+    HualienTaitung:       false,
+    OffshoreIslands:      false,
+  });
+  // busCities 實際傳給 RPC 的展開值（BusGroup → BusCity[]）
+  const enabledBusCities = useMemo<BusCity[]>(
+    () => (Object.entries(busGroups) as [BusGroup, boolean][])
+      .filter(([, v]) => v)
+      .flatMap(([g]) => BUS_GROUP_CITIES[g]),
+    [busGroups],
+  );
+  const setBusGroup = (group: BusGroup, v: boolean) =>
+    setBusGroups((p) => ({ ...p, [group]: v }));
+  const [busColorMode, setBusColorMode] = useState<BusColorMode>("route");
+  const [busAltOffset, setBusAltOffset] = useState(0);
+  // Bus InterCity（獨立參數，預設沿用市區公車初值）
+  const [busIntercityOrbScale, setBusIntercityOrbScale] = useState(0.000004);
+  const [busIntercityColorMode, setBusIntercityColorMode] = useState<BusColorMode>("route");
+  const [busIntercityAltOffset, setBusIntercityAltOffset] = useState(0);
+  // Bike
+  const [bikeScale, setBikeScale] = useState(1);
+  // Cycling
+  const [cyclingWidth, setCyclingWidth] = useState(1);
+  // Freeway
+  const [freewayWidth, setFreewayWidth] = useState(1);
+  // Weather
+  const [weatherScale, setWeatherScale] = useState(1);
+  // Population Flow (H3)
+  const [h3Opacity, setH3Opacity] = useState(0.6);
+  const [h3Extruded, setH3Extruded] = useState(false);
+  const [h3ElevationScale, setH3ElevationScale] = useState(50);
+  const [h3Metric, setH3Metric] = useState<"day" | "night">("day");
+  const [h3Contrast, setH3Contrast] = useState(1.8);
+  // Population Count (SEGIS)
+  const [pcOpacity, setPcOpacity] = useState(0.6);
+  const [pcContrast, setPcContrast] = useState(1.8);
+  const [pcExtruded, setPcExtruded] = useState(false);
+  const [pcElevationScale, setPcElevationScale] = useState(50);
+  // Population Indicators (SEGIS)
+  const [indCategory, setIndCategory] = useState("count");
+  const [indMetric, setIndMetric] = useState("hh");
+  const [indOpacity, setIndOpacity] = useState(0.6);
+  const [indContrast, setIndContrast] = useState(1.8);
+  const [indExtruded, setIndExtruded] = useState(false);
+  const [indElevationScale, setIndElevationScale] = useState(50);
+  // Lighthouse
+  const [lighthouseScale, setLighthouseScale] = useState(0.6);
+  const [beamVisible, setBeamVisible] = useState(true);
+  const [beamDistance, setBeamDistance] = useState(0.9);
+  const [beamOpacity, setBeamOpacity] = useState(0.1);
+  // Station pillar — 3 systems
+  const [thsrPillarVisible, setThsrPillarVisible] = useState(true);
+  const [thsrPillarHeight, setThsrPillarHeight] = useState(0.6);
+  const [traPillarVisible, setTraPillarVisible] = useState(true);
+  const [traPillarHeight, setTraPillarHeight] = useState(0.5);
+  const [metroPillarVisible, setMetroPillarVisible] = useState(false);
+  const [metroPillarHeight, setMetroPillarHeight] = useState(0.2);
+  // Highway (國道)
+  const [highwayWidth, setHighwayWidth] = useState(0.6);
+  const [highwayGlow, setHighwayGlow] = useState(0.3);
+  // Provincial Road (省道)
+  const [provincialWidth, setProvincialWidth] = useState(0.6);
+  const [provincialGlow, setProvincialGlow] = useState(0.2);
+  // Port pillar (碼頭)
+  const [portGlow, setPortGlow] = useState(1);
+  const [portPillarVisible, setPortPillarVisible] = useState(false);
+  const [portPillarHeight, setPortPillarHeight] = useState(0.3);
+  // Airport pillar (機場)
+  const [airportPillarVisible, setAirportPillarVisible] = useState(false);
+  const [airportPillarHeight, setAirportPillarHeight] = useState(0.6);
+  // Temperature Wave (溫度波浪)
+  const [tempHeight, setTempHeight] = useState(200);
+  const [tempZOffset, setTempZOffset] = useState(300);
+  const [tempExtruded, setTempExtruded] = useState(true);
+  const [tempOpacity, setTempOpacity] = useState(0.85);
+  const [tempWireframe, setTempWireframe] = useState(false);
+  // School
+  const [schoolScale, setSchoolScale] = useState(1);
+  const [schoolLevelColor, setSchoolLevelColor] = useState(false);
+  // Convenience Store
+  const [convenienceScale, setConvenienceScale] = useState(1);
+  // News Events
+  const [newsScale, setNewsScale] = useState(1);
+  const [newsTimeBased, setNewsTimeBased] = useState(true);
+  const [newsRipple, setNewsRipple] = useState(true);
+  // Socioeconomic (村里社經)
+  const [socioCat, setSocioCat] = useState("income");
+  const [socioMetric, setSocioMetric] = useState("im");
+  const [socioOpacity, setSocioOpacity] = useState(0.6);
+  const [socioContrast, setSocioContrast] = useState(1.8);
+  const [socioExtruded, setSocioExtruded] = useState(false);
+  const [socioElevation, setSocioElevation] = useState(50);
+  // Spatial Economy (空間經濟)
+  const [spatialCat, setSpatialCat] = useState("housing");
+  const [spatialMetric, setSpatialMetric] = useState("hp");
+  const [spatialOpacity, setSpatialOpacity] = useState(0.6);
+  const [spatialContrast, setSpatialContrast] = useState(1.8);
+  const [spatialExtruded, setSpatialExtruded] = useState(false);
+  const [spatialElevation, setSpatialElevation] = useState(50);
+  // CWA Imagery (衛星雲圖 / 雷達)
+  const [cwaCloudOpacity, setCwaCloudOpacity] = useState(1.0);
+  const [cwaRadarOpacity, setCwaRadarOpacity] = useState(0.85);
+  // Earthquake
+  const [eqOpacity, setEqOpacity] = useState(1.0);
+  const [eqShowHistory, setEqShowHistory] = useState(false);
+  // Disaster Alerts
+  const [daOpacity, setDaOpacity] = useState(1.0);
+  // YouBike Fullness (H3)
+  const [ybOpacity, setYbOpacity] = useState(0.65);
+  const [ybContrast, setYbContrast] = useState(1);
+  const [ybExtruded, setYbExtruded] = useState(true);
+  const [ybElevationScale, setYbElevationScale] = useState(80);
+  const [ybHeightMode, setYbHeightMode] = useState<"mixed" | "fullness" | "capacity">("mixed");
+  const [ybResolution, setYbResolution] = useState(7);
+  // LASS 微型感測器：cluster on/off
+  const [aqiMicroCluster, setAqiMicroCluster] = useState(true);
+  // 淹水最小深度篩選：0 = 全部, 0.5 / 1 / 2 / 3 = 只顯示大於等於該深度的分級
+  const [floodMinDepth, setFloodMinDepth] = useState<0 | 0.5 | 1 | 2 | 3>(0);
+  // 水庫：僅保留 Three.js 水位計的高度縮放（2026-04-22 砍掉光球 + 靜態 pillar
+  // 相關 slider：球透明度 / 光暈 / 大小）
+  const [reservoirPillarHeight, setReservoirPillarHeight] = useState(1.0);
+  // 其他水資源圖層參數
+  const [waterBasinOpacity, setWaterBasinOpacity] = useState(1.0);
+  const [waterRiverWidth, setWaterRiverWidth] = useState(1.0);
+  const [waterRiverOpacity, setWaterRiverOpacity] = useState(1.0);
+  const [waterCanalWidth, setWaterCanalWidth] = useState(1.0);
+  const [waterCanalOpacity, setWaterCanalOpacity] = useState(1.0);
+  const [waterLeveeWidth, setWaterLeveeWidth] = useState(1.0);
+  const [waterLeveeOpacity, setWaterLeveeOpacity] = useState(1.0);
+  const [waterProtectionZoneOpacity, setWaterProtectionZoneOpacity] = useState(1.0);
+  const [waterFacilityScale, setWaterFacilityScale] = useState(1.0);
+  const [waterFacilityOpacity, setWaterFacilityOpacity] = useState(1.0);
+  const [waterMonitorScale, setWaterMonitorScale] = useState(1.0);
+  const [waterMonitorOpacity, setWaterMonitorOpacity] = useState(1.0);
+  const [waterFloodOpacity, setWaterFloodOpacity] = useState(1.0);
+  // Phase 2 monitoring layers（即時雨量 / 河川水位 / 地下水井 / 水井點位）
+  const [rainGaugeScale, setRainGaugeScale] = useState(1.0);
+  const [rainGaugeOpacity, setRainGaugeOpacity] = useState(1.0);
+  const [riverLevelScale, setRiverLevelScale] = useState(1.0);
+  const [riverLevelOpacity, setRiverLevelOpacity] = useState(1.0);
+  const [groundwaterScale, setGroundwaterScale] = useState(1.0);
+  const [groundwaterOpacity, setGroundwaterOpacity] = useState(1.0);
+  const [groundwaterWellsScale, setGroundwaterWellsScale] = useState(1.0);
+  const [groundwaterWellsOpacity, setGroundwaterWellsOpacity] = useState(1.0);
+  const [iotWraRiverScale, setIotWraRiverScale] = useState(1.0);
+  const [iotWraRiverOpacity, setIotWraRiverOpacity] = useState(1.0);
+  const [iotWraRiverShowMeasured, setIotWraRiverShowMeasured] = useState(true);
+  const [iotWraRiverShowForecast, setIotWraRiverShowForecast] = useState(true);
+  const [iotWraStructureScale, setIotWraStructureScale] = useState(1.0);
+  const [iotWraStructureOpacity, setIotWraStructureOpacity] = useState(1.0);
+  const [iotWraStructureFlow, setIotWraStructureFlow] = useState(true);
+  const [iotWraStructureGate, setIotWraStructureGate] = useState(true);
+  const [iotWraStructureDam, setIotWraStructureDam] = useState(true);
+  const [iotWraStructureErosion, setIotWraStructureErosion] = useState(true);
+  const [iotWraStructureDust, setIotWraStructureDust] = useState(true);
+  // AQI 色階圖透明度
+  const [aqiImageryOpacity, setAqiImageryOpacity] = useState(0.7);
+
+  // Mirror refs for Three.js render loops
+  const altExagRef = useRef(altExaggeration);
+  const altOffsetRef = useRef(altOffset);
+  const staticOpacityRef = useRef(staticOpacity);
+  const orbScaleRef = useRef(orbScale);
+  const shipOrbScaleRef = useRef(shipOrbScale);
+  const shipTrailOpacityRef = useRef(shipTrailOpacity);
+  const railAltOffsetRef = useRef(railAltOffset);
+  const railOrbScaleRef = useRef(railOrbScale);
+  const railTrackOpacityRef = useRef(railTrackOpacity);
+  const railTrainVisibleRef = useRef(railTrainVisible);
+  const railTrackModeRef = useRef(railTrackMode);
+  const beamVisibleRef = useRef(beamVisible);
+  const beamDistanceRef = useRef(beamDistance);
+  const beamOpacityRef = useRef(beamOpacity);
+  const thsrPillarVisibleRef = useRef(thsrPillarVisible);
+  const thsrPillarHeightRef = useRef(thsrPillarHeight);
+  const traPillarVisibleRef = useRef(traPillarVisible);
+  const traPillarHeightRef = useRef(traPillarHeight);
+  const metroPillarVisibleRef = useRef(metroPillarVisible);
+  const metroPillarHeightRef = useRef(metroPillarHeight);
+  const portPillarVisibleRef = useRef(portPillarVisible);
+  const portPillarHeightRef = useRef(portPillarHeight);
+  const airportPillarVisibleRef = useRef(airportPillarVisible);
+  const airportPillarHeightRef = useRef(airportPillarHeight);
+  const busOrbScaleRef = useRef(busOrbScale);
+  const tempHeightRef = useRef(tempHeight);
+  const tempZOffsetRef = useRef(tempZOffset);
+  const tempExtrudedRef = useRef(tempExtruded);
+  const tempOpacityRef = useRef(tempOpacity);
+  const tempWireframeRef = useRef(tempWireframe);
+  const busColorModeRef = useRef(busColorMode);
+  const busAltOffsetRef = useRef(busAltOffset);
+  const busIntercityOrbScaleRef = useRef(busIntercityOrbScale);
+  const busIntercityColorModeRef = useRef(busIntercityColorMode);
+  const busIntercityAltOffsetRef = useRef(busIntercityAltOffset);
+
+  busColorModeRef.current = busColorMode;
+  busAltOffsetRef.current = busAltOffset;
+  busOrbScaleRef.current = busOrbScale;
+  busIntercityOrbScaleRef.current = busIntercityOrbScale;
+  busIntercityColorModeRef.current = busIntercityColorMode;
+  busIntercityAltOffsetRef.current = busIntercityAltOffset;
+  altExagRef.current = altExaggeration;
+  altOffsetRef.current = altOffset;
+  staticOpacityRef.current = staticOpacity;
+  orbScaleRef.current = orbScale;
+  shipOrbScaleRef.current = shipOrbScale;
+  shipTrailOpacityRef.current = shipTrailOpacity;
+  railAltOffsetRef.current = railAltOffset;
+  railOrbScaleRef.current = railOrbScale;
+  railTrackOpacityRef.current = railTrackOpacity;
+  railTrainVisibleRef.current = railTrainVisible;
+  railTrackModeRef.current = railTrackMode;
+  beamVisibleRef.current = beamVisible;
+  beamDistanceRef.current = beamDistance;
+  beamOpacityRef.current = beamOpacity;
+  thsrPillarVisibleRef.current = thsrPillarVisible;
+  thsrPillarHeightRef.current = thsrPillarHeight;
+  traPillarVisibleRef.current = traPillarVisible;
+  traPillarHeightRef.current = traPillarHeight;
+  metroPillarVisibleRef.current = metroPillarVisible;
+  metroPillarHeightRef.current = metroPillarHeight;
+  portPillarVisibleRef.current = portPillarVisible;
+  portPillarHeightRef.current = portPillarHeight;
+  airportPillarVisibleRef.current = airportPillarVisible;
+  airportPillarHeightRef.current = airportPillarHeight;
+  tempHeightRef.current = tempHeight;
+  tempZOffsetRef.current = tempZOffset;
+  tempExtrudedRef.current = tempExtruded;
+  tempOpacityRef.current = tempOpacity;
+  tempWireframeRef.current = tempWireframe;
+
+  const overlayParams = useMemo<Record<string, number>>(() => ({
+    stationScale,
+    airportOpacity,
+    airportGlow,
+    busScale,
+    bikeScale,
+    lighthouseScale,
+    cyclingWidth,
+    freewayWidth,
+    weatherScale,
+    highwayWidth,
+    highwayGlow,
+    provincialWidth,
+    provincialGlow,
+    portGlow,
+    schoolScale,
+    convenienceScale,
+    schoolLevelColor: schoolLevelColor ? 1 : 0,
+    newsScale,
+    metroPillar3d: metroPillarVisible ? 1 : 0,
+    floodMinDepth,
+    reservoirPillarHeight,
+    waterBasinOpacity,
+    waterRiverWidth,
+    waterRiverOpacity,
+    waterCanalWidth,
+    waterCanalOpacity,
+    waterLeveeWidth,
+    waterLeveeOpacity,
+    waterProtectionZoneOpacity,
+    waterFacilityScale,
+    waterFacilityOpacity,
+    waterMonitorScale,
+    waterMonitorOpacity,
+    waterFloodOpacity,
+    rainGaugeScale,
+    rainGaugeOpacity,
+    riverLevelScale,
+    riverLevelOpacity,
+    groundwaterScale,
+    groundwaterOpacity,
+    groundwaterWellsScale,
+    groundwaterWellsOpacity,
+    iotWraRiverScale,
+    iotWraRiverOpacity,
+    iotWraRiverShowMeasured: iotWraRiverShowMeasured ? 1 : 0,
+    iotWraRiverShowForecast: iotWraRiverShowForecast ? 1 : 0,
+    iotWraStructureScale,
+    iotWraStructureOpacity,
+    iotWraStructureFlow: iotWraStructureFlow ? 1 : 0,
+    iotWraStructureGate: iotWraStructureGate ? 1 : 0,
+    iotWraStructureDam: iotWraStructureDam ? 1 : 0,
+    iotWraStructureErosion: iotWraStructureErosion ? 1 : 0,
+    iotWraStructureDust: iotWraStructureDust ? 1 : 0,
+  }), [stationScale, airportOpacity, airportGlow, busScale, bikeScale, lighthouseScale, cyclingWidth, freewayWidth, weatherScale, highwayWidth, highwayGlow, provincialWidth, provincialGlow, portGlow, schoolScale, convenienceScale, schoolLevelColor, newsScale, metroPillarVisible, floodMinDepth, reservoirPillarHeight, waterBasinOpacity, waterRiverWidth, waterRiverOpacity, waterCanalWidth, waterCanalOpacity, waterLeveeWidth, waterLeveeOpacity, waterProtectionZoneOpacity, waterFacilityScale, waterFacilityOpacity, waterMonitorScale, waterMonitorOpacity, waterFloodOpacity, rainGaugeScale, rainGaugeOpacity, riverLevelScale, riverLevelOpacity, groundwaterScale, groundwaterOpacity, groundwaterWellsScale, groundwaterWellsOpacity, iotWraRiverScale, iotWraRiverOpacity, iotWraRiverShowMeasured, iotWraRiverShowForecast, iotWraStructureScale, iotWraStructureOpacity, iotWraStructureFlow, iotWraStructureGate, iotWraStructureDam, iotWraStructureErosion, iotWraStructureDust]);
+
+  const getControls = (layer: ExpandableLayerKey): ParamControl[] => {
+    switch (layer) {
+      case "flights": return [
+        { label: `Alt ×${altExaggeration.toFixed(1)}`, value: altExaggeration, min: 1, max: 5, step: 0.5, onChange: setAltExaggeration },
+        { label: `Z +${altOffset}m`, value: altOffset, min: 0, max: 200, step: 50, onChange: setAltOffset },
+        { label: `Opacity ${staticOpacity.toFixed(2)}`, value: staticOpacity, min: 0.02, max: 0.5, step: 0.02, onChange: setStaticOpacity },
+        { label: `Orb ${(orbScale * 100000).toFixed(1)}`, value: orbScale, min: 0.000001, max: 0.00001, step: 0.000001, onChange: setOrbScale },
+      ];
+      case "ships": return [
+        { label: `Ship Orb ${(shipOrbScale * 100000).toFixed(1)}`, value: shipOrbScale, min: 0.000001, max: 0.00002, step: 0.000001, onChange: setShipOrbScale },
+        { label: `Ship Trail ${shipTrailOpacity.toFixed(2)}`, value: shipTrailOpacity, min: 0.05, max: 1, step: 0.05, onChange: setShipTrailOpacity },
+      ];
+      case "rail": return [
+        { type: "toggle" as const, label: "Train", value: railTrainVisible, onChange: setRailTrainVisible },
+        { type: "select" as const, label: "Track", value: railTrackMode, options: [{ label: "2D", value: "2d" }, { label: "3D", value: "3d" }], onChange: (v: string) => setRailTrackMode(v as "2d" | "3d") },
+        { label: `Rail Z +${railAltOffset}m`, value: railAltOffset, min: 0, max: 500, step: 10, onChange: setRailAltOffset },
+        { label: `Rail Orb ${(railOrbScale * 100000).toFixed(1)}`, value: railOrbScale, min: 0.000001, max: 0.00002, step: 0.000001, onChange: setRailOrbScale },
+        { label: `Rail Trk ${railTrackOpacity.toFixed(2)}`, value: railTrackOpacity, min: 0.05, max: 1, step: 0.05, onChange: setRailTrackOpacity },
+      ];
+      case "busLive": return [
+        ...([
+          "TaipeiMetro",
+          "KeelungYilan",
+          "TaoyuanHsinchuMiaoli",
+          "CentralTaiwan",
+          "YunChiaNan",
+          "Kaoping",
+          "HualienTaitung",
+          "OffshoreIslands",
+        ] as BusGroup[]).map((g) => ({
+          type: "toggle" as const,
+          label: BUS_GROUP_LABELS[g],
+          value: busGroups[g],
+          onChange: (v: boolean) => setBusGroup(g, v),
+        })),
+        { type: "select" as const, label: "Color", value: busColorMode, options: [{ label: "路線", value: "route" }, { label: "速度", value: "speed" }, { label: "密度", value: "density" }], onChange: (v: string) => setBusColorMode(v as BusColorMode) },
+        { label: `Bus Z +${busAltOffset}m`, value: busAltOffset, min: 0, max: 500, step: 10, onChange: setBusAltOffset },
+        { label: `Bus Orb ${(busOrbScale * 1000000).toFixed(0)}`, value: busOrbScale, min: 0.000001, max: 0.00001, step: 0.000001, onChange: setBusOrbScale },
+      ];
+      case "busIntercityLive": return [
+        { type: "select" as const, label: "Color", value: busIntercityColorMode, options: [{ label: "路線", value: "route" }, { label: "速度", value: "speed" }, { label: "密度", value: "density" }], onChange: (v: string) => setBusIntercityColorMode(v as BusColorMode) },
+        { label: `InterCity Z +${busIntercityAltOffset}m`, value: busIntercityAltOffset, min: 0, max: 500, step: 10, onChange: setBusIntercityAltOffset },
+        { label: `InterCity Orb ${(busIntercityOrbScale * 1000000).toFixed(0)}`, value: busIntercityOrbScale, min: 0.000001, max: 0.00001, step: 0.000001, onChange: setBusIntercityOrbScale },
+      ];
+      case "busStationsCity":
+      case "busStationsIntercity": return [
+        { label: `Bus ${busScale.toFixed(1)}`, value: busScale, min: 0.3, max: 3, step: 0.1, onChange: setBusScale },
+      ];
+      case "bikeStations": return [
+        { label: `Bike ${bikeScale.toFixed(1)}`, value: bikeScale, min: 0.3, max: 3, step: 0.1, onChange: setBikeScale },
+      ];
+      case "lighthouses": return [
+        { label: `LH ${lighthouseScale.toFixed(1)}`, value: lighthouseScale, min: 0.3, max: 3, step: 0.1, onChange: setLighthouseScale },
+        { type: "toggle", label: "Beam", value: beamVisible, onChange: setBeamVisible },
+        { label: `Dist ${beamDistance.toFixed(1)}`, value: beamDistance, min: 0.2, max: 3, step: 0.1, onChange: setBeamDistance },
+        { label: `Opa ${beamOpacity.toFixed(2)}`, value: beamOpacity, min: 0.05, max: 0.8, step: 0.05, onChange: setBeamOpacity },
+      ];
+      case "stationsTHSR": return [
+        { label: `Stn ${stationScale.toFixed(1)}`, value: stationScale, min: 0.3, max: 3, step: 0.1, onChange: setStationScale },
+        { type: "toggle" as const, label: "Pillar", value: thsrPillarVisible, onChange: setThsrPillarVisible },
+        { label: `Height ${thsrPillarHeight.toFixed(1)}`, value: thsrPillarHeight, min: 0.2, max: 3, step: 0.1, onChange: setThsrPillarHeight },
+      ];
+      case "stationsTRA": return [
+        { label: `Stn ${stationScale.toFixed(1)}`, value: stationScale, min: 0.3, max: 3, step: 0.1, onChange: setStationScale },
+        { type: "toggle" as const, label: "Pillar", value: traPillarVisible, onChange: setTraPillarVisible },
+        { label: `Height ${traPillarHeight.toFixed(1)}`, value: traPillarHeight, min: 0.2, max: 3, step: 0.1, onChange: setTraPillarHeight },
+      ];
+      case "stationsMetro": return [
+        { label: `Stn ${stationScale.toFixed(1)}`, value: stationScale, min: 0.3, max: 3, step: 0.1, onChange: setStationScale },
+        { type: "toggle" as const, label: "Pillar", value: metroPillarVisible, onChange: setMetroPillarVisible },
+        { label: `Height ${metroPillarHeight.toFixed(1)}`, value: metroPillarHeight, min: 0.2, max: 3, step: 0.1, onChange: setMetroPillarHeight },
+      ];
+      case "highways": return [
+        { label: `Width ${highwayWidth.toFixed(1)}`, value: highwayWidth, min: 0.3, max: 3, step: 0.1, onChange: setHighwayWidth },
+        { label: `Glow ${highwayGlow.toFixed(1)}`, value: highwayGlow, min: 0, max: 3, step: 0.1, onChange: setHighwayGlow },
+      ];
+      case "provincialRoads": return [
+        { label: `Width ${provincialWidth.toFixed(1)}`, value: provincialWidth, min: 0.3, max: 3, step: 0.1, onChange: setProvincialWidth },
+        { label: `Glow ${provincialGlow.toFixed(1)}`, value: provincialGlow, min: 0, max: 3, step: 0.1, onChange: setProvincialGlow },
+      ];
+      case "ports": return [
+        { label: `Glow ${portGlow.toFixed(1)}`, value: portGlow, min: 0, max: 3, step: 0.1, onChange: setPortGlow },
+        { type: "toggle" as const, label: "Pillar", value: portPillarVisible, onChange: setPortPillarVisible },
+        { label: `Height ${portPillarHeight.toFixed(1)}`, value: portPillarHeight, min: 0.2, max: 3, step: 0.1, onChange: setPortPillarHeight },
+      ];
+      case "airports": return [
+        { label: `APT ${airportOpacity.toFixed(2)}`, value: airportOpacity, min: 0, max: 0.3, step: 0.01, onChange: setAirportOpacity },
+        { label: `Glow ${airportGlow.toFixed(1)}`, value: airportGlow, min: 0, max: 2, step: 0.1, onChange: setAirportGlow },
+        { type: "toggle" as const, label: "Pillar", value: airportPillarVisible, onChange: setAirportPillarVisible },
+        { label: `Height ${airportPillarHeight.toFixed(1)}`, value: airportPillarHeight, min: 0.2, max: 3, step: 0.1, onChange: setAirportPillarHeight },
+      ];
+      case "cyclingRoutes": return [
+        { label: `Cycling ${cyclingWidth.toFixed(1)}`, value: cyclingWidth, min: 0.3, max: 3, step: 0.1, onChange: setCyclingWidth },
+      ];
+      case "freewayCongestion": return [
+        { label: `Freeway ${freewayWidth.toFixed(1)}`, value: freewayWidth, min: 0.3, max: 3, step: 0.1, onChange: setFreewayWidth },
+      ];
+      case "weatherStations": return [
+        { label: `Weather ${weatherScale.toFixed(1)}`, value: weatherScale, min: 0.3, max: 3, step: 0.1, onChange: setWeatherScale },
+      ];
+      case "temperatureWave": return [
+        { type: "toggle" as const, label: "3D", value: tempExtruded, onChange: setTempExtruded },
+        { label: `Height ${tempHeight}`, value: tempHeight, min: 0, max: 400, step: 20, onChange: setTempHeight },
+        { label: `Z Offset ${tempZOffset}`, value: tempZOffset, min: 0, max: 1000, step: 50, onChange: setTempZOffset },
+        { label: `Opacity ${tempOpacity.toFixed(2)}`, value: tempOpacity, min: 0.1, max: 1, step: 0.05, onChange: setTempOpacity },
+        { type: "toggle" as const, label: "Grid", value: tempWireframe, onChange: setTempWireframe },
+      ];
+      case "windPlan": return [];
+      case "schools": return [
+        { label: `Scale ${schoolScale.toFixed(1)}`, value: schoolScale, min: 0.3, max: 3, step: 0.1, onChange: setSchoolScale },
+        { type: "toggle" as const, label: "分級配色", value: schoolLevelColor, onChange: setSchoolLevelColor },
+      ];
+      case "convenienceStores": return [
+        { label: `Scale ${convenienceScale.toFixed(1)}`, value: convenienceScale, min: 0.3, max: 3, step: 0.1, onChange: setConvenienceScale },
+      ];
+      case "submarineCables": return [];
+      case "landingStations": return [];
+      case "activeFaults": return [];
+      case "newsEvents": return [
+        { type: "toggle" as const, label: "Time", value: newsTimeBased, onChange: setNewsTimeBased },
+        { type: "toggle" as const, label: "Ripple", value: newsRipple, onChange: setNewsRipple },
+        { label: `Scale ${newsScale.toFixed(1)}`, value: newsScale, min: 0.3, max: 3, step: 0.1, onChange: setNewsScale },
+      ];
+      case "h3Population": return [
+        { label: `Opacity ${h3Opacity.toFixed(1)}`, value: h3Opacity, min: 0.1, max: 1, step: 0.1, onChange: setH3Opacity },
+        { label: `Contrast ${h3Contrast.toFixed(1)}`, value: h3Contrast, min: 0.5, max: 4, step: 0.1, onChange: setH3Contrast },
+        { type: "toggle" as const, label: "3D", value: h3Extruded, onChange: setH3Extruded },
+        { label: `Height ${h3ElevationScale}`, value: h3ElevationScale, min: 10, max: 200, step: 10, onChange: setH3ElevationScale },
+        { type: "select" as const, label: "Metric", value: h3Metric, options: [{ label: "Day", value: "day" }, { label: "Night", value: "night" }], onChange: (v: string) => setH3Metric(v as "day" | "night") },
+      ];
+      case "popCount": return [
+        { label: `Opacity ${pcOpacity.toFixed(1)}`, value: pcOpacity, min: 0.1, max: 1, step: 0.1, onChange: setPcOpacity },
+        { label: `Contrast ${pcContrast.toFixed(1)}`, value: pcContrast, min: 0.5, max: 4, step: 0.1, onChange: setPcContrast },
+        { type: "toggle" as const, label: "3D", value: pcExtruded, onChange: setPcExtruded },
+        { label: `Height ${pcElevationScale}`, value: pcElevationScale, min: 10, max: 200, step: 10, onChange: setPcElevationScale },
+      ];
+      case "indicators": {
+        const categoryOptions = [
+          { label: "Count", value: "count" },
+          { label: "Struct", value: "struct" },
+          { label: "Burden", value: "burden" },
+        ];
+        const metricMap: Record<string, { label: string; value: string }[]> = {
+          count: [{ label: "HH", value: "hh" }, { label: "M", value: "m" }, { label: "F", value: "f" }],
+          struct: [{ label: "Sex", value: "sr" }, { label: "PPH", value: "pph" }],
+          burden: [{ label: "Dep", value: "dr" }, { label: "Child", value: "cd" }, { label: "Elder", value: "ed" }, { label: "Aging", value: "ai" }],
+        };
+        const currentMetrics = metricMap[indCategory] ?? metricMap.count!;
+        return [
+          { type: "select" as const, label: "Category", value: indCategory, options: categoryOptions, onChange: (v: string) => { setIndCategory(v); const first = (metricMap[v] ?? metricMap.count!)[0]!; setIndMetric(first.value); } },
+          { type: "select" as const, label: "Metric", value: indMetric, options: currentMetrics, onChange: setIndMetric },
+          { label: `Opacity ${indOpacity.toFixed(1)}`, value: indOpacity, min: 0.1, max: 1, step: 0.1, onChange: setIndOpacity },
+          { label: `Contrast ${indContrast.toFixed(1)}`, value: indContrast, min: 0.5, max: 4, step: 0.1, onChange: setIndContrast },
+          { type: "toggle" as const, label: "3D", value: indExtruded, onChange: setIndExtruded },
+          { label: `Height ${indElevationScale}`, value: indElevationScale, min: 10, max: 200, step: 10, onChange: setIndElevationScale },
+        ];
+      }
+      case "socioeconomic": {
+        const socioCatOpts = [
+          { label: "Income", value: "income" },
+          { label: "Social", value: "social" },
+        ];
+        const socioMetricMap: Record<string, { label: string; value: string }[]> = {
+          income: [{ label: "Med", value: "im" }, { label: "IQR", value: "iq" }, { label: "Sal%", value: "sr" }],
+          social: [{ label: "Vital", value: "vs" }, { label: "Vuln", value: "vl" }],
+        };
+        const socioMetrics = socioMetricMap[socioCat] ?? socioMetricMap.income!;
+        return [
+          { type: "select" as const, label: "Category", value: socioCat, options: socioCatOpts, onChange: (v: string) => { setSocioCat(v); const first = (socioMetricMap[v] ?? socioMetricMap.income!)[0]!; setSocioMetric(first.value); } },
+          { type: "select" as const, label: "Metric", value: socioMetric, options: socioMetrics, onChange: setSocioMetric },
+          { label: `Opacity ${socioOpacity.toFixed(1)}`, value: socioOpacity, min: 0.1, max: 1, step: 0.1, onChange: setSocioOpacity },
+          { label: `Contrast ${socioContrast.toFixed(1)}`, value: socioContrast, min: 0.5, max: 4, step: 0.1, onChange: setSocioContrast },
+          { type: "toggle" as const, label: "3D", value: socioExtruded, onChange: setSocioExtruded },
+          { label: `Height ${socioElevation}`, value: socioElevation, min: 10, max: 200, step: 10, onChange: setSocioElevation },
+        ];
+      }
+      case "spatialEconomy": {
+        const spatialCatOpts = [
+          { label: "Housing", value: "housing" },
+          { label: "Land", value: "land" },
+        ];
+        const spatialMetricMap: Record<string, { label: string; value: string }[]> = {
+          housing: [{ label: "Price", value: "hp" }, { label: "Unit", value: "hu" }, { label: "P/I", value: "hpr" }],
+          land: [{ label: "Amty", value: "ad" }, { label: "Mix", value: "lm" }],
+        };
+        const spatialMetrics = spatialMetricMap[spatialCat] ?? spatialMetricMap.housing!;
+        return [
+          { type: "select" as const, label: "Category", value: spatialCat, options: spatialCatOpts, onChange: (v: string) => { setSpatialCat(v); const first = (spatialMetricMap[v] ?? spatialMetricMap.housing!)[0]!; setSpatialMetric(first.value); } },
+          { type: "select" as const, label: "Metric", value: spatialMetric, options: spatialMetrics, onChange: setSpatialMetric },
+          { label: `Opacity ${spatialOpacity.toFixed(1)}`, value: spatialOpacity, min: 0.1, max: 1, step: 0.1, onChange: setSpatialOpacity },
+          { label: `Contrast ${spatialContrast.toFixed(1)}`, value: spatialContrast, min: 0.5, max: 4, step: 0.1, onChange: setSpatialContrast },
+          { type: "toggle" as const, label: "3D", value: spatialExtruded, onChange: setSpatialExtruded },
+          { label: `Height ${spatialElevation}`, value: spatialElevation, min: 10, max: 200, step: 10, onChange: setSpatialElevation },
+        ];
+      }
+      case "earthquakes": return [
+        { label: `Opacity ${eqOpacity.toFixed(2)}`, value: eqOpacity, min: 0, max: 1, step: 0.05, onChange: setEqOpacity },
+        { type: "select" as const, label: "Mode", value: eqShowHistory ? "history" : "timeline", options: [{ label: "Timeline", value: "timeline" }, { label: "History", value: "history" }], onChange: (v: string) => setEqShowHistory(v === "history") },
+      ];
+      case "disasterAlerts": return [
+        { label: `Opacity ${daOpacity.toFixed(2)}`, value: daOpacity, min: 0, max: 1, step: 0.05, onChange: setDaOpacity },
+      ];
+      case "cwaCloudImagery": return [
+        { label: `Opacity ${cwaCloudOpacity.toFixed(2)}`, value: cwaCloudOpacity, min: 0, max: 1, step: 0.05, onChange: setCwaCloudOpacity },
+      ];
+      case "cwaRadarImagery": return [
+        { label: `Opacity ${cwaRadarOpacity.toFixed(2)}`, value: cwaRadarOpacity, min: 0, max: 1, step: 0.05, onChange: setCwaRadarOpacity },
+      ];
+      case "youbikeFullness": return [
+        { type: "select" as const, label: "Grid", value: String(ybResolution), options: [{ label: "大", value: "7" }, { label: "中", value: "8" }, { label: "小", value: "9" }], onChange: (v: string) => setYbResolution(Number(v)) },
+        { type: "select" as const, label: "Height", value: ybHeightMode, options: [{ label: "有車×容量", value: "mixed" }, { label: "有車率", value: "fullness" }, { label: "容量", value: "capacity" }], onChange: (v: string) => setYbHeightMode(v as "mixed" | "fullness" | "capacity") },
+        { label: `Opacity ${ybOpacity.toFixed(1)}`, value: ybOpacity, min: 0.1, max: 1, step: 0.1, onChange: setYbOpacity },
+        { label: `Contrast ${ybContrast.toFixed(1)}`, value: ybContrast, min: 0.3, max: 3, step: 0.1, onChange: setYbContrast },
+        { type: "toggle" as const, label: "3D", value: ybExtruded, onChange: setYbExtruded },
+        { label: `Height ${ybElevationScale}`, value: ybElevationScale, min: 10, max: 200, step: 10, onChange: setYbElevationScale },
+      ];
+      case "aqiImagery": return [
+        { label: `Opacity ${aqiImageryOpacity.toFixed(2)}`, value: aqiImageryOpacity, min: 0.1, max: 1, step: 0.05, onChange: setAqiImageryOpacity },
+      ];
+      case "aqiStations": return [];
+      case "aqiMicroSensors": return [
+        { type: "toggle" as const, label: "Cluster", value: aqiMicroCluster, onChange: setAqiMicroCluster },
+      ];
+      case "waterBasins": return [
+        { label: `透明度 ${waterBasinOpacity.toFixed(2)}`, value: waterBasinOpacity, min: 0, max: 1, step: 0.05, onChange: setWaterBasinOpacity },
+      ];
+      case "waterRivers": return [
+        { label: `寬度 ${waterRiverWidth.toFixed(2)}`, value: waterRiverWidth, min: 0.3, max: 3, step: 0.1, onChange: setWaterRiverWidth },
+        { label: `透明度 ${waterRiverOpacity.toFixed(2)}`, value: waterRiverOpacity, min: 0, max: 1, step: 0.05, onChange: setWaterRiverOpacity },
+      ];
+      case "waterCanals": return [
+        { label: `寬度 ${waterCanalWidth.toFixed(2)}`, value: waterCanalWidth, min: 0.3, max: 3, step: 0.1, onChange: setWaterCanalWidth },
+        { label: `透明度 ${waterCanalOpacity.toFixed(2)}`, value: waterCanalOpacity, min: 0, max: 1, step: 0.05, onChange: setWaterCanalOpacity },
+      ];
+      case "waterLevees": return [
+        { label: `寬度 ${waterLeveeWidth.toFixed(2)}`, value: waterLeveeWidth, min: 0.3, max: 3, step: 0.1, onChange: setWaterLeveeWidth },
+        { label: `透明度 ${waterLeveeOpacity.toFixed(2)}`, value: waterLeveeOpacity, min: 0, max: 1, step: 0.05, onChange: setWaterLeveeOpacity },
+      ];
+      case "waterProtectionZones": return [
+        { label: `透明度 ${waterProtectionZoneOpacity.toFixed(2)}`, value: waterProtectionZoneOpacity, min: 0, max: 1, step: 0.05, onChange: setWaterProtectionZoneOpacity },
+      ];
+      case "waterReservoirs": return [
+        { label: `水位計高度 ${reservoirPillarHeight.toFixed(2)}`, value: reservoirPillarHeight, min: 0, max: 3, step: 0.1, onChange: setReservoirPillarHeight },
+      ];
+      case "waterFacilities": return [
+        { label: `大小 ${waterFacilityScale.toFixed(2)}`, value: waterFacilityScale, min: 0.3, max: 3, step: 0.1, onChange: setWaterFacilityScale },
+        { label: `透明度 ${waterFacilityOpacity.toFixed(2)}`, value: waterFacilityOpacity, min: 0.1, max: 1, step: 0.05, onChange: setWaterFacilityOpacity },
+      ];
+      case "waterMonitorStations": return [
+        { label: `大小 ${waterMonitorScale.toFixed(2)}`, value: waterMonitorScale, min: 0.3, max: 3, step: 0.1, onChange: setWaterMonitorScale },
+        { label: `透明度 ${waterMonitorOpacity.toFixed(2)}`, value: waterMonitorOpacity, min: 0.1, max: 1, step: 0.05, onChange: setWaterMonitorOpacity },
+      ];
+      case "waterFloodExtreme": return [
+        { label: `透明度 ${waterFloodOpacity.toFixed(2)}`, value: waterFloodOpacity, min: 0.1, max: 1, step: 0.05, onChange: setWaterFloodOpacity },
+        {
+          type: "select" as const,
+          label: "深度",
+          value: String(floodMinDepth),
+          options: [
+            { label: "全部", value: "0" },
+            { label: "≥0.5m", value: "0.5" },
+            { label: "≥1m", value: "1" },
+            { label: "≥2m", value: "2" },
+            { label: "≥3m 最嚴重", value: "3" },
+          ],
+          onChange: (v: string) => setFloodMinDepth(Number(v) as 0 | 0.5 | 1 | 2 | 3),
+        },
+      ];
+      case "rainGauge": return [
+        { label: `大小 ${rainGaugeScale.toFixed(2)}`, value: rainGaugeScale, min: 0.5, max: 3, step: 0.1, onChange: setRainGaugeScale },
+        { label: `透明度 ${rainGaugeOpacity.toFixed(2)}`, value: rainGaugeOpacity, min: 0.1, max: 1, step: 0.05, onChange: setRainGaugeOpacity },
+      ];
+      case "riverLevel": return [
+        { label: `大小 ${riverLevelScale.toFixed(2)}`, value: riverLevelScale, min: 0.5, max: 3, step: 0.1, onChange: setRiverLevelScale },
+        { label: `透明度 ${riverLevelOpacity.toFixed(2)}`, value: riverLevelOpacity, min: 0.1, max: 1, step: 0.05, onChange: setRiverLevelOpacity },
+      ];
+      case "groundwater": return [
+        { label: `大小 ${groundwaterScale.toFixed(2)}`, value: groundwaterScale, min: 0.5, max: 3, step: 0.1, onChange: setGroundwaterScale },
+        { label: `透明度 ${groundwaterOpacity.toFixed(2)}`, value: groundwaterOpacity, min: 0.1, max: 1, step: 0.05, onChange: setGroundwaterOpacity },
+      ];
+      case "groundwaterWells": return [
+        { label: `大小 ${groundwaterWellsScale.toFixed(2)}`, value: groundwaterWellsScale, min: 0.5, max: 3, step: 0.1, onChange: setGroundwaterWellsScale },
+        { label: `透明度 ${groundwaterWellsOpacity.toFixed(2)}`, value: groundwaterWellsOpacity, min: 0.1, max: 1, step: 0.05, onChange: setGroundwaterWellsOpacity },
+      ];
+      case "iotWraRiver": return [
+        { label: `大小 ${iotWraRiverScale.toFixed(2)}`, value: iotWraRiverScale, min: 0.5, max: 3, step: 0.1, onChange: setIotWraRiverScale },
+        { label: `透明度 ${iotWraRiverOpacity.toFixed(2)}`, value: iotWraRiverOpacity, min: 0.1, max: 1, step: 0.05, onChange: setIotWraRiverOpacity },
+        { type: "toggle", label: "即時水位", value: iotWraRiverShowMeasured, onChange: setIotWraRiverShowMeasured },
+        { type: "toggle", label: "預測水位 (12-19h)", value: iotWraRiverShowForecast, onChange: setIotWraRiverShowForecast },
+      ];
+      case "iotWraStructure": return [
+        { label: `大小 ${iotWraStructureScale.toFixed(2)}`, value: iotWraStructureScale, min: 0.5, max: 3, step: 0.1, onChange: setIotWraStructureScale },
+        { label: `透明度 ${iotWraStructureOpacity.toFixed(2)}`, value: iotWraStructureOpacity, min: 0.1, max: 1, step: 0.05, onChange: setIotWraStructureOpacity },
+        { type: "toggle", label: "累計流量 Flow", value: iotWraStructureFlow, onChange: setIotWraStructureFlow },
+        { type: "toggle", label: "閘門 Watergate", value: iotWraStructureGate, onChange: setIotWraStructureGate },
+        { type: "toggle", label: "堤防安全 Dam", value: iotWraStructureDam, onChange: setIotWraStructureDam },
+        { type: "toggle", label: "河床沖刷 Erosion", value: iotWraStructureErosion, onChange: setIotWraStructureErosion },
+        { type: "toggle", label: "揚塵 Dust", value: iotWraStructureDust, onChange: setIotWraStructureDust },
+      ];
+      default: return [];
+    }
+  };
+
+  return {
+    stationScale,
+    railTrackMode,
+    newsTimeBased,
+    newsRipple,
+    enabledBusCities,
+    refs: {
+      altExag: altExagRef,
+      altOffset: altOffsetRef,
+      staticOpacity: staticOpacityRef,
+      orbScale: orbScaleRef,
+      shipOrbScale: shipOrbScaleRef,
+      shipTrailOpacity: shipTrailOpacityRef,
+      railAltOffset: railAltOffsetRef,
+      railOrbScale: railOrbScaleRef,
+      railTrackOpacity: railTrackOpacityRef,
+      railTrainVisible: railTrainVisibleRef,
+      railTrackMode: railTrackModeRef,
+      busOrbScale: busOrbScaleRef,
+      busColorMode: busColorModeRef,
+      busAltOffset: busAltOffsetRef,
+      busIntercityOrbScale: busIntercityOrbScaleRef,
+      busIntercityColorMode: busIntercityColorModeRef,
+      busIntercityAltOffset: busIntercityAltOffsetRef,
+      beamVisible: beamVisibleRef,
+      beamDistance: beamDistanceRef,
+      beamOpacity: beamOpacityRef,
+      thsrPillarVisible: thsrPillarVisibleRef,
+      thsrPillarHeight: thsrPillarHeightRef,
+      traPillarVisible: traPillarVisibleRef,
+      traPillarHeight: traPillarHeightRef,
+      metroPillarVisible: metroPillarVisibleRef,
+      metroPillarHeight: metroPillarHeightRef,
+      portPillarVisible: portPillarVisibleRef,
+      portPillarHeight: portPillarHeightRef,
+      airportPillarVisible: airportPillarVisibleRef,
+      airportPillarHeight: airportPillarHeightRef,
+      tempHeight: tempHeightRef,
+      tempZOffset: tempZOffsetRef,
+      tempExtruded: tempExtrudedRef,
+      tempOpacity: tempOpacityRef,
+      tempWireframe: tempWireframeRef,
+    },
+    overlayParams,
+    getControls,
+    h3Params: useMemo(() => ({ opacity: h3Opacity, extruded: h3Extruded, elevationScale: h3ElevationScale, metric: h3Metric, contrast: h3Contrast }), [h3Opacity, h3Extruded, h3ElevationScale, h3Metric, h3Contrast]),
+    popCountParams: useMemo(() => ({ opacity: pcOpacity, contrast: pcContrast, extruded: pcExtruded, elevationScale: pcElevationScale }), [pcOpacity, pcContrast, pcExtruded, pcElevationScale]),
+    indicatorsParams: useMemo(() => ({ category: indCategory, metric: indMetric, opacity: indOpacity, contrast: indContrast, extruded: indExtruded, elevationScale: indElevationScale }), [indCategory, indMetric, indOpacity, indContrast, indExtruded, indElevationScale]),
+    socioParams: useMemo(() => ({ metric: socioMetric, opacity: socioOpacity, contrast: socioContrast, extruded: socioExtruded, elevationScale: socioElevation }), [socioMetric, socioOpacity, socioContrast, socioExtruded, socioElevation]),
+    spatialParams: useMemo(() => ({ metric: spatialMetric, opacity: spatialOpacity, contrast: spatialContrast, extruded: spatialExtruded, elevationScale: spatialElevation }), [spatialMetric, spatialOpacity, spatialContrast, spatialExtruded, spatialElevation]),
+    ybResolution,
+    youbikeParams: useMemo(() => ({ opacity: ybOpacity, contrast: ybContrast, extruded: ybExtruded, elevationScale: ybElevationScale, heightMode: ybHeightMode }), [ybOpacity, ybContrast, ybExtruded, ybElevationScale, ybHeightMode]),
+    cwaCloudOpacity,
+    cwaRadarOpacity,
+    eqOpacity,
+    eqShowHistory,
+    daOpacity,
+    aqiMicroCluster,
+    aqiImageryOpacity,
+  };
+}

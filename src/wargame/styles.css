@@ -1,0 +1,55 @@
+/**
+ * 兵棋全域動畫 + 共用 utility class。
+ * 由 WargameApp 在 mount 時 import 一次。
+ */
+
+/* ── keyframes ── */
+@keyframes wg-fade-slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes wg-pulse {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes wg-pop {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.4); color: #fde047; }
+  100% { transform: scale(1); }
+}
+
+@keyframes wg-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+@keyframes wg-flash-bg {
+  0%   { background-color: rgba(251, 191, 36, 0.4); }
+  100% { background-color: transparent; }
+}
+
+@keyframes wg-glow-critical {
+  0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  50%      { box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
+}
+
+/* ── utility classes ── */
+.wg-fade-in { animation: wg-fade-slide-in 0.25s ease-out; }
+.wg-pulse   { animation: wg-pulse 1.6s ease-in-out infinite; }
+.wg-pop     { animation: wg-pop 0.4s ease-out; }
+.wg-blink   { animation: wg-blink 1s ease-in-out infinite; }
+.wg-flash   { animation: wg-flash-bg 1.4s ease-out; }
+.wg-glow-critical { animation: wg-glow-critical 1.2s ease-in-out infinite; }
+
+/* 通用 transition：所有 button hover 流暢 */
+button.wg-btn {
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+button.wg-btn:hover {
+  filter: brightness(1.15);
+}
+button.wg-btn:active {
+  transform: scale(0.96);
+}

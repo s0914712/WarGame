@@ -1,0 +1,61 @@
+name: Deploy Wargame to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:     # 也允許手動觸發
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時間只跑一個 deploy；新 push 自動取消舊任務
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          # 必填：Mapbox token（在 Mapbox dashboard 鎖定 *.github.io/<repo>/ 域名）
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+          # 必填：GitHub Pages 子路徑 — 例如 /mini-taiwan-pulse-master/
+          # 在 repo Settings → Secrets and variables → Actions → Variables 設 BASE_PATH
+          VITE_BASE_PATH: ${{ vars.BASE_PATH || format('/{0}/', github.event.repository.name) }}
+          # ⚠ 不要設 VITE_LLM_API_KEY — 會曝光在 client bundle
+        run: npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

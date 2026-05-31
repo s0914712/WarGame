@@ -1,0 +1,1553 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Map as MapboxMap } from "mapbox-gl";
+import type { ViewMode, RenderMode, DisplayMode, Flight, ExpandableLayerKey, LayerVisibility } from "./types";
+import type { StationPillarData } from "./three/StationPillarScene";
+import { MapView } from "./map/MapView";
+import { useAirspaceData } from "./hooks/useAirspaceData";
+import { useShipData } from "./hooks/useShipData";
+import { useRailData } from "./hooks/useRailData";
+import { useTimeline } from "./hooks/useTimeline";
+import { timeStore } from "./state/timeStore";
+import { useIsMobile } from "./hooks/useIsMobile";
+import { useTransportParams } from "./hooks/useTransportParams";
+import { useRailEngine } from "./hooks/useRailEngine";
+import { useBusLayer } from "./hooks/useBusLayer";
+import { useBusIntercityLayer } from "./hooks/useBusIntercityLayer";
+import { useLayerVisibility } from "./hooks/useLayerVisibility";
+import { useDataRegistry } from "./hooks/useDataRegistry";
+import { useThreeJsLayers } from "./hooks/useThreeJsLayers";
+import { useMapInteraction } from "./hooks/useMapInteraction";
+import { useNewsTimeline } from "./hooks/useNewsTimeline";
+import { useEarthquakeLayer } from "./hooks/useEarthquakeLayer";
+import { useFreewayLayer } from "./hooks/useFreewayLayer";
+import { useReservoirContextLayer } from "./hooks/useReservoirContextLayer";
+import { useReservoirStatusLayer } from "./hooks/useReservoirStatusLayer";
+import type { ReservoirScene } from "./three/ReservoirScene";
+import type { ReservoirStatus } from "./data/reservoirStatusLoader";
+import { useRainGaugeLayer } from "./hooks/useRainGaugeLayer";
+import { useRiverLevelLayer } from "./hooks/useRiverLevelLayer";
+import { useGroundwaterLayer } from "./hooks/useGroundwaterLayer";
+import { useGroundwaterWellsLayer } from "./hooks/useGroundwaterWellsLayer";
+import { useIotWraRiverLayer } from "./hooks/useIotWraRiverLayer";
+import { useIotWraStructureLayer } from "./hooks/useIotWraStructureLayer";
+import { useDisasterAlertLayer } from "./hooks/useDisasterAlertLayer";
+import { useCwaImageryLayer } from "./hooks/useCwaImageryLayer";
+import { useAqiImageryLayer } from "./hooks/useAqiImageryLayer";
+import { useAqiStationsLayer } from "./hooks/useAqiStationsLayer";
+import { useMicroSensorsLayer } from "./hooks/useMicroSensorsLayer";
+import { AqiProductSwitcher } from "./components/AqiProductSwitcher";
+import { AqiLegend } from "./components/AqiLegend";
+import type { AqiProduct } from "./types";
+import { useH3Data } from "./hooks/useH3Data";
+import { useTemperatureData } from "./hooks/useTemperatureData";
+import { useDemographicsH3 } from "./hooks/useDemographicsH3";
+import { useH3Socioeconomic } from "./hooks/useH3Socioeconomic";
+import { useH3SpatialEconomy } from "./hooks/useH3SpatialEconomy";
+import { useYoubikeH3 } from "./hooks/useYoubikeH3";
+import { updateH3Layer, getH3Resolution, ensureH3Layers } from "./map/h3LayerFactory";
+import { ensureYoubikeLayers, updateYoubikeLayer } from "./map/youbikeLayerFactory";
+import { ensurePopCountLayers, ensureIndicatorsLayers, updatePopCountLayer, updateIndicatorsLayer, ensureSocioLayers, updateSocioLayer, ensureSpatialLayers, updateSpatialLayer } from "./map/demographicsLayerFactory";
+import { DEFAULT_CAMERA, getPresetById } from "./map/cameraPresets";
+// filterByTimeWindow removed — airspace shows all flights, isFlightActive handles visibility
+import { updateRailTracks, removeRailTracks, setRailTracksVisible } from "./map/railTracks";
+import { LocationJump } from "./components/AirportSelector";
+import { LayerSidebar } from "./components/LayerSidebar";
+import { IconRailSidebar } from "./components/IconRailSidebar";
+import { TimelineControls } from "./components/TimelineControls";
+import { StyleSelector, getStyleUrl } from "./components/StyleSelector";
+import { MobileBottomSheet } from "./components/MobileBottomSheet";
+import { InfoModal } from "./components/InfoModal";
+import { FeatureInfoPanel } from "./components/FeatureInfoPanel";
+import { LegendPanel } from "./components/LegendPanel";
+import { LoadingIndicator } from "./components/LoadingIndicator";
+import { LoadingScreen } from "./components/LoadingScreen";
+
+// setStyle 進行中時 getStyle() 會 throw "Style is not done loading"
+// → 換底圖期間的 re-render 不能再裸呼 map.getStyle()
+function styleReady(map: MapboxMap | null): map is MapboxMap {
+  if (!map) return false;
+  try {
+    return !!map.getStyle();
+  } catch {
+    return false;
+  }
+}
+
+export default function App() {
+  const {
+    flights: allFlights,
+    timeRange,
+    loading,
+    dayLoading: flightsDayLoading,
+    loadDay: loadFlightDay,
+    prefetch: prefetchFlight,
+  } = useAirspaceData();
+
+  const { ships, timeRange: shipTimeRange, loading: shipsLoading, dayLoading: shipsDayLoading, loadDay: loadShipDay, prefetch: prefetchShip } = useShipData();
+
+  // 地點選擇（用於攝影機定位，不影響資料過濾）
+  const [selectedAirport, setSelectedAirport] = useState("");
+
+  // ── Data Source Registry ──
+  const dataRegistry = useDataRegistry();
+  // 燈塔座標
+  const [lighthousePositions, setLighthousePositions] = useState<[number, number][]>([]);
+  useEffect(() => {
+    fetch("./geo/lighthouse.geojson")
+      .then((r) => r.json())
+      .then((geojson: GeoJSON.FeatureCollection<GeoJSON.Point>) => {
+        const positions = geojson.features.map((f) => f.geometry.coordinates.slice(0, 2) as [number, number]);
+        setLighthousePositions(positions);
+      })
+      .catch((err) => console.warn("Lighthouse data not available:", err));
+  }, []);
+
+  // 車站光柱資料 — 三體系各自獨立
+  const [thsrPillarData, setThsrPillarData] = useState<StationPillarData[]>([]);
+  const [traPillarData, setTraPillarData] = useState<StationPillarData[]>([]);
+  const [metroPillarData, setMetroPillarData] = useState<StationPillarData[]>([]);
+  // 機場 / 碼頭光柱資料（從 polygon GeoJSON 算質心）
+  const [airportPillarData, setAirportPillarData] = useState<StationPillarData[]>([]);
+  const [portPillarData, setPortPillarData] = useState<StationPillarData[]>([]);
+
+  // 資料載入後向 Registry 註冊時間資訊
+  useEffect(() => {
+    if (timeRange.start > 0) {
+      dataRegistry.register({
+        id: "flights",
+        timeType: "track",
+        timeRanges: [timeRange],
+        supportsLive: false,
+      });
+    }
+  }, [timeRange, dataRegistry.register]);
+
+  useEffect(() => {
+    if (shipTimeRange.start > 0) {
+      dataRegistry.register({
+        id: "ships",
+        timeType: "track",
+        timeRanges: [shipTimeRange],
+        supportsLive: false,
+      });
+    }
+  }, [shipTimeRange, dataRegistry.register]);
+
+  // ── 鐵道：活躍日期驅動時刻表切換（Supabase daily_schedules） ──
+  const [railActiveDate, setRailActiveDate] = useState<string | undefined>();
+  const { railData, loading: railLoading, scheduleLoading: railScheduleLoading, } = useRailData(railActiveDate);
+
+  useEffect(() => {
+    if (railData) {
+      dataRegistry.register({
+        id: "rail",
+        timeType: "cyclic",
+        timeRanges: [{ start: -Infinity, end: Infinity }],
+        supportsLive: true,
+      });
+    }
+  }, [railData, dataRegistry.register]);
+
+  const { temperatureData, temperatureLoading, temperatureTimeRange } = useTemperatureData();
+
+  useEffect(() => {
+    if (temperatureTimeRange.start > 0) {
+      dataRegistry.register({
+        id: "temperatureWave",
+        timeType: "snapshot",
+        timeRanges: [temperatureTimeRange],
+        supportsLive: false,
+        refreshInterval: 3600,
+      });
+    }
+  }, [temperatureTimeRange, dataRegistry.register]);
+
+  // 預計算光柱資料（靜態 JSON，不依賴 railData）
+  useEffect(() => {
+    fetch("./station_pillars.json")
+      .then((r) => r.json())
+      .then((data: Record<string, { lng: number; lat: number; height: number }[]>) => {
+        const toArr = (entries: { lng: number; lat: number; height: number }[]): StationPillarData[] =>
+          entries.map((e) => ({ position: [e.lng, e.lat], height: e.height }));
+        setThsrPillarData(toArr(data.thsr ?? []));
+        setTraPillarData(toArr(data.tra ?? []));
+        setMetroPillarData(toArr(data.metro ?? []));
+      })
+      .catch((err) => console.warn("Station pillar data:", err));
+  }, []);
+
+  // 機場光柱 — 從 airports.geojson 算質心，高度依起降量排序
+  useEffect(() => {
+    const AIRPORT_HEIGHTS: Record<string, number> = {
+      RCTP: 1.0, RCSS: 0.85, RCKH: 0.7, RCMQ: 0.55,
+      RCBS: 0.45, RCNN: 0.35, RCFN: 0.3, RCKU: 0.25,
+      RCLY: 0.2, RCGI: 0.2, RCMT: 0.2, RCFG: 0.2,
+    };
+    fetch("./geo/airports.geojson")
+      .then((r) => r.json())
+      .then((geojson: GeoJSON.FeatureCollection) => {
+        const data: StationPillarData[] = geojson.features.map((f) => {
+          const geom = f.geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
+          const ring = geom.type === "MultiPolygon"
+            ? geom.coordinates[0]![0]!
+            : geom.coordinates[0]!;
+          const lng = ring.reduce((s, c) => s + c[0]!, 0) / ring.length;
+          const lat = ring.reduce((s, c) => s + c[1]!, 0) / ring.length;
+          const icao = (f.properties?.icao as string) ?? "";
+          return { position: [lng, lat], height: AIRPORT_HEIGHTS[icao] ?? 0.2 };
+        });
+        setAirportPillarData(data);
+      })
+      .catch((err) => console.warn("Airport pillar data:", err));
+  }, []);
+
+  // 碼頭光柱 — 從 port_polygons.geojson 算質心
+  useEffect(() => {
+    fetch("./geo/port_polygons.geojson")
+      .then((r) => r.json())
+      .then((geojson: GeoJSON.FeatureCollection) => {
+        const data: StationPillarData[] = geojson.features.map((f) => {
+          const geom = f.geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
+          const coords = geom.type === "MultiPolygon"
+            ? geom.coordinates[0]![0]!
+            : geom.coordinates[0]!;
+          const lng = coords.reduce((s, c) => s + c[0]!, 0) / coords.length;
+          const lat = coords.reduce((s, c) => s + c[1]!, 0) / coords.length;
+          return { position: [lng, lat], height: 1 };
+        });
+        setPortPillarData(data);
+      })
+      .catch((err) => console.warn("Port pillar data:", err));
+  }, []);
+
+  const { isMobile, isLandscape } = useIsMobile();
+  const { layerVisibility, layerVisibilityRef, setLayerVisibility, toggleVisibility } = useLayerVisibility();
+
+  // 圖層可見性變化時踢 Mapbox 一次，確保從 idle 喚醒渲染循環
+  useEffect(() => {
+    mapRef.current?.triggerRepaint();
+  }, [layerVisibility]);
+
+  const [viewMode, setViewMode] = useState<ViewMode>("all-taiwan");
+  const [expandedLayer, setExpandedLayer] = useState<ExpandableLayerKey | null>(null);
+  const [mapStyleId, setMapStyleId] = useState("dark");
+  const [renderMode, setRenderMode] = useState<RenderMode>("3d");
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("status");
+  const [captureMode, setCaptureMode] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(56); // rail only by default
+  const handleSidebarWidthChange = useCallback((w: number) => setSidebarWidth(w), []);
+  const [cameraInfo, setCameraInfo] = useState({ lng: 0, lat: 0, zoom: 0, pitch: 0, bearing: 0 });
+
+  // 從 Registry 計算整體資料範圍（供日期導航參考）
+  const dataTimeRange = useMemo(() => {
+    const enabledIds: string[] = [];
+    if (layerVisibility.flights) enabledIds.push("flights");
+    if (layerVisibility.ships) enabledIds.push("ships");
+    if (layerVisibility.newsEvents) enabledIds.push("newsEvents");
+    if (layerVisibility.temperatureWave) enabledIds.push("temperatureWave");
+    const range = dataRegistry.getTimelineRange(enabledIds);
+    // fallback: 如果 registry 還沒資料，用航班的 timeRange
+    if (range.start === 0 && range.end === 0) return timeRange;
+    return range;
+  }, [dataRegistry.sources, layerVisibility.flights, layerVisibility.ships, layerVisibility.newsEvents, layerVisibility.temperatureWave, timeRange]);
+
+  const timeline = useTimeline({
+    dataStartTime: dataTimeRange.start,
+    dataEndTime: dataTimeRange.end,
+  });
+
+  // ── 活躍日追蹤：訂閱 timeStore 日期粒度（不走 React re-render） ──
+  useEffect(() => {
+    const handler = (dayStr: string) => {
+      if (!dayStr) return;
+      const date = new Date(dayStr + "T00:00:00+08:00");
+      loadShipDay(date);
+      loadFlightDay(date);
+      setRailActiveDate(dayStr);
+    };
+    handler(timeStore.getDateKey()); // 初始化
+    return timeStore.subscribeDate(handler);
+  }, [loadShipDay, loadFlightDay, setRailActiveDate]);
+
+  // ── 多日模式預載：切換 rangeDays 或 selectedDate 時，背景預載所有天數 ──
+  useEffect(() => {
+    if (timeline.rangeDays <= 1) return;
+    for (let i = 0; i < timeline.rangeDays; i++) {
+      const d = new Date(timeline.selectedDate);
+      d.setDate(d.getDate() + i);
+      prefetchShip(d);
+      prefetchFlight(d);
+    }
+  }, [timeline.selectedDate, timeline.rangeDays, prefetchShip, prefetchFlight]);
+
+  // ── Custom Hooks ──
+
+  const transportParams = useTransportParams();
+
+  const isDarkTheme = !["light", "streets"].includes(mapStyleId);
+  const showTrails = displayMode === "trails";
+
+  // Refs for Three.js render loops
+  const mapRef = useRef<MapboxMap | null>(null);
+  const flightsRef = useRef<Flight[]>([]);
+  const shipsRef = useRef(ships);
+  const timeRef = useRef(timeline.currentTime);
+  const renderModeRef = useRef(renderMode);
+  const isDarkThemeRef = useRef(isDarkTheme);
+  const showTrailsRef = useRef(showTrails);
+  const railDataRef = useRef(railData);
+  const lighthousePositionsRef = useRef(lighthousePositions);
+  const thsrPillarDataRef = useRef(thsrPillarData);
+  const traPillarDataRef = useRef(traPillarData);
+  const metroPillarDataRef = useRef(metroPillarData);
+  const airportPillarDataRef = useRef(airportPillarData);
+  const portPillarDataRef = useRef(portPillarData);
+  const reservoirSceneRef = useRef<ReservoirScene | null>(null);
+  const reservoirStatusesRef = useRef<ReservoirStatus[]>([]);
+  const temperatureDataRef = useRef(temperatureData);
+  const playingRef = useRef(timeline.playing);
+
+  // 空域快照：直接顯示全部（isFlightActive 負責時間過濾）
+  const displayedFlights = allFlights;
+
+  flightsRef.current = displayedFlights;
+  shipsRef.current = ships;
+  // timeRef 不走 React 4Hz 節流；直接訂閱 timeStore 維持 60Hz（見下方 useEffect）
+  renderModeRef.current = renderMode;
+  isDarkThemeRef.current = isDarkTheme;
+  showTrailsRef.current = showTrails;
+  railDataRef.current = railData;
+  lighthousePositionsRef.current = lighthousePositions;
+  thsrPillarDataRef.current = thsrPillarData;
+  traPillarDataRef.current = traPillarData;
+  metroPillarDataRef.current = metroPillarData;
+  airportPillarDataRef.current = airportPillarData;
+  portPillarDataRef.current = portPillarData;
+  temperatureDataRef.current = temperatureData;
+  playingRef.current = timeline.playing;
+
+  // 60Hz 同步 timeRef 給各 RAF 動畫迴圈使用（不經 React re-render）
+  useEffect(() => timeStore.subscribe((t) => { timeRef.current = t; }), []);
+
+  const { trainCount, activeTrainsRef } = useRailEngine(railData, layerVisibility.rail);
+  const { busCount, activeBusesRef, loadDay: loadBusTrailDay } = useBusLayer(layerVisibility.busLive, timeline.timeMode, transportParams.enabledBusCities);
+  const { busCount: busIntercityCount, activeBusesRef: activeBusesIntercityRef, loadDay: loadBusIntercityTrailDay } =
+    useBusIntercityLayer(layerVisibility.busIntercityLive, timeline.timeMode);
+
+  // 公車 replay: 跨日載入歷史軌跡（訂閱日期粒度，避免 currentTime cascade）
+  useEffect(() => {
+    if (!layerVisibility.busLive || timeline.timeMode !== "replay") return;
+    const handler = (dayStr: string) => {
+      if (dayStr) loadBusTrailDay(dayStr);
+    };
+    handler(timeStore.getDateKey());
+    return timeStore.subscribeDate(handler);
+  }, [timeline.timeMode, layerVisibility.busLive, loadBusTrailDay]);
+
+  // 公路客運 replay: 同步
+  useEffect(() => {
+    if (!layerVisibility.busIntercityLive || timeline.timeMode !== "replay") return;
+    const handler = (dayStr: string) => {
+      if (dayStr) loadBusIntercityTrailDay(dayStr);
+    };
+    handler(timeStore.getDateKey());
+    return timeStore.subscribeDate(handler);
+  }, [timeline.timeMode, layerVisibility.busIntercityLive, loadBusIntercityTrailDay]);
+
+  const { h3DataMap, loadResolution } = useH3Data();
+  const { demographicsDataMap, loadDemographicsResolution } = useDemographicsH3();
+  const { socioDataMap, loadSocioResolution } = useH3Socioeconomic();
+  const { spatialDataMap, loadSpatialResolution } = useH3SpatialEconomy();
+
+  // H3 resolution state (driven by zoom) — 必須在 useYoubikeH3 之前宣告
+  const [h3Resolution, setH3Resolution] = useState(7);
+  const [demoResolution, setDemoResolution] = useState(7);
+
+  const { getCellsForTime: getYoubikeCellsForTime } = useYoubikeH3(layerVisibility.youbikeFullness, transportParams.ybResolution);
+
+  const {
+    flightSceneRef, shipSceneRef, railSceneRef, busSceneRef,
+    addFlightLayer,
+    addAllLayers,
+  } = useThreeJsLayers({
+    timeRef, flightsRef, renderModeRef, isDarkThemeRef, showTrailsRef,
+    shipsRef, activeTrainsRef, activeBusesRef, activeBusesIntercityRef, railDataRef,
+    lighthousePositionsRef, thsrPillarDataRef, traPillarDataRef, metroPillarDataRef,
+    airportPillarDataRef, portPillarDataRef, temperatureDataRef,
+    playingRef, layerVisibilityRef,
+    paramRefs: transportParams.refs,
+  });
+
+  const { tooltipInfo, setTooltipInfo, trainTooltipInfo, busTooltipInfo, featureInfo, setFeatureInfo, bindEvents } =
+    useMapInteraction(mapRef, flightSceneRef, flightsRef, timeRef, railSceneRef, busSceneRef, layerVisibilityRef, reservoirSceneRef);
+
+  // ── 水庫 context 動態疊層 + panel 資料 ──
+  // 點水庫（waterDam / waterReservoirPoly）且 feature 帶 compare_id → 打 get_reservoir_context
+  const activeReservoirId: number | null = (() => {
+    if (!featureInfo) return null;
+    if (featureInfo.layerType !== "waterDam" && featureInfo.layerType !== "waterReservoirPoly") return null;
+    const id = featureInfo.properties.compare_id;
+    return typeof id === "number" && id > 0 ? id : null;
+  })();
+  const reservoirContext = useReservoirContextLayer(mapRef, activeReservoirId);
+
+  // ── 水庫 3D 水位計（Three.js cylinder：外殼 = 容量、內水位 = 蓄水率） ──
+  useReservoirStatusLayer(
+    mapRef,
+    layerVisibility.waterReservoirs,
+    isDarkTheme,
+    transportParams.overlayParams.reservoirPillarHeight ?? 1,
+    reservoirSceneRef,
+    reservoirStatusesRef,
+    activeReservoirId,
+  );
+
+  // ── Phase 2.1：即時雨量（Mapbox circle，0 bubble size for 無雨） ──
+  useRainGaugeLayer(
+    mapRef,
+    layerVisibility.rainGauge,
+    isDarkTheme,
+    transportParams.overlayParams.rainGaugeScale ?? 1,
+    transportParams.overlayParams.rainGaugeOpacity ?? 1,
+  );
+
+  // ── Phase 2.2：河川水位（Mapbox circle，check_result=0 異常紅） ──
+  useRiverLevelLayer(
+    mapRef,
+    layerVisibility.riverLevel,
+    isDarkTheme,
+    transportParams.overlayParams.riverLevelScale ?? 1,
+    transportParams.overlayParams.riverLevelOpacity ?? 1,
+  );
+
+  // ── W002：地下水井靜態 backdrop（站位灰點，always visible 不受 timeline 影響） ──
+  useGroundwaterWellsLayer(
+    mapRef,
+    layerVisibility.groundwaterWells,
+    isDarkTheme,
+    transportParams.overlayParams.groundwaterWellsScale ?? 1,
+    transportParams.overlayParams.groundwaterWellsOpacity ?? 1,
+  );
+
+  // ── W002：地下水井動態層（當前 vs 當日起始水位 delta 著色，timeline 驅動） ──
+  useGroundwaterLayer(
+    mapRef,
+    layerVisibility.groundwater,
+    isDarkTheme,
+    transportParams.overlayParams.groundwaterScale ?? 1,
+    transportParams.overlayParams.groundwaterOpacity ?? 1,
+  );
+
+  // ── IoT 河川（補強 riverLevel；migration 063 預聚合表，timeline 驅動） ──
+  useIotWraRiverLayer(
+    mapRef,
+    layerVisibility.iotWraRiver,
+    isDarkTheme,
+    transportParams.overlayParams.iotWraRiverScale ?? 1,
+    transportParams.overlayParams.iotWraRiverOpacity ?? 1,
+    !!(transportParams.overlayParams.iotWraRiverShowMeasured ?? 1),
+    !!(transportParams.overlayParams.iotWraRiverShowForecast ?? 1),
+  );
+
+  // ── IoT 水工結構（流量/閘門/堤防/沖刷/揚塵 5 in 1，純 latest snapshot） ──
+  useIotWraStructureLayer(
+    mapRef,
+    layerVisibility.iotWraStructure,
+    isDarkTheme,
+    transportParams.overlayParams.iotWraStructureScale ?? 1,
+    transportParams.overlayParams.iotWraStructureOpacity ?? 1,
+    !!(transportParams.overlayParams.iotWraStructureFlow ?? 1),
+    !!(transportParams.overlayParams.iotWraStructureGate ?? 1),
+    !!(transportParams.overlayParams.iotWraStructureDam ?? 1),
+    !!(transportParams.overlayParams.iotWraStructureErosion ?? 1),
+    !!(transportParams.overlayParams.iotWraStructureDust ?? 1),
+  );
+
+  // ── News timeline (time-based filter + ripple animation) ──
+  useNewsTimeline(mapRef, layerVisibility.newsEvents, transportParams.newsTimeBased, transportParams.newsRipple);
+
+  // ── Earthquake events timeline ──
+  useEarthquakeLayer(
+    mapRef,
+    layerVisibility.earthquakes,
+    transportParams.eqOpacity,
+    transportParams.eqShowHistory,
+  );
+
+  // ── NCDR Disaster Alerts timeline ──
+  useDisasterAlertLayer(
+    mapRef,
+    layerVisibility.disasterAlerts,
+    transportParams.daOpacity,
+  );
+
+  // ── CWA 衛星雲圖 / 雷達回波 ──
+  useCwaImageryLayer({
+    mapRef,
+    cloudVisible: layerVisibility.cwaCloudImagery,
+    radarVisible: layerVisibility.cwaRadarImagery,
+    cloudOpacity: transportParams.cwaCloudOpacity,
+    radarOpacity: transportParams.cwaRadarOpacity,
+  });
+
+  // ── 空氣品質：色階 raster + 77 站 + LASS 微型感測 ──
+  const [aqiProduct, setAqiProduct] = useState<AqiProduct>("AQI");
+  useAqiImageryLayer({
+    mapRef,
+    visible: layerVisibility.aqiImagery,
+    product: aqiProduct,
+    opacity: transportParams.aqiImageryOpacity,
+  });
+  useAqiStationsLayer(mapRef, layerVisibility.aqiStations, isDarkTheme);
+  useMicroSensorsLayer(mapRef, layerVisibility.aqiMicroSensors, isDarkTheme, transportParams.aqiMicroCluster);
+
+  // ── Freeway congestion (動態 timeline 回放) ──
+  useFreewayLayer(
+    mapRef,
+    layerVisibility.freewayCongestion,
+    transportParams.overlayParams.freewayWidth ?? 1,
+    isDarkTheme,
+  );
+
+  // ── Derived values ──
+
+  const preset = useMemo(
+    () => getPresetById(selectedAirport) ?? DEFAULT_CAMERA,
+    [selectedAirport],
+  );
+
+  const styleUrl = useMemo(() => getStyleUrl(mapStyleId), [mapStyleId]);
+
+  // ── Map ready handler ──
+
+  const handleMapReady = (map: MapboxMap) => {
+    mapRef.current = map;
+    addAllLayers(map);
+
+    const updateCamera = () => {
+      const c = map.getCenter();
+      setCameraInfo({
+        lng: +c.lng.toFixed(4),
+        lat: +c.lat.toFixed(4),
+        zoom: +map.getZoom().toFixed(1),
+        pitch: +map.getPitch().toFixed(0),
+        bearing: +map.getBearing().toFixed(0),
+      });
+    };
+    map.on("move", updateCamera);
+    updateCamera();
+
+    // H3 zoom-based resolution switching
+    const onZoomH3 = () => {
+      const res = getH3Resolution(map.getZoom());
+      setH3Resolution(res);
+      setDemoResolution(Math.min(res, 8)); // cap at 8 for demographics
+    };
+    map.on("zoomend", onZoomH3);
+    onZoomH3(); // initial
+    loadResolution(7); // preload default resolution
+    loadDemographicsResolution(7); // preload demographics
+    loadSocioResolution(7); // preload socioeconomic
+    loadSpatialResolution(7); // preload spatial economy
+
+    bindEvents(map);
+  };
+
+  // ── Effects ──
+
+  // 航班資料或模式變更時重建 layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    addFlightLayer(map);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAirport, viewMode]);
+
+  // 軌道靜態線（2D Mapbox）
+  const { railTrackMode } = transportParams;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    if (railData && layerVisibility.rail) {
+      updateRailTracks(map, railData.allTracks, isDarkTheme);
+      setRailTracksVisible(map, railTrackMode === "2d");
+    } else {
+      removeRailTracks(map);
+    }
+  }, [railData, isDarkTheme, layerVisibility.rail, railTrackMode]);
+
+  // Three.js 圖層可見性由各 custom layer 內部 getIsVisible 控制
+  // layers 常駐，不做 remove/re-add（避免 WebGL dispose/reinit 問題）
+
+  // H3: load resolution when it changes
+  useEffect(() => {
+    if (layerVisibility.h3Population) {
+      loadResolution(h3Resolution);
+    }
+  }, [h3Resolution, layerVisibility.h3Population, loadResolution]);
+
+  // H3: update native Mapbox layers
+  // Guard: getStyle() returns truthy after style parse (unaffected by tile loading),
+  // undefined before style loads. This avoids both isStyleLoaded() false-during-tiles
+  // and addSource-before-style-ready crashes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!styleReady(map)) return;
+    ensureH3Layers(map);
+    const cells = h3DataMap.get(h3Resolution) ?? [];
+    updateH3Layer(map, cells, transportParams.h3Params, layerVisibility.h3Population);
+  }, [h3DataMap, h3Resolution, layerVisibility.h3Population, transportParams.h3Params]);
+
+  // Demographics: load resolution when it changes
+  useEffect(() => {
+    if (layerVisibility.popCount || layerVisibility.indicators) {
+      loadDemographicsResolution(demoResolution);
+    }
+  }, [demoResolution, layerVisibility.popCount, layerVisibility.indicators, loadDemographicsResolution]);
+
+  // Socioeconomic: load resolution when visible
+  useEffect(() => {
+    if (layerVisibility.socioeconomic) {
+      loadSocioResolution(demoResolution);
+    }
+  }, [demoResolution, layerVisibility.socioeconomic, loadSocioResolution]);
+
+  // Spatial Economy: load resolution when visible
+  useEffect(() => {
+    if (layerVisibility.spatialEconomy) {
+      loadSpatialResolution(demoResolution);
+    }
+  }, [demoResolution, layerVisibility.spatialEconomy, loadSpatialResolution]);
+
+  // Demographics: update popCount layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!styleReady(map)) return;
+    ensurePopCountLayers(map);
+    const cells = demographicsDataMap.get(demoResolution) ?? [];
+    updatePopCountLayer(map, cells, transportParams.popCountParams, layerVisibility.popCount);
+  }, [demographicsDataMap, demoResolution, layerVisibility.popCount, transportParams.popCountParams]);
+
+  // Demographics: update indicators layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!styleReady(map)) return;
+    ensureIndicatorsLayers(map);
+    const cells = demographicsDataMap.get(demoResolution) ?? [];
+    updateIndicatorsLayer(map, cells, transportParams.indicatorsParams, layerVisibility.indicators);
+  }, [demographicsDataMap, demoResolution, layerVisibility.indicators, transportParams.indicatorsParams]);
+
+  // Socioeconomic: update layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!styleReady(map)) return;
+    ensureSocioLayers(map);
+    const cells = socioDataMap.get(demoResolution) ?? [];
+    updateSocioLayer(map, cells, transportParams.socioParams, layerVisibility.socioeconomic);
+  }, [socioDataMap, demoResolution, layerVisibility.socioeconomic, transportParams.socioParams]);
+
+  // Spatial Economy: update layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!styleReady(map)) return;
+    ensureSpatialLayers(map);
+    const cells = spatialDataMap.get(demoResolution) ?? [];
+    updateSpatialLayer(map, cells, transportParams.spatialParams, layerVisibility.spatialEconomy);
+  }, [spatialDataMap, demoResolution, layerVisibility.spatialEconomy, transportParams.spatialParams]);
+
+  // YouBike Fullness: sync with main timeline
+  // 訂閱 timeStore 分鐘粒度（不走 React 4Hz re-render），每 60 秒模擬時間更新一次
+  const [youbikeTimeKey, setYoubikeTimeKey] = useState(
+    () => Math.floor(timeStore.getTime() / 60) * 60,
+  );
+  useEffect(() => {
+    let lastMinute = Math.floor(timeStore.getTime() / 60);
+    return timeStore.subscribe((t) => {
+      const minute = Math.floor(t / 60);
+      if (minute !== lastMinute) {
+        lastMinute = minute;
+        setYoubikeTimeKey(minute * 60);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!styleReady(map)) return;
+    ensureYoubikeLayers(map);
+    const cells = getYoubikeCellsForTime(timeStore.getTime());
+    updateYoubikeLayer(map, cells, transportParams.youbikeParams, layerVisibility.youbikeFullness);
+  }, [getYoubikeCellsForTime, youbikeTimeKey, layerVisibility.youbikeFullness, transportParams.youbikeParams]);
+
+  // ESC 退出拍攝模式
+  useEffect(() => {
+    if (!captureMode) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCaptureMode(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [captureMode]);
+
+  // 全資料預載進度
+  const loadingSteps = [
+    { label: "空域 Airspace", done: !loading, count: allFlights.length },
+    { label: "船舶 Ships", done: !shipsLoading, count: ships.length },
+    { label: "鐵道 Rail", done: !railLoading, count: railData ? railData.systems.length : 0 },
+    { label: "溫度場 Temperature", done: !temperatureLoading },
+  ];
+  const allReady = loadingSteps.every((s) => s.done);
+
+  // allReady 後延遲 600ms 再 unmount LoadingScreen，讓使用者看到 100%
+  const [dismissedLoading, setDismissedLoading] = useState(false);
+  useEffect(() => {
+    if (!allReady) return;
+    const t = setTimeout(() => setDismissedLoading(true), 600);
+    return () => clearTimeout(t);
+  }, [allReady]);
+
+  // 30 秒 timeout：避免任一資料源掛掉導致永遠卡在 loading
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setLoadingTimedOut(true), 30_000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 全部資料載入完成後自動播放
+  useEffect(() => {
+    if (allReady && timeRange.start > 0) {
+      timeline.play();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allReady, timeRange.start]);
+
+  // ── Sidebar props 穩定化（讓 IconRailSidebar / LayersPanel 能用 React.memo） ──
+
+  const sidebarCounts = useMemo(() => ({
+    flights: displayedFlights.length,
+    ships: shipSceneRef.current?.getVisibleCount() ?? ships.length,
+    trains: trainCount,
+    buses: busCount,
+    busesIntercity: busIntercityCount,
+  }), [displayedFlights.length, ships.length, trainCount, busCount, busIntercityCount]);
+
+  const handleLayerClick = useCallback((layer: keyof LayerVisibility) => {
+    const isVisible = layerVisibilityRef.current[layer];
+    if (!isVisible) {
+      setLayerVisibility((prev) => ({ ...prev, [layer]: true }));
+      setExpandedLayer(layer as ExpandableLayerKey);
+    } else {
+      setExpandedLayer((prevExpanded) =>
+        prevExpanded === layer ? null : (layer as ExpandableLayerKey),
+      );
+    }
+  }, [layerVisibilityRef, setLayerVisibility]);
+
+  const handleDisplayModeChange = useCallback((mode: DisplayMode) => {
+    setDisplayMode(mode);
+    setTooltipInfo(null);
+  }, [setTooltipInfo]);
+
+  const handleHideTransport = useCallback(() => {
+    setExpandedLayer((prevExpanded) => {
+      if (prevExpanded) {
+        setLayerVisibility((prev) => ({ ...prev, [prevExpanded]: false }));
+      }
+      return null;
+    });
+  }, [setLayerVisibility]);
+
+  const handleAllOff = useCallback(() => {
+    setLayerVisibility((prev) => {
+      const next = { ...prev };
+      for (const k in next) next[k as keyof typeof next] = false;
+      return next;
+    });
+    setExpandedLayer(null);
+  }, [setLayerVisibility]);
+
+  const { seek: timelineSeek, setSpeed: timelineSetSpeed, play: timelinePlay } = timeline;
+  const handleLocationJump = useCallback((id: string) => {
+    const p = getPresetById(id);
+    if (p && mapRef.current) {
+      if (p.category === "airport") setSelectedAirport(p.id);
+      mapRef.current.flyTo({
+        center: p.center,
+        zoom: p.zoom,
+        pitch: p.pitch,
+        bearing: p.bearing,
+        duration: 2000,
+      });
+      if (p.time != null) timelineSeek(p.time);
+      if (p.speed != null) timelineSetSpeed(p.speed);
+      if (p.autoPlay) timelinePlay();
+      if (p.layers) {
+        setLayerVisibility((prev) => ({ ...prev, ...p.layers }));
+      }
+    }
+  }, [timelineSeek, timelineSetSpeed, timelinePlay, setLayerVisibility]);
+
+  // ── Render ──
+
+  if ((!allReady && !loadingTimedOut) || (!dismissedLoading && !loadingTimedOut)) {
+    return <LoadingScreen steps={loadingSteps} />;
+  }
+
+  return (
+    <div style={{ position: "relative", width: "100vw", height: "100vh" }}>
+      {/* Day-loading overlay — 半透明遮罩 */}
+      {(shipsDayLoading || flightsDayLoading || railScheduleLoading) && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 1000,
+          background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "rgba(0,0,0,0.8)", borderRadius: 12, padding: "24px 36px",
+            color: "#fff", textAlign: "center", fontFamily: "monospace",
+          }}>
+            <div style={{
+              width: 32, height: 32, margin: "0 auto 12px",
+              border: "3px solid rgba(255,255,255,0.15)",
+              borderTop: "3px solid #64aaff",
+              borderRadius: "50%",
+              animation: "day-loading-spin 0.8s linear infinite",
+            }} />
+            <style>{`@keyframes day-loading-spin { to { transform: rotate(360deg); } }`}</style>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+              資料更新中
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>
+              {[
+                shipsDayLoading && "船舶",
+                flightsDayLoading && "航班",
+                railScheduleLoading && "鐵道時刻表",
+              ].filter(Boolean).join("、") + "資料載入中…"}
+            </div>
+          </div>
+        </div>
+      )}
+      <MapView
+        preset={preset}
+        styleUrl={styleUrl}
+        flights={displayedFlights}
+        renderMode={renderMode}
+        isDarkTheme={isDarkTheme}
+        showTrails={showTrails}
+        layerVisibility={layerVisibility}
+        overlayParams={transportParams.overlayParams}
+        onMapReady={handleMapReady}
+      />
+
+      {/* ── 拍攝模式 vignette + 標題 ── */}
+      {captureMode && (
+        <>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 20,
+              pointerEvents: "none",
+              background:
+                "radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.35) 80%, rgba(0,0,0,0.6) 100%)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: isMobile ? 16 : 32,
+              left: isMobile ? 16 : 32,
+              zIndex: 21,
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              style={{
+                fontSize: isMobile ? 20 : 28,
+                fontFamily: "monospace",
+                fontWeight: 700,
+                color: "#fff",
+                letterSpacing: isMobile ? 2 : 4,
+                textShadow: "0 2px 12px rgba(0,0,0,0.6)",
+              }}
+            >
+              Mini Taiwan Pulse
+            </div>
+            <div
+              style={{
+                fontSize: 18,
+                fontFamily: "monospace",
+                fontWeight: 600,
+                color: "rgba(255,255,255,0.7)",
+                letterSpacing: 2,
+                marginTop: 6,
+                textShadow: "0 1px 8px rgba(0,0,0,0.5)",
+              }}
+            >
+              Taiwan Transport Visualization
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                fontFamily: "monospace",
+                color: "rgba(255,255,255,0.4)",
+                letterSpacing: 1,
+                marginTop: 4,
+                textShadow: "0 1px 6px rgba(0,0,0,0.5)",
+              }}
+            >
+              {new Date(timeline.currentTime * 1000).toLocaleString("zh-TW", {
+                timeZone: "Asia/Taipei",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              })}
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                fontFamily: "monospace",
+                color: "rgba(255,255,255,0.3)",
+                letterSpacing: 1,
+                marginTop: 4,
+                textShadow: "0 1px 6px rgba(0,0,0,0.5)",
+              }}
+            >
+              {cameraInfo.lat}, {cameraInfo.lng} z{cameraInfo.zoom} pitch {cameraInfo.pitch} bearing {cameraInfo.bearing}
+            </div>
+          </div>
+          <button
+            onClick={() => setCaptureMode(false)}
+            style={isMobile ? {
+              position: "absolute",
+              top: 16,
+              right: 16,
+              zIndex: 21,
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              background: "rgba(0,0,0,0.4)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              color: "#fff",
+              fontSize: 22,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backdropFilter: "blur(8px)",
+            } : {
+              position: "absolute",
+              bottom: 32,
+              right: 32,
+              zIndex: 21,
+              padding: "4px 12px",
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: 4,
+              color: "rgba(255,255,255,0.4)",
+              fontSize: 11,
+              fontFamily: "monospace",
+              cursor: "pointer",
+            }}
+          >
+            {isMobile ? "✕" : "ESC"}
+          </button>
+        </>
+      )}
+
+      {/* ── 一般模式 UI ── */}
+      {!captureMode && !isMobile && (
+        <>
+          {/* Row 1: 標題 + 樣式 + 地點跳轉 */}
+          <div
+            style={{
+              position: "absolute",
+              top: 16,
+              left: sidebarWidth + 16,
+              zIndex: 10,
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              transition: "left 0.2s ease",
+            }}
+          >
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 18,
+                color: isDarkTheme ? "#fff" : "#333",
+                fontFamily: "monospace",
+                letterSpacing: 2,
+              }}
+            >
+              Mini Taiwan Pulse
+            </h1>
+
+            <StyleSelector
+              selected={mapStyleId}
+              isDarkTheme={isDarkTheme}
+              onChange={setMapStyleId}
+            />
+
+            {loading && (
+              <span style={{ color: isDarkTheme ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.45)", fontSize: 13 }}>
+                Loading...
+              </span>
+            )}
+          </div>
+
+          {/* Icon Rail + Sliding Panel Sidebar */}
+          <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, zIndex: 11, pointerEvents: "none" }}>
+            <IconRailSidebar
+              visibility={layerVisibility}
+              expandedLayer={expandedLayer}
+              viewMode={viewMode}
+              displayMode={displayMode}
+              counts={sidebarCounts}
+              onLayerClick={handleLayerClick}
+              onToggleVisibility={toggleVisibility}
+              onViewModeChange={setViewMode}
+              onDisplayModeChange={handleDisplayModeChange}
+              onHideTransport={handleHideTransport}
+              onAllOff={handleAllOff}
+              getControls={transportParams.getControls}
+              currentLocationId={selectedAirport}
+              onLocationJump={handleLocationJump}
+              onWidthChange={handleSidebarWidthChange}
+              dataRegistry={dataRegistry}
+              selectedDate={timeline.selectedDate}
+              onDateSelect={timeline.setSelectedDate}
+            />
+          </div>
+
+          {/* 時間軸 */}
+          <TimelineControls
+            playing={timeline.playing}
+            speed={timeline.speed}
+            progress={timeline.progress}
+            currentTime={timeline.currentTime}
+            timeMode={timeline.timeMode}
+            selectedDate={timeline.selectedDate}
+            rangeDays={timeline.rangeDays}
+            windowStart={timeline.windowStart}
+            windowEnd={timeline.windowEnd}
+            isDarkTheme={isDarkTheme}
+            leftOffset={sidebarWidth + 16}
+            onToggle={timeline.toggle}
+            onSpeedChange={timeline.setSpeed}
+            onSeekByProgress={timeline.seekByProgress}
+            onTimeModeChange={timeline.setTimeMode}
+            onDateChange={timeline.setSelectedDate}
+            onShiftDate={timeline.shiftDate}
+            onRangeDaysChange={timeline.setRangeDays}
+          />
+
+          {/* 右上角按鈕群 */}
+          <div
+            style={{
+              position: "absolute",
+              top: 16,
+              right: 16,
+              zIndex: 10,
+              display: "flex",
+              gap: 8,
+            }}
+          >
+            <button
+              onClick={() => setCaptureMode(true)}
+              style={{
+                padding: "6px 14px",
+                background: isDarkTheme ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)",
+                border: `1px solid ${isDarkTheme ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.12)"}`,
+                borderRadius: 6,
+                color: isDarkTheme ? "#fff" : "#333",
+                fontSize: 12,
+                fontFamily: "monospace",
+                cursor: "pointer",
+                backdropFilter: "blur(8px)",
+                letterSpacing: 1,
+              }}
+            >
+              Capture
+            </button>
+            <button
+              onClick={() => setRenderMode((m) => (m === "3d" ? "2d" : "3d"))}
+              style={{
+                padding: "6px 14px",
+                background: renderMode === "3d"
+                  ? (isDarkTheme ? "rgba(80,140,255,0.25)" : "rgba(80,140,255,0.15)")
+                  : (isDarkTheme ? "rgba(255,170,68,0.25)" : "rgba(255,170,68,0.15)"),
+                border: `1px solid ${renderMode === "3d" ? "rgba(80,140,255,0.5)" : "rgba(255,170,68,0.5)"}`,
+                borderRadius: 6,
+                color: isDarkTheme ? "#fff" : "#333",
+                fontSize: 12,
+                fontFamily: "monospace",
+                cursor: "pointer",
+                backdropFilter: "blur(8px)",
+                letterSpacing: 1,
+              }}
+            >
+              {renderMode === "3d" ? "3D Altitude" : "2D Flat"}
+            </button>
+          </div>
+
+          {/* 右上角第二排 */}
+          <div
+            style={{
+              position: "absolute",
+              top: 52,
+              right: 16,
+              zIndex: 10,
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+            }}
+          >
+            <button
+              onClick={() => setShowInfo(true)}
+              style={{
+                padding: "6px 14px",
+                background: isDarkTheme ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)",
+                border: `1px solid ${isDarkTheme ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.12)"}`,
+                borderRadius: 6,
+                color: isDarkTheme ? "#fff" : "#333",
+                fontSize: 12,
+                fontFamily: "monospace",
+                cursor: "pointer",
+                backdropFilter: "blur(8px)",
+                letterSpacing: 1,
+              }}
+            >
+              Info
+            </button>
+          </div>
+
+          {/* 操作提示 */}
+          <div
+            style={{
+              position: "absolute",
+              top: 84,
+              right: 16,
+              zIndex: 10,
+              color: isDarkTheme ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.2)",
+              fontSize: 10,
+              fontFamily: "monospace",
+              letterSpacing: 0.5,
+              textAlign: "right",
+            }}
+          >
+            Right-drag to rotate · Scroll to zoom
+          </div>
+
+          {/* 統計 + 相機角度 */}
+          <div
+            style={{
+              position: "absolute",
+              top: 48,
+              left: sidebarWidth + 16,
+              zIndex: 10,
+              background: isDarkTheme ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.35)",
+              backdropFilter: "blur(8px)",
+              borderRadius: 6,
+              padding: "4px 10px",
+              transition: "left 0.2s ease",
+            }}
+          >
+            <div
+              style={{
+                color: isDarkTheme ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.45)",
+                fontSize: 11,
+                fontFamily: "monospace",
+              }}
+            >
+              {displayedFlights.length} flights
+              {layerVisibility.ships && ` · ${shipSceneRef.current?.getVisibleCount() ?? 0} ships`}
+              {layerVisibility.rail && ` · ${trainCount} trains`}
+              {layerVisibility.busLive && ` · ${busCount} buses`}
+              {layerVisibility.busIntercityLive && ` · ${busIntercityCount} intercity`}
+              {viewMode === "time-window" && " (±12h)"}
+            </div>
+            <div
+              style={{
+                color: isDarkTheme ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
+                fontSize: 11,
+                fontFamily: "monospace",
+              }}
+            >
+              {cameraInfo.lat}, {cameraInfo.lng} z{cameraInfo.zoom} pitch {cameraInfo.pitch} bearing {cameraInfo.bearing}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── 手機版 UI ── */}
+      {!captureMode && isMobile && (
+        <>
+          {/* Compact Header */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 44,
+              zIndex: 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "0 12px",
+              paddingTop: "env(safe-area-inset-top, 0px)",
+              background: "rgba(0,0,0,0.5)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+            }}
+          >
+            <span style={{ color: "#fff", fontSize: 14, fontFamily: "monospace", fontWeight: 700, letterSpacing: 1 }}>
+              MTP
+            </span>
+
+            <div style={{ flex: 1 }} />
+
+            {loading && (
+              <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontFamily: "monospace" }}>
+                Loading...
+              </span>
+            )}
+
+            <button
+              onClick={() => setShowInfo(true)}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                color: "#fff",
+                fontSize: 12,
+                fontFamily: "monospace",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              Info
+            </button>
+
+            <button
+              onClick={() => setCaptureMode(true)}
+              style={{
+                height: 36,
+                padding: "0 10px",
+                borderRadius: 8,
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                color: "#fff",
+                fontSize: 12,
+                fontFamily: "monospace",
+                cursor: "pointer",
+                letterSpacing: 1,
+              }}
+            >
+              Capture
+            </button>
+
+            <button
+              onClick={() => setRenderMode((m) => (m === "3d" ? "2d" : "3d"))}
+              style={{
+                height: 36,
+                padding: "0 10px",
+                borderRadius: 8,
+                background: renderMode === "3d"
+                  ? "rgba(80,140,255,0.25)"
+                  : "rgba(255,170,68,0.25)",
+                border: `1px solid ${renderMode === "3d" ? "rgba(80,140,255,0.5)" : "rgba(255,170,68,0.5)"}`,
+                color: "#fff",
+                fontSize: 12,
+                fontFamily: "monospace",
+                cursor: "pointer",
+                letterSpacing: 1,
+              }}
+            >
+              {renderMode === "3d" ? "3D" : "2D"}
+            </button>
+          </div>
+
+          {/* Timeline */}
+          <div
+            style={{
+              position: "absolute",
+              top: 44,
+              left: 0,
+              right: 0,
+              zIndex: 10,
+              padding: "8px 12px",
+              background: "rgba(0,0,0,0.4)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+            }}
+          >
+            <TimelineControls
+              playing={timeline.playing}
+              speed={timeline.speed}
+              progress={timeline.progress}
+              currentTime={timeline.currentTime}
+              timeMode={timeline.timeMode}
+              selectedDate={timeline.selectedDate}
+              rangeDays={timeline.rangeDays}
+              windowStart={timeline.windowStart}
+              windowEnd={timeline.windowEnd}
+              isDarkTheme={true}
+              isMobile={true}
+              onToggle={timeline.toggle}
+              onSpeedChange={timeline.setSpeed}
+              onSeekByProgress={timeline.seekByProgress}
+              onTimeModeChange={timeline.setTimeMode}
+              onDateChange={timeline.setSelectedDate}
+              onShiftDate={timeline.shiftDate}
+              onRangeDaysChange={timeline.setRangeDays}
+            />
+          </div>
+
+          {/* Bottom Sheet */}
+          <MobileBottomSheet isLandscape={isLandscape}>
+            {(level) => (
+              <>
+                {(level === "half" || level === "full") && (
+                  <div style={{ marginTop: 12 }}>
+                    <LayerSidebar
+                      visibility={layerVisibility}
+                      expandedLayer={expandedLayer}
+                      viewMode={viewMode}
+                      displayMode={displayMode}
+                      isDarkTheme={true}
+                      isMobile={true}
+                      counts={{
+                        flights: displayedFlights.length,
+                        ships: shipSceneRef.current?.getVisibleCount() ?? ships.length,
+                        trains: trainCount,
+                        buses: busCount,
+                        busesIntercity: busIntercityCount,
+                      }}
+                      onLayerClick={(layer) => {
+                        const isVisible = layerVisibility[layer];
+                        if (!isVisible) {
+                          setLayerVisibility((prev) => ({ ...prev, [layer]: true }));
+                          setExpandedLayer(layer as ExpandableLayerKey);
+                        } else if (expandedLayer === layer) {
+                          setExpandedLayer(null);
+                        } else {
+                          setExpandedLayer(layer as ExpandableLayerKey);
+                        }
+                      }}
+                      onToggleVisibility={toggleVisibility}
+                      onViewModeChange={setViewMode}
+                      onDisplayModeChange={(mode) => { setDisplayMode(mode); setTooltipInfo(null); }}
+                      onHideTransport={() => {
+                        if (expandedLayer) {
+                          setLayerVisibility((prev) => ({ ...prev, [expandedLayer]: false }));
+                          setExpandedLayer(null);
+                        }
+                      }}
+                      getControls={transportParams.getControls}
+                    />
+                  </div>
+                )}
+
+                {level === "full" && (
+                  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, fontFamily: "monospace" }}>Style</span>
+                      <StyleSelector
+                        selected={mapStyleId}
+                        isDarkTheme={true}
+                        onChange={setMapStyleId}
+                      />
+                    </div>
+                    <LocationJump
+                      isDarkTheme={true}
+                      currentId={selectedAirport}
+                      onJump={(id) => {
+                        const p = getPresetById(id);
+                        if (p && mapRef.current) {
+                          if (p.category === "airport") setSelectedAirport(p.id);
+                          mapRef.current.flyTo({
+                            center: p.center,
+                            zoom: p.zoom,
+                            pitch: p.pitch,
+                            bearing: p.bearing,
+                            duration: 2000,
+                          });
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </MobileBottomSheet>
+        </>
+      )}
+
+      {/* ── 飛機 Tooltip ── */}
+      {tooltipInfo && (
+        <div
+          style={{
+            position: "absolute",
+            left: tooltipInfo.x + 12,
+            top: tooltipInfo.y - 10,
+            zIndex: 30,
+            background: "rgba(10,10,20,0.9)",
+            backdropFilter: "blur(12px)",
+            border: "1px solid rgba(100,170,255,0.4)",
+            borderRadius: 8,
+            padding: "10px 14px",
+            pointerEvents: "none",
+            fontFamily: "monospace",
+            minWidth: 160,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: 1 }}>
+            {tooltipInfo.flight.callsign}
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 4 }}>
+            {tooltipInfo.flight.origin_iata} → {tooltipInfo.flight.dest_iata}
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+            {tooltipInfo.flight.aircraft_type}
+            {tooltipInfo.altitude != null && ` · ${tooltipInfo.altitude}m`}
+          </div>
+          <div style={{ fontSize: 10, color: "rgba(100,170,255,0.6)", marginTop: 4 }}>
+            double-click to track
+          </div>
+        </div>
+      )}
+
+      {/* ── 列車 Tooltip ── */}
+      {trainTooltipInfo && (
+        <div
+          style={{
+            position: "absolute",
+            left: trainTooltipInfo.x + 12,
+            top: trainTooltipInfo.y - 10,
+            zIndex: 30,
+            background: "rgba(10,10,20,0.9)",
+            backdropFilter: "blur(12px)",
+            border: `1px solid ${trainTooltipInfo.train.color}66`,
+            borderRadius: 8,
+            padding: "10px 14px",
+            pointerEvents: "none",
+            fontFamily: "monospace",
+            minWidth: 180,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700, color: trainTooltipInfo.train.color, letterSpacing: 1 }}>
+            {trainTooltipInfo.train.trainId}
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 4 }}>
+            {trainTooltipInfo.train.systemId.toUpperCase()} · {trainTooltipInfo.train.trackId}
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+            {trainTooltipInfo.train.status === "running" ? "行駛中" : "停靠中"}
+            {trainTooltipInfo.train.trainTypeCode && ` · ${trainTooltipInfo.train.trainTypeCode}`}
+          </div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>
+            {trainTooltipInfo.train.position[0].toFixed(4)}, {trainTooltipInfo.train.position[1].toFixed(4)}
+          </div>
+        </div>
+      )}
+
+      {/* ── 公車 Tooltip ── */}
+      {busTooltipInfo && (
+        <div
+          style={{
+            position: "absolute",
+            left: busTooltipInfo.x + 12,
+            top: busTooltipInfo.y - 10,
+            zIndex: 30,
+            background: "rgba(10,10,20,0.9)",
+            backdropFilter: "blur(12px)",
+            border: `1px solid ${busTooltipInfo.bus.color}66`,
+            borderRadius: 8,
+            padding: "10px 14px",
+            pointerEvents: "none",
+            fontFamily: "monospace",
+            minWidth: 180,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700, color: busTooltipInfo.bus.color, letterSpacing: 1 }}>
+            {busTooltipInfo.bus.routeName}
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 4 }}>
+            {busTooltipInfo.bus.plateNumb} · {busTooltipInfo.bus.city}
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+            {busTooltipInfo.bus.status === "running" ? "行駛中" : "停靠中"}
+            {busTooltipInfo.bus.speed > 0 && ` · ${busTooltipInfo.bus.speed.toFixed(0)} km/h`}
+          </div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>
+            {busTooltipInfo.bus.position[1].toFixed(4)}, {busTooltipInfo.bus.position[0].toFixed(4)}
+          </div>
+        </div>
+      )}
+
+      {/* ── Bottom-right stack: Feature Info + AQI controls + Legend ── */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 64,
+          right: 16,
+          zIndex: 30,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          gap: 8,
+          pointerEvents: "none",
+        }}
+      >
+        {featureInfo && (
+          <div style={{ pointerEvents: "auto" }}>
+            <FeatureInfoPanel
+              feature={featureInfo}
+              onClose={() => setFeatureInfo(null)}
+              reservoirContext={reservoirContext}
+            />
+          </div>
+        )}
+        {(layerVisibility.aqiImagery || layerVisibility.aqiStations || layerVisibility.aqiMicroSensors) && (
+          <>
+            {layerVisibility.aqiImagery && (
+              <div style={{ pointerEvents: "auto" }}>
+                <AqiProductSwitcher
+                  current={aqiProduct}
+                  onChange={setAqiProduct}
+                  isDark={isDarkTheme}
+                />
+              </div>
+            )}
+            <div style={{ pointerEvents: "auto" }}>
+              <AqiLegend
+                isDark={isDarkTheme}
+                caption={layerVisibility.aqiMicroSensors ? "LASS 點位以 PM2.5 濃度配色" : undefined}
+              />
+            </div>
+          </>
+        )}
+        <div style={{ pointerEvents: "auto" }}>
+          <LegendPanel visibility={layerVisibility} />
+        </div>
+      </div>
+
+      {/* ── 全域 loading 指示器 ── */}
+      <LoadingIndicator />
+
+      {/* ── Info Modal ── */}
+      <InfoModal open={showInfo} onClose={() => setShowInfo(false)} isMobile={isMobile} />
+    </div>
+  );
+}

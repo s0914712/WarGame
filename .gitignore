@@ -1,0 +1,45 @@
+node_modules
+dist
+.env
+.env.local
+*.local
+*.tsbuildinfo
+public/aviation_data.json
+public/ship_data.json
+public/rail/
+public/rail_bundle.json
+scripts/flight-list.json
+scripts/track-progress.json
+
+# 大型靜態 GeoJSON（由 S3 deploy-assets 管理）
+public/geo/provincial_road.geojson
+public/geo/national_highway.geojson
+public/geo/bus_stations_city.geojson
+public/geo/bus_stations_intercity.geojson
+public/geo/bike_stations.geojson
+public/geo/cycling_routes.geojson
+public/geo/freeway_congestion.geojson
+public/geo/weather_stations.geojson
+public/h3/h3_demographics_res8.json
+public/h3/h3_population_res8.json
+public/geo/schools.geojson
+public/geo/convenience_stores.geojson
+public/geo/active_faults.geojson
+
+# 水資源圖層統一走 S3（glob pattern；未來新增 water_* 自動適用）
+# upload / pull 腳本都以 glob 動態處理，不需要逐檔維護名單
+public/geo/water_*.geojson
+
+# 大型公車路線 JSON（由 S3 deploy-assets 管理；小檔案仍進 git）
+public/bus/taipei_bus_routes.json
+public/bus/intercity_bus_routes.json
+public/bus/pingtungcounty_bus_routes.json
+
+# Claude Code 內部儲存（不 commit）
+.claude/projects/
+.claude/worktrees/
+.claude/todos/
+.claude/settings.local.json
+.claude/.cache/
+.claude/scheduled_tasks.lock
+__pycache__/
