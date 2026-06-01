@@ -8,12 +8,20 @@ import { WARGAME_MAP_STYLES } from "../wargame/mapStyles";
 interface Props {
   selectedId: string;
   onChange: (id: string) => void;
+  embedded?: boolean;
 }
 
-export function MapStyleSwitcher({ selectedId, onChange }: Props) {
+export function MapStyleSwitcher({ selectedId, onChange, embedded = false }: Props) {
   return (
     <div
-      style={{
+      style={embedded ? {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        color: "#e2e8f0",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        width: "100%",
+      } : {
         position: "absolute",
         top: 16,
         right: 220,           // 不擋場景名稱
@@ -36,7 +44,7 @@ export function MapStyleSwitcher({ selectedId, onChange }: Props) {
         onChange={(e) => onChange(e.target.value)}
         className="wg-btn"
         style={{
-          padding: "4px 8px",
+          padding: embedded ? "8px 10px" : "4px 8px",
           borderRadius: 4,
           border: "1px solid rgba(148, 163, 184, 0.3)",
           background: "rgba(30, 41, 59, 0.4)",
@@ -45,6 +53,7 @@ export function MapStyleSwitcher({ selectedId, onChange }: Props) {
           fontFamily: "inherit",
           cursor: "pointer",
           outline: "none",
+          flex: embedded ? 1 : undefined,
         }}
       >
         {WARGAME_MAP_STYLES.map((s) => (

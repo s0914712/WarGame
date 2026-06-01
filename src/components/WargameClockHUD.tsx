@@ -13,7 +13,7 @@ function getFowSnapshot(): boolean {
   return scenarioStore.isFogOfWar();
 }
 
-export function WargameClockHUD() {
+export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {}) {
   const { tPlus, rate, isPaused, toggle, setRate } = useWargameClock();
   const fogOfWar = useSyncExternalStore(scenarioStore.subscribe, getFowSnapshot, getFowSnapshot);
 
@@ -38,7 +38,15 @@ export function WargameClockHUD() {
 
   return (
     <div
-      style={{
+      style={isMobile ? {
+        display: "flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 8,
+        color: "#e2e8f0",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        userSelect: "none",
+      } : {
         position: "absolute",
         top: 16,
         left: 16,
@@ -61,8 +69,8 @@ export function WargameClockHUD() {
         title={isPaused ? "繼續（Space）" : "暫停（Space）"}
         className="wg-btn"
         style={{
-          width: 42,
-          height: 42,
+          width: isMobile ? 44 : 42,
+          height: isMobile ? 44 : 42,
           borderRadius: 6,
           border: "1px solid rgba(148, 163, 184, 0.4)",
           background: isPaused ? "#3B82F6" : "rgba(30, 41, 59, 0.6)",
@@ -77,7 +85,7 @@ export function WargameClockHUD() {
         }
       </button>
 
-      <div style={{ fontSize: 40, fontWeight: 700, letterSpacing: 1, minWidth: 170 }}>
+      <div style={{ fontSize: isMobile ? 26 : 40, fontWeight: 700, letterSpacing: 1, minWidth: isMobile ? 96 : 170 }}>
         {tPlus}
       </div>
 

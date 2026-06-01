@@ -72,7 +72,7 @@ function subscribe(cb: () => void): () => void {
   return () => { u1(); u2(); };
 }
 
-export function UnitEditorPanel() {
+export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const mode = editorStore.getMode();
@@ -121,7 +121,14 @@ export function UnitEditorPanel() {
 
   return (
     <div
-      style={{
+      style={embedded ? {
+        width: "100%",
+        background: "transparent",
+        border: isPlanningThis ? "2px solid #fb923c" : "1px solid transparent",
+        borderRadius: 10,
+        color: "#e2e8f0",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      } : {
         position: "absolute",
         top: 80,
         right: 16,

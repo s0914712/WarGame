@@ -31,7 +31,7 @@ function getSnapshot(): Snapshot {
   return cached;
 }
 
-export function EngagementLog() {
+export function EngagementLog({ embedded = false }: { embedded?: boolean } = {}) {
   useSyncExternalStore(scenarioStore.subscribe, getSnapshot, getSnapshot);
   const [collapsed, setCollapsed] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -39,21 +39,28 @@ export function EngagementLog() {
   const events = scenarioStore.getState().eventsAll;
   const recent = events.slice(-MAX_RECENT);
 
+  // embedded（行動版 sheet 內）永遠展開，高度交給 sheet
+  const isCollapsed = embedded ? false : collapsed;
+
   useEffect(() => {
-    if (!collapsed && bodyRef.current) {
+    if (!isCollapsed && bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-  }, [events.length, collapsed]);
+  }, [events.length, isCollapsed]);
 
   return (
     <div
-      style={{
+      style={embedded ? {
+        width: "100%",
+        color: "#e2e8f0",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      } : {
         position: "absolute",
         bottom: 64,
         left: 16,
         zIndex: 25,
         width: 420,
-        maxHeight: collapsed ? 40 : 340,
+        maxHeight: isCollapsed ? 40 : 340,
         background: "rgba(15, 23, 42, 0.92)",
         backdropFilter: "blur(6px)",
         border: "1px solid rgba(148, 163, 184, 0.3)",
@@ -64,6 +71,7 @@ export function EngagementLog() {
         transition: "max-height 0.2s",
       }}
     >
+      {!embedded && (
       <div
         onClick={() => setCollapsed((v) => !v)}
         style={{
@@ -72,7 +80,7 @@ export function EngagementLog() {
           justifyContent: "space-between",
           alignItems: "center",
           cursor: "pointer",
-          borderBottom: collapsed ? "none" : "1px solid rgba(148, 163, 184, 0.15)",
+          borderBottom: isCollapsed ? "none" : "1px solid rgba(148, 163, 184, 0.15)",
           fontSize: 19,
           fontWeight: 600,
         }}
@@ -81,14 +89,15 @@ export function EngagementLog() {
           <ScrollText size={16} />
           戰報 ({events.length})
         </span>
-        {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </div>
+      )}
 
-      {!collapsed && (
+      {!isCollapsed && (
         <div
           ref={bodyRef}
           style={{
-            maxHeight: 296,
+            maxHeight: embedded ? "none" : 296,
             overflowY: "auto",
             padding: "8px 12px",
             fontSize: 17,
