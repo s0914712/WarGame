@@ -1,13 +1,12 @@
 /**
- * 行動版頂部列 — 固定頂部、單欄兩列。
- *   列 1：☰ 選單鈕 + 精簡戰況（BattleStatsHud embedded）
- *   列 2：精簡時鐘（WargameClockHUD isMobile：play/pause + T+ + 速率 + FoW）
+ * 行動版頂部 HUD — 純資訊 / 時鐘控制，功能已移到底部 dock。
+ *   精簡時鐘（play/pause + T+ + 速率 + FoW）+ 精簡戰況。
+ *   內容套 zoom 整體縮小，與電腦版區隔。
  */
-import { Menu } from "lucide-react";
 import { WargameClockHUD } from "../WargameClockHUD";
 import { BattleStatsHud } from "../BattleStatsHud";
 
-export function WargameMobileTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
+export function WargameMobileTopBar() {
   return (
     <div
       style={{
@@ -23,33 +22,22 @@ export function WargameMobileTopBar({ onOpenMenu }: { onOpenMenu: () => void }) 
         borderBottom: "1px solid rgba(148, 163, 184, 0.2)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px" }}>
-        <button
-          onClick={onOpenMenu}
-          className="wg-btn"
-          aria-label="開啟選單"
-          style={{
-            width: 44,
-            height: 44,
-            flexShrink: 0,
-            borderRadius: 8,
-            background: "rgba(15, 23, 42, 0.85)",
-            color: "#cbd5e1",
-            border: "1px solid rgba(148, 163, 184, 0.3)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-          }}
-        >
-          <Menu size={20} />
-        </button>
-        <div style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
+      <div
+        style={{
+          // zoom：整體縮小頂部 HUD，與電腦版區隔
+          zoom: 0.82,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          padding: "8px 10px",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "center", overflowX: "auto" }}>
           <BattleStatsHud isMobile embedded />
         </div>
-      </div>
-      <div style={{ padding: "0 10px 8px", display: "flex", justifyContent: "center", overflowX: "auto" }}>
-        <WargameClockHUD isMobile />
+        <div style={{ display: "flex", justifyContent: "center", overflowX: "auto" }}>
+          <WargameClockHUD isMobile />
+        </div>
       </div>
     </div>
   );
