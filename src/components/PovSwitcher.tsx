@@ -42,7 +42,7 @@ function subscribe(cb: () => void): () => void {
   return () => { u1(); u2(); };
 }
 
-export function PovSwitcher() {
+export function PovSwitcher({ embedded = false }: { embedded?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const sides = scenarioStore.getState().scenario.sides;
@@ -59,7 +59,15 @@ export function PovSwitcher() {
 
   return (
     <div
-      style={{
+      style={embedded ? {
+        display: "flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 8,
+        color: "#e2e8f0",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        width: "100%",
+      } : {
         position: "absolute",
         top: 56,
         right: 16,
@@ -77,7 +85,7 @@ export function PovSwitcher() {
       }}
     >
       <span style={{ fontSize: 17, color: "#94a3b8", letterSpacing: 0.5, fontWeight: 600 }}>POV</span>
-      <div style={{ display: "flex", gap: 4 }}>
+      <div style={{ display: "flex", gap: 4, flexWrap: embedded ? "wrap" : "nowrap" }}>
         {options.map((opt) => {
           const isActive = opt.id === active;
           return (

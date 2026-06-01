@@ -35,6 +35,8 @@ import { loadWargameSymbols } from "./wargame/symbology/loadSymbols";
 import { useSimLoop } from "./hooks/useSimLoop";
 import { useAiSideLoop } from "./hooks/useAiSideLoop";
 import { DEFAULT_STYLE_ID, getStyleById } from "./wargame/mapStyles";
+import { useIsMobile } from "./hooks/useIsMobile";
+import { WargameMobileLayout } from "./components/wargame/WargameMobileLayout";
 
 /**
  * 兵推模式頂層 app。
@@ -56,6 +58,7 @@ export default function WargameApp() {
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [cheatOpen, setCheatOpen] = useState(false);
   const demoMode = useSyncExternalStore(uiStore.subscribe, isDemo, isDemo);
+  const { isMobile, isLandscape } = useIsMobile();
 
   useSimLoop();
   useAiSideLoop();
@@ -170,9 +173,10 @@ export default function WargameApp() {
     <div style={{ position: "relative", width: "100vw", height: "100vh", background: "#020617" }}>
       <div ref={mapContainerRef} style={{ position: "absolute", inset: 0 }} />
 
-      {/* Demo Mode 永遠保留：戰況 + Demo 退出鈕 */}
-      <BattleStatsHud />
-      <DemoModeToggle />
+      {/* Demo Mode 永遠保留：戰況 + Demo 退出鈕。
+          行動版正常模式時戰況改由頂部列渲染，故這裡只在桌面或 demo 時掛 */}
+      {(!isMobile || demoMode) && <BattleStatsHud isMobile={isMobile} />}
+      <DemoModeToggle isMobile={isMobile} />
       <TutorialOverlay />
       <VictoryModal />
       {/* 場景 briefing 等地圖載完才掛，避免首次 race 顯示空場景 */}
@@ -183,9 +187,22 @@ export default function WargameApp() {
       )}
       <UICheatSheet open={cheatOpen} onClose={() => setCheatOpen(false)} />
       <LandingScreen map={mapRef.current} />
+      {/* LLM 面板：桌面 / 行動版共用（行動版由選單抽屜開啟），故移出 !demoMode 分支 */}
+      <LLMPanel open={llmOpen} onClose={() => setLlmOpen(false)} />
 
       {/* Demo Mode 隱藏所有其他控制 */}
       {!demoMode && (
+        isMobile ? (
+          <WargameMobileLayout
+            map={mapRef.current}
+            isLandscape={isLandscape}
+            styleId={styleId}
+            onStyleChange={setStyleId}
+            onOpenLlm={() => setLlmOpen(true)}
+            onOpenBriefing={() => setBriefingOpen(true)}
+            onOpenCheat={() => setCheatOpen(true)}
+          />
+        ) : (
         <>
           <WargameClockHUD />
           <MapStyleSwitcher selectedId={styleId} onChange={setStyleId} />
@@ -195,7 +212,6 @@ export default function WargameApp() {
           <UnitEditorPanel />
           <EngagementLog />
           <ReplayPanel />
-          <LLMPanel open={llmOpen} onClose={() => setLlmOpen(false)} />
 
           <button
             onClick={() => setLlmOpen(true)}
@@ -272,6 +288,7 @@ export default function WargameApp() {
             Space: 暫停/繼續 · 1/2/3/4: 速率 · 點符號編輯 · Enter 套用航線
           </div>
         </>
+        )
       )}
 
       {!mapReady && (

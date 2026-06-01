@@ -69,19 +69,26 @@ function subscribe(cb: () => void): () => void {
   return () => { u1(); window.clearInterval(t); };
 }
 
-export function BattleStatsHud() {
+export function BattleStatsHud({ isMobile = false, embedded = false }: { isMobile?: boolean; embedded?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const s = getSnapshot();
 
   return (
     <div
-      style={{
+      style={embedded ? {
+        display: "flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 12,
+        color: "#e2e8f0",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      } : {
         position: "absolute",
-        top: 16,
+        top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 8px)" : 16,
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 22,
-        padding: "10px 18px",
+        padding: isMobile ? "6px 12px" : "10px 18px",
         background: "rgba(15, 23, 42, 0.92)",
         backdropFilter: "blur(6px)",
         border: "1px solid rgba(148, 163, 184, 0.3)",
@@ -90,7 +97,7 @@ export function BattleStatsHud() {
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
         display: "flex",
         alignItems: "center",
-        gap: 22,
+        gap: isMobile ? 12 : 22,
       }}
     >
       {s.sides.map((side, i) => (
@@ -112,6 +119,7 @@ export function BattleStatsHud() {
         </div>
       ))}
 
+      {!embedded && (
       <div
         style={{
           paddingLeft: 18,
@@ -129,6 +137,7 @@ export function BattleStatsHud() {
           </span>
         </div>
       </div>
+      )}
     </div>
   );
 }
