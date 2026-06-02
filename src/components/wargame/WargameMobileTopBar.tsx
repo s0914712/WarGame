@@ -24,18 +24,18 @@ export function WargameMobileTopBar() {
     >
       <div
         style={{
-          // zoom：整體縮小頂部 HUD，與電腦版區隔
-          zoom: 0.82,
+          // zoom：整體再縮一點，與電腦版區隔
+          zoom: 0.92,
           display: "flex",
           flexDirection: "column",
-          gap: 6,
-          padding: "8px 10px",
+          gap: 4,
+          padding: "5px 10px",
         }}
       >
         <div style={{ display: "flex", justifyContent: "center", overflowX: "auto" }}>
           <BattleStatsHud isMobile embedded />
         </div>
-        <div style={{ display: "flex", justifyContent: "center", overflowX: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", overflowX: "auto" }}>
           <WargameClockHUD isMobile />
         </div>
       </div>
