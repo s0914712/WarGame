@@ -1,14 +1,13 @@
 /**
  * 行動版控制樹容器 — 由 WargameApp 在 isMobile 時掛載（取代整組桌面控制）。
  *
- * 地圖與所有 modal（Landing / Victory / Briefing / Tutorial / LLM / CheatSheet）
- * 仍由 WargameApp 共用渲染；此元件只負責行動版的控制 UI。
+ * 結構：頂部精簡 HUD + 底部 dock（一排導航列 + 可展開面板）+ 規劃控制列。
+ * 地圖與所有 modal 仍由 WargameApp 共用渲染。
  */
 import { useState } from "react";
 import type { Map as MapboxMap } from "mapbox-gl";
 import { WargameMobileTopBar } from "./WargameMobileTopBar";
-import { WargameMobileSheet } from "./WargameMobileSheet";
-import { WargameMobileMenu } from "./WargameMobileMenu";
+import { WargameMobileDock } from "./WargameMobileDock";
 import { WargamePlanControls } from "./WargamePlanControls";
 
 interface Props {
@@ -24,24 +23,22 @@ interface Props {
 export function WargameMobileLayout({
   map, isLandscape, styleId, onStyleChange, onOpenLlm, onOpenBriefing, onOpenCheat,
 }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [sheetHeight, setSheetHeight] = useState(80);
+  const [dockHeight, setDockHeight] = useState(56);
 
   return (
     <>
-      <WargameMobileTopBar onOpenMenu={() => setMenuOpen(true)} />
-      <WargameMobileSheet isLandscape={isLandscape} onHeightChange={setSheetHeight} />
-      <WargamePlanControls bottomOffset={sheetHeight + 8} />
-      <WargameMobileMenu
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
+      <WargameMobileTopBar />
+      <WargameMobileDock
         map={map}
+        isLandscape={isLandscape}
         styleId={styleId}
         onStyleChange={onStyleChange}
         onOpenLlm={onOpenLlm}
         onOpenBriefing={onOpenBriefing}
         onOpenCheat={onOpenCheat}
+        onHeightChange={setDockHeight}
       />
+      <WargamePlanControls bottomOffset={dockHeight + 8} />
     </>
   );
 }

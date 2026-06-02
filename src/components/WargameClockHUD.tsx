@@ -69,8 +69,8 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         title={isPaused ? "繼續（Space）" : "暫停（Space）"}
         className="wg-btn"
         style={{
-          width: isMobile ? 44 : 42,
-          height: isMobile ? 44 : 42,
+          width: isMobile ? 36 : 42,
+          height: isMobile ? 36 : 42,
           borderRadius: 6,
           border: "1px solid rgba(148, 163, 184, 0.4)",
           background: isPaused ? "#3B82F6" : "rgba(30, 41, 59, 0.6)",
@@ -80,12 +80,12 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         }}
       >
         {isPaused
-          ? <Play size={18} fill="currentColor" />
-          : <Pause size={18} fill="currentColor" />
+          ? <Play size={isMobile ? 16 : 18} fill="currentColor" />
+          : <Pause size={isMobile ? 16 : 18} fill="currentColor" />
         }
       </button>
 
-      <div style={{ fontSize: isMobile ? 26 : 40, fontWeight: 700, letterSpacing: 1, minWidth: isMobile ? 96 : 170 }}>
+      <div style={{ fontSize: isMobile ? 18 : 40, fontWeight: 700, letterSpacing: 1, minWidth: isMobile ? 76 : 170 }}>
         {tPlus}
       </div>
 
@@ -96,12 +96,12 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
             onClick={() => setRate(r)}
             className="wg-btn"
             style={{
-              padding: "6px 12px",
+              padding: isMobile ? "3px 7px" : "6px 12px",
               borderRadius: 4,
               border: "1px solid rgba(148, 163, 184, 0.4)",
               background: r === rate ? "#3B82F6" : "rgba(30, 41, 59, 0.4)",
               color: r === rate ? "#fff" : "#cbd5e1",
-              fontSize: 19,
+              fontSize: isMobile ? 13 : 19,
               fontWeight: 600,
               cursor: "pointer",
               fontFamily: "inherit",
@@ -112,7 +112,7 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         ))}
       </div>
 
-      {isPaused && (
+      {isPaused && !isMobile && (
         <span
           className="wg-blink"
           style={{
@@ -137,12 +137,12 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         className="wg-btn"
         style={{
           marginLeft: 4,
-          padding: "6px 10px",
+          padding: isMobile ? "4px 8px" : "6px 10px",
           borderRadius: 4,
           border: `1px solid ${fogOfWar ? "rgba(34, 197, 94, 0.5)" : "rgba(148, 163, 184, 0.4)"}`,
           background: fogOfWar ? "rgba(34, 197, 94, 0.25)" : "rgba(30, 41, 59, 0.4)",
           color: fogOfWar ? "#86efac" : "#94a3b8",
-          fontSize: 17,
+          fontSize: isMobile ? 13 : 17,
           fontWeight: 600,
           cursor: "pointer",
           fontFamily: "inherit",
