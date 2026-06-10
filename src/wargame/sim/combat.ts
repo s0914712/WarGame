@@ -14,10 +14,27 @@
  * 直接 swap ruleSet 即可。
  */
 import type {
-  EngagementEvent, Explosion, LngLat, Missile, SimulationState, Unit, UnitId, Wreck,
+  EngagementEvent, Explosion, LngLat, Missile, RoeMode, SideId, SimulationState, Unit, UnitId, Wreck,
 } from "../types";
 import { advanceTowardKm, haversineKm, knotsToKmPerSec } from "./geo";
 import { makeRng, seedFromStrings } from "./rng";
+import { detectionRank, MIN_ENGAGE_STATE } from "./detection";
+
+const MIN_ENGAGE_RANK = detectionRank(MIN_ENGAGE_STATE);
+
+/** 有效 ROE：unit 覆寫 > side 預設 > weapons_free */
+function effectiveRoe(unitRoe: RoeMode | undefined, sideRoe: RoeMode | undefined): RoeMode {
+  return unitRoe ?? sideRoe ?? "weapons_free";
+}
+
+/** defensive_only 用：該敵方是否正對我方任一單位發射飛彈 */
+function isShootingAtSide(
+  hostile: Unit, mySideId: SideId, missiles: Missile[], units: Record<UnitId, Unit>,
+): boolean {
+  return missiles.some((m) =>
+    m.attackerId === hostile.id && units[m.targetId]?.sideId === mySideId
+  );
+}
 
 const MISSILE_ARRIVE_THRESHOLD_KM = 1.0;
 const EXPLOSION_DURATION_SEC = 6;
@@ -47,7 +64,7 @@ export function runCombat(
   const events: EngagementEvent[] = [];
   const simSec = state.simTimeSec;
 
-  // ── 1. 自動鎖定 ──
+  // ── 1. 自動鎖定（受 ROE 約束）──
   if (AUTO_ENGAGE) {
     const sideMap = new Map(state.scenario.sides.map((s) => [s.id, s]));
     for (const u of Object.values(units)) {
@@ -56,13 +73,17 @@ export function runCombat(
       if (!mySide) continue;
       const hostiles = mySide.isHostileTo;
       if (hostiles.length === 0) continue;
-      // 找最近的「已偵測 + 在射程內」敵方
+      const roe = effectiveRoe(u.roe, mySide.roe);
+      if (roe === "weapons_hold") continue;   // 不主動接戰，只接受明確 engage 命令
+      // 找最近、符合 ROE + 已分類（≥ classified）+ 在射程內的敵方
       let best: { id: UnitId; dist: number } | null = null;
       for (const o of Object.values(units)) {
         if (!hostiles.includes(o.sideId)) continue;
         if (o.hpCurrent <= 0) continue;
         const det = o.detectedBy[u.sideId];
-        if (!det || det === "hidden") continue;
+        if (detectionRank(det) < MIN_ENGAGE_RANK) continue;   // 未分類不可主動接戰
+        if (roe === "weapons_tight" && det !== "tracked") continue;
+        if (roe === "defensive_only" && !isShootingAtSide(o, u.sideId, missiles, units)) continue;
         const d = haversineKm([u.position.lng, u.position.lat], [o.position.lng, o.position.lat]);
         if (d > u.core.rangeKm) continue;
         if (!best || d < best.dist) best = { id: o.id, dist: d };
@@ -204,7 +225,7 @@ export function runCombat(
     missiles: nextMissiles,
     explosions,
     wreckages,
-    eventsThisTick: events,
+    eventsThisTick: [...state.eventsThisTick, ...events],
     eventsAll: [...state.eventsAll, ...events],
   };
 }

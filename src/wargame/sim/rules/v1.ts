@@ -11,6 +11,9 @@
 import type { CombatRuleSet } from "../combat";
 import type { Missile } from "../../types";
 import { haversineKm } from "../geo";
+import { detectionRank, MIN_ENGAGE_STATE } from "../detection";
+
+const MIN_ENGAGE_RANK = detectionRank(MIN_ENGAGE_STATE);
 
 const COOLDOWN_SEC = 5;
 const MISSILE_SPEED_KNOTS = 600;
@@ -22,6 +25,8 @@ export const COMBAT_RULES_V1: CombatRuleSet = {
     if (target.hpCurrent <= 0) return false;
     if (attacker.hpCurrent <= 0) return false;
     if (attacker.ammoCurrent <= 0) return false;     // 沒彈藥 → 不能開火
+    // 識別閘門：必須對目標 ≥ classified 才能釋放武器（含手動 engage 命令）
+    if (detectionRank(target.detectedBy[attacker.sideId]) < MIN_ENGAGE_RANK) return false;
     const d = haversineKm(
       [attacker.position.lng, attacker.position.lat],
       [target.position.lng, target.position.lat],

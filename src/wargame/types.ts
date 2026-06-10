@@ -110,6 +110,21 @@ export interface Position {
 
 export type DetectionState = "hidden" | "unknown" | "classified" | "tracked";
 
+/**
+ * 交戰規則（Rules of Engagement）。沿用 CMO 慣例：
+ *   - weapons_free   ：可主動接戰射程內任何「已分類（≥ classified）」的敵方（預設）
+ *   - weapons_tight  ：只接戰已完成正面識別（tracked）的敵方
+ *   - defensive_only ：只反擊「正對我方發射飛彈」的敵方
+ *   - weapons_hold   ：完全不主動接戰；只接受明確 engage 命令
+ *
+ * 有效 ROE = unit.roe ?? side.roe ?? "weapons_free"（per-unit 覆寫 per-side 預設）。
+ */
+export type RoeMode =
+  | "weapons_free"
+  | "weapons_tight"
+  | "defensive_only"
+  | "weapons_hold";
+
 // ── unit runtime instance ────────────────────────────────
 export interface Unit {
   id: UnitId;
@@ -139,9 +154,18 @@ export interface Unit {
     ammoPerSec: number;
   };
   detectedBy: Partial<Record<SideId, DetectionState>>;
+  /**
+   * 偵測狀態機計時（per 觀察方 side）：
+   *   - inSec ：在有效感測範圍內持續接觸的累計秒數（驅動 unknown→classified→tracked 升級）
+   *   - outSec：失去接觸後的累計秒數（驅動降級 / 失聯）
+   * optional → 既有場景 / replay JSON 不需含此欄位（detection.ts 會初始化）。
+   */
+  detectionTimers?: Partial<Record<SideId, { inSec: number; outSec: number }>>;
   lastTickSimSec: number;
   parentId?: UnitId;
   engagingTargetId?: UnitId;
+  /** Per-unit ROE 覆寫；省略 → 用 side.roe ?? "weapons_free" */
+  roe?: RoeMode;
 }
 
 // ── commands ─────────────────────────────────────────────
@@ -154,7 +178,8 @@ export type Command =
     }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_speed"; speedKnots: number }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "engage"; targetUnitId: UnitId }
-  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "hold" };
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "hold" }
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_roe"; roe: RoeMode };
 
 // ── events ───────────────────────────────────────────────
 export type EngagementEventKind =
@@ -193,6 +218,8 @@ export interface Side {
   isPlayer: boolean;            // 預設玩家方（保留向後相容）
   ownership: SideOwnership;
   isHostileTo: SideId[];
+  /** 陣營預設 ROE；省略 → "weapons_free"。可被 unit.roe 覆寫 */
+  roe?: RoeMode;
 }
 
 // ── scenario ─────────────────────────────────────────────

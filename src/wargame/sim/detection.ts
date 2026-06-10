@@ -1,82 +1,187 @@
 /**
- * 偵測模型（Phase 3 簡化版）。
+ * 偵測模型 — 漸進狀態機（A2，對標 CMO）。
  *
- * 規則：
- *   - 對每對 (sensor unit, opposing unit)：距離 ≤ sensor 的 core.detectionRangeKm → tracked
- *   - 否則 → hidden
+ * 「看到光點 ≠ 知道是誰 ≠ 可以打」：每對 (觀察方 side × 目標 unit) 維護接觸計時，
+ * 在有效感測範圍內持續接觸 → 逐級升級；失去接觸 → 保持後反向降級直到失聯。
  *
- * Phase 3 不做漸進狀態機（unknown → classified → tracked）+ 失聯衰減，
- * 純二值化先把流程走通。Phase 5 polish 時再加。
+ *   在範圍內（沿用 stealth 折扣 effRange = detectionRangeKm × (1 - stealth)）：
+ *     inSec 累計：
+ *       inSec ≥ CLASSIFY_SEC + TRACK_SEC → tracked
+ *       inSec ≥ CLASSIFY_SEC             → classified
+ *       inSec > 0                        → unknown
+ *   離開範圍：
+ *     凍結 inSec（peak rank 由 inSec 推回），outSec 累計：
+ *       outSec < HOLD_SEC                → 維持
+ *       之後每 DECAY_STEP_SEC 降一級，降到 hidden → 計時歸零（完全失聯）
  *
- * 純函式：傳入 units 全集 + sides 配置 → 回傳新 units 全集（detectedBy 更新）。
+ * 純時間驅動、無 RNG → 重播決定性。升降級會 emit detection EngagementEvent。
+ *
+ * 純函式：傳入 units 全集 + sides + dt + simSec → 回傳 { units, events }。
  */
-import type { Side, SideId, Unit, UnitId } from "../types";
+import type { DetectionState, EngagementEvent, Side, SideId, Unit, UnitId } from "../types";
 import { haversineKm } from "./geo";
+
+// ── 調平衡常數 ───────────────────────────────────────────
+const CLASSIFY_SEC = 20;     // unknown → classified
+const TRACK_SEC = 20;        // classified → tracked（再累計）
+const HOLD_SEC = 10;         // 失去接觸後維持原狀態多久
+const DECAY_STEP_SEC = 15;   // 之後每隔多久降一級
+
+// ── rank helper（供 combat 開火閘門共用） ───────────────
+const RANK: Record<DetectionState, number> = {
+  hidden: 0,
+  unknown: 1,
+  classified: 2,
+  tracked: 3,
+};
+const STATE_BY_RANK: DetectionState[] = ["hidden", "unknown", "classified", "tracked"];
+
+/** detectionState → 數值序（hidden 0 < unknown 1 < classified 2 < tracked 3） */
+export function detectionRank(s: DetectionState | undefined): number {
+  return s ? RANK[s] : 0;
+}
+
+/** 開火 / 接戰最低識別門檻：必須 ≥ classified 才能釋放武器 */
+export const MIN_ENGAGE_STATE: DetectionState = "classified";
+
+interface Timer { inSec: number; outSec: number; }
+
+/** 由「在範圍內累計秒數」推回 detection 等級 */
+function stateFromInSec(inSec: number): DetectionState {
+  if (inSec >= CLASSIFY_SEC + TRACK_SEC) return "tracked";
+  if (inSec >= CLASSIFY_SEC) return "classified";
+  if (inSec > 0) return "unknown";
+  return "hidden";
+}
+
+export interface DetectionResult {
+  units: Record<UnitId, Unit>;
+  events: EngagementEvent[];
+}
 
 export function computeDetection(
   units: Record<UnitId, Unit>,
   sides: Side[],
-): Record<UnitId, Unit> {
+  dtSec: number,
+  simSec: number,
+): DetectionResult {
   const sideMap = new Map<SideId, Side>(sides.map((s) => [s.id, s]));
+  const events: EngagementEvent[] = [];
 
-  // 1. 收集每個 sideId 下，距離某 unit 在誰的偵測範圍內
-  //    sensorsBySide[sideId] = 該陣營所有有 detectionRange > 0 的 units
+  // 1. 收集每個 sideId 下有偵測能力（detectionRange > 0）的 sensor units
   const sensorsBySide = new Map<SideId, Unit[]>();
   for (const u of Object.values(units)) {
     if (u.core.detectionRangeKm <= 0) continue;
     let arr = sensorsBySide.get(u.sideId);
-    if (!arr) {
-      arr = [];
-      sensorsBySide.set(u.sideId, arr);
-    }
+    if (!arr) { arr = []; sensorsBySide.set(u.sideId, arr); }
     arr.push(u);
   }
 
-  // 2. 對每個 unit 重新計算 detectedBy
+  // 2. 對每個 unit 重算 detectedBy + detectionTimers
   const next: Record<UnitId, Unit> = {};
   for (const u of Object.values(units)) {
     const detectedBy: Unit["detectedBy"] = {};
+    const timers: Partial<Record<SideId, Timer>> = {};
 
-    // 對每個敵對 side 檢查
+    // stealth：目標 extensions.stealth (0..0.95) → 等比例壓低感測器有效範圍
+    const stealthRaw = typeof u.extensions.stealth === "number"
+      ? (u.extensions.stealth as number) : 0;
+    const stealth = Math.max(0, Math.min(0.95, stealthRaw));
+
     for (const [observerSideId, side] of sideMap) {
       if (observerSideId === u.sideId) continue;
       const myOwnSide = sideMap.get(u.sideId);
       const isHostileToObserver = side.isHostileTo.includes(u.sideId)
         || (myOwnSide?.isHostileTo.includes(observerSideId) ?? false);
-      // 只追蹤敵對關係的偵測；中立可被觀察但 detectedBy 不重要
       if (!isHostileToObserver) continue;
 
+      // 判斷是否在任一 sensor 有效範圍內
       const sensors = sensorsBySide.get(observerSideId);
-      if (!sensors || sensors.length === 0) continue;
-
-      // stealth：目標的 extensions.stealth (0..1) → 等比例壓低感測器有效範圍
-      const stealthRaw = typeof u.extensions.stealth === "number"
-        ? (u.extensions.stealth as number) : 0;
-      const stealth = Math.max(0, Math.min(0.95, stealthRaw));
-
-      let detected = false;
-      for (const s of sensors) {
-        const effRangeKm = s.core.detectionRangeKm * (1 - stealth);
-        if (effRangeKm <= 0) continue;
-        const d = haversineKm([s.position.lng, s.position.lat], [u.position.lng, u.position.lat]);
-        if (d <= effRangeKm) {
-          detected = true;
-          break;
+      let inRange = false;
+      if (sensors && sensors.length > 0) {
+        for (const s of sensors) {
+          const effRangeKm = s.core.detectionRangeKm * (1 - stealth);
+          if (effRangeKm <= 0) continue;
+          const d = haversineKm(
+            [s.position.lng, s.position.lat],
+            [u.position.lng, u.position.lat],
+          );
+          if (d <= effRangeKm) { inRange = true; break; }
         }
       }
-      if (detected) detectedBy[observerSideId] = "tracked";
-      else detectedBy[observerSideId] = "hidden";
+
+      const prevState: DetectionState = u.detectedBy[observerSideId] ?? "hidden";
+      const prev: Timer = u.detectionTimers?.[observerSideId] ?? { inSec: 0, outSec: 0 };
+
+      let inSec = prev.inSec;
+      let outSec = prev.outSec;
+      let newState: DetectionState;
+
+      if (inRange) {
+        inSec = prev.inSec + dtSec;   // prevState=hidden 時 prev.inSec=0，等於從頭累計
+        outSec = 0;
+        newState = stateFromInSec(inSec);
+      } else if (prevState === "hidden") {
+        // 從未接觸 → 維持 hidden，計時歸零
+        inSec = 0; outSec = 0;
+        newState = "hidden";
+      } else {
+        // 失去接觸：凍結 inSec、累計 outSec、由 peak rank 往下衰減
+        outSec = prev.outSec + dtSec;
+        const peakRank = RANK[stateFromInSec(prev.inSec)];
+        const decaySteps = outSec < HOLD_SEC
+          ? 0
+          : Math.floor((outSec - HOLD_SEC) / DECAY_STEP_SEC) + 1;
+        const newRank = Math.max(0, peakRank - decaySteps);
+        newState = STATE_BY_RANK[newRank]!;
+        if (newRank === 0) { inSec = 0; outSec = 0; }   // 完全失聯 → reset
+      }
+
+      detectedBy[observerSideId] = newState;
+      if (inSec !== 0 || outSec !== 0) timers[observerSideId] = { inSec, outSec };
+
+      // ── emit 關鍵升降級事件 ──
+      const ev = detectionEvent(prevState, newState, side, u, simSec);
+      if (ev) events.push(ev);
     }
 
-    // detectedBy 沒變就重用同一個 unit reference（減少不必要 GC）
-    if (sameDetectedBy(u.detectedBy, detectedBy)) {
+    const nextTimers = Object.keys(timers).length > 0 ? timers : undefined;
+    if (sameDetectedBy(u.detectedBy, detectedBy) && sameTimers(u.detectionTimers, nextTimers)) {
       next[u.id] = u;
     } else {
-      next[u.id] = { ...u, detectedBy };
+      next[u.id] = { ...u, detectedBy, detectionTimers: nextTimers };
     }
   }
 
-  return next;
+  return { units: next, events };
+}
+
+/** 只在「發現 / 完成分類 / 鎖定 / 失去接觸」這幾個有意義的門檻發事件，避免洗版 */
+function detectionEvent(
+  prev: DetectionState,
+  next: DetectionState,
+  observer: Side,
+  target: Unit,
+  simSec: number,
+): EngagementEvent | null {
+  const pr = RANK[prev];
+  const nr = RANK[next];
+  const who = observer.displayName;
+  let msg: string | null = null;
+  let tag = "";
+  if (pr === 0 && nr >= 1) { msg = `${who} 發現未識別接觸 ${target.callsign}`; tag = "contact"; }
+  else if (pr < 2 && nr >= 2) { msg = `${who} 完成分類 ${target.callsign}（可接戰）`; tag = "classified"; }
+  else if (pr < 3 && nr === 3) { msg = `${who} 鎖定追蹤 ${target.callsign}`; tag = "tracked"; }
+  else if (pr >= 1 && nr === 0) { msg = `${who} 對 ${target.callsign} 失去接觸`; tag = "lost"; }
+  if (!msg) return null;
+  return {
+    id: `evt-${simSec.toFixed(1)}-det-${observer.id}-${target.id}-${tag}`,
+    simAtSec: simSec,
+    kind: "detection",
+    targetId: target.id,
+    position: [target.position.lng, target.position.lat],
+    message: msg,
+  };
 }
 
 function sameDetectedBy(a: Unit["detectedBy"], b: Unit["detectedBy"]): boolean {
@@ -85,6 +190,21 @@ function sameDetectedBy(a: Unit["detectedBy"], b: Unit["detectedBy"]): boolean {
   if (ak.length !== bk.length) return false;
   for (const k of ak) {
     if ((a as Record<string, string>)[k] !== (b as Record<string, string>)[k]) return false;
+  }
+  return true;
+}
+
+function sameTimers(
+  a: Unit["detectionTimers"],
+  b: Partial<Record<SideId, Timer>> | undefined,
+): boolean {
+  const ak = a ? Object.keys(a) : [];
+  const bk = b ? Object.keys(b) : [];
+  if (ak.length !== bk.length) return false;
+  for (const k of ak) {
+    const av = a![k as SideId]!;
+    const bv = b?.[k as SideId];
+    if (!bv || av.inSec !== bv.inSec || av.outSec !== bv.outSec) return false;
   }
   return true;
 }
