@@ -276,6 +276,11 @@ export interface Scenario {
   acousticModel?: boolean;
   /** 聲學溫躍層深度（公尺，E20）。跨層聲傳會額外衰減；省略 = 60m */
   sonarLayerDepthM?: number;
+  /**
+   * 會聚區間距（km，E20 深水）。> 0 時於 N×間距 ± 5km 形成偵測環（環內 TL 大降）、
+   * 環間為陰影區。典型 ~55km。省略 / 0 = 無 CZ（淺水或不模擬）。
+   */
+  convergenceZoneKm?: number;
 }
 
 // ── 飛彈（in-flight） ────────────────────────────────────

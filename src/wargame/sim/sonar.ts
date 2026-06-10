@@ -27,6 +27,20 @@ const RECEIVER_SPEED_NOISE = 0.4;    // 接收方每節自噪增量（dB/kn）
 const LAYER_LOSS_DB = 8;             // 跨溫躍層單程額外損失（主動為雙程 → 影響加倍）
 export const DEFAULT_LAYER_DEPTH_M = 60;
 
+// ── 會聚區（Convergence Zone, CZ）──
+// 深水中聲線下折再上折，在 ~N×CZ 間距處形成偵測環（環內 TL 大幅降低），
+// 環與環之間為「陰影區」聽不到。典型首環 ~55km，之後每 ~55km 一環。
+const CZ_HALF_WIDTH_KM = 5;          // 環半寬（±km 內視為環內）
+const CZ_GAIN_DB = 18;               // 環內聲線聚焦 → 單程 TL 減少量
+
+/** 會聚區增益（dB，正值代表 TL 減少）。czSpacingKm ≤ 0 → 關閉 */
+function convergenceGainDb(rangeKm: number, czSpacingKm: number): number {
+  if (czSpacingKm <= 0) return 0;
+  const n = Math.round(rangeKm / czSpacingKm);
+  if (n < 1) return 0;   // n=0 是直達路徑，不算 CZ
+  return Math.abs(rangeKm - n * czSpacingKm) <= CZ_HALF_WIDTH_KM ? CZ_GAIN_DB : 0;
+}
+
 /** 取單位聲學特性（catalog） */
 export function acousticsOf(u: Unit): AcousticProfile | undefined {
   return UNIT_CATALOG[u.kind].acoustics;
@@ -42,11 +56,14 @@ function dbSum(a: number, b: number): number {
   return 10 * Math.log10(10 ** (a / 10) + 10 ** (b / 10));
 }
 
-/** 單程傳播損失（dB）：球面擴散 20log10(r) + 吸收 + 溫躍層跨層損失 */
-export function transmissionLossDb(rangeKm: number, layerCrossing: boolean): number {
+/** 單程傳播損失（dB）：球面擴散 20log10(r) + 吸收 + 溫躍層跨層損失 − 會聚區增益 */
+export function transmissionLossDb(
+  rangeKm: number, layerCrossing: boolean, czSpacingKm = 0,
+): number {
   const rM = Math.max(1, rangeKm * 1000);
   let tl = 20 * Math.log10(rM) + ABSORPTION_DB_PER_KM * rangeKm;
   if (layerCrossing) tl += LAYER_LOSS_DB;
+  tl -= convergenceGainDb(rangeKm, czSpacingKm);   // 會聚區聚焦 → 損失降低
   return tl;
 }
 
@@ -77,8 +94,9 @@ export function passiveSignalExcessDb(args: {
   layerCrossing: boolean;
   passive: NonNullable<AcousticProfile["passive"]>;
   receiverSpeedKnots: number;
+  czSpacingKm?: number;
 }): number {
-  const tl = transmissionLossDb(args.rangeKm, args.layerCrossing);
+  const tl = transmissionLossDb(args.rangeKm, args.layerCrossing, args.czSpacingKm ?? 0);
   const nl = noiseLevelDb(args.passive.selfNoiseDb, args.receiverSpeedKnots);
   return args.sourceLevelDb - tl - (nl - args.passive.arrayGainDb) - args.passive.dtDb;
 }
@@ -91,8 +109,9 @@ export function activeSignalExcessDb(args: {
   targetStrengthDb: number;
   passive: NonNullable<AcousticProfile["passive"]>;
   receiverSpeedKnots: number;
+  czSpacingKm?: number;
 }): number {
-  const tl = transmissionLossDb(args.rangeKm, args.layerCrossing);
+  const tl = transmissionLossDb(args.rangeKm, args.layerCrossing, args.czSpacingKm ?? 0);
   const nl = noiseLevelDb(args.passive.selfNoiseDb, args.receiverSpeedKnots);
   return args.pingSourceLevelDb - 2 * tl + args.targetStrengthDb
     - (nl - args.passive.arrayGainDb) - args.passive.dtDb;
@@ -104,7 +123,7 @@ export function activeSignalExcessDb(args: {
  * - 主動：sensor.activeSonar 開且具 active + passive → 用 ping 回波
  */
 export function sonarDetects(
-  sensor: Unit, target: Unit, rangeKm: number, layerDepthM: number,
+  sensor: Unit, target: Unit, rangeKm: number, layerDepthM: number, czSpacingKm = 0,
 ): boolean {
   const sa = acousticsOf(sensor);
   const ta = acousticsOf(target);
@@ -120,6 +139,7 @@ export function sonarDetects(
       layerCrossing,
       passive: sa.passive,
       receiverSpeedKnots: sensor.position.speedKnots,
+      czSpacingKm,
     });
     if (se >= 0) return true;
   }
@@ -133,6 +153,7 @@ export function sonarDetects(
       targetStrengthDb: ta.targetStrengthDb,
       passive: sa.passive,
       receiverSpeedKnots: sensor.position.speedKnots,
+      czSpacingKm,
     });
     if (se >= 0) return true;
   }

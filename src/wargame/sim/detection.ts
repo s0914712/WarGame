@@ -78,6 +78,7 @@ export function computeDetection(
   occlusionEnabled = true,
   acousticModel = false,
   sonarLayerDepthM = DEFAULT_LAYER_DEPTH_M,
+  sonarConvergenceKm = 0,
 ): DetectionResult {
   const sideMap = new Map<SideId, Side>(sides.map((s) => [s.id, s]));
   const events: EngagementEvent[] = [];
@@ -150,7 +151,7 @@ export function computeDetection(
               [s.position.lng, s.position.lat],
               [u.position.lng, u.position.lat],
             );
-            if (sonarDetects(s, u, d, sonarLayerDepthM)) { inRange = true; break; }
+            if (sonarDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm)) { inRange = true; break; }
           }
         }
       }

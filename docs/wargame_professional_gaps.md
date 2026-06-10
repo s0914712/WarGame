@@ -193,9 +193,10 @@
 **現況**：`sim/sonar.ts` 主動/被動聲納方程式
 （被動 SE = SL−TL−(NL−DI)−DT；主動 SE = SL_ping−2·TL+TS−(NL−DI)−DT）。
 傳播損失含球面擴散 + 吸收 + 溫躍層跨層損失；噪音隨航速增加；
-主動聲納偵潛遠但 ping 曝露自身。`Scenario.acousticModel` 啟用，`asw_escort_2031` 場景示範。
-**未做（未來）**：convergence zone（CZ 50km 跳遠）、可指令控制下潛深度（目前固定深度）、
-被動測向三角定位、拖曳陣列 vs 艦艏陣列分離。
+主動聲納偵潛遠但 ping 曝露自身。**會聚區（CZ）**於 ~N×55km 環內降低 TL 形成偵測環、環間陰影區聽不到
+（`Scenario.convergenceZoneKm`）。`Scenario.acousticModel` 啟用，`asw_escort_2031` 場景示範。
+**未做（未來）**：可指令控制下潛深度（目前固定深度）、被動測向三角定位、拖曳陣列 vs 艦艏陣列分離、
+海底地形/聲速剖面 SSP。
 
 ---
 

@@ -146,6 +146,7 @@ export const ASW_ESCORT_2031: Scenario = {
   pendingCommands: [],
   acousticModel: true,        // 啟用 E20 聲納方程式偵測
   sonarLayerDepthM: 60,       // 溫躍層深度
+  convergenceZoneKm: 55,      // 深水會聚區間距（首環 ~55km）— 潛艦可遠距聽到吵雜船團
   camera: {
     center: [123.10, 22.40],
     zoom: 8.2,
