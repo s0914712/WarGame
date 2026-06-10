@@ -4,7 +4,13 @@
 > 用途：盤點現有 wargame 模式還缺什麼，方便後續分階段補。
 
 ## 目前已有
-偵測（binary 二值化）/ 自動接戰 / 飛彈 + 拖尾 + 爆炸 / 殘骸 / NATO SIDC / FoW / 多陣營 / POV / 5 場景 + 9 單位 / Plan Mode / Replay JSON / LLM Adversary / 勝負判定 / 戰況統計
+偵測（**漸進狀態機 unknown→classified→tracked，A2 ✅**）/ **ROE 交戰規則（D15 ✅）** /
+自動接戰 / 飛彈 + 拖尾 + 爆炸 / **飛行剖面 sea_skim/cruise（B7 部分 ✅）** /
+**分層防空攔截彈 CIWS/SAM/愛國者（B8 ✅）** / 殘骸 / NATO SIDC / FoW / 多陣營 / POV /
+5 場景 + 9 單位 / Plan Mode / Replay JSON / LLM Adversary / 勝負判定 / 戰況統計
+
+> 進度（2026-06）：A2 偵測狀態機 + D15 ROE + B7/B8 飛行剖面與分層防空已實作。
+> 下一波建議：B7 補 ballistic 剖面（DF-26 須單位 subtype）、B6 多武器掛載、A5 地形遮蔽。
 
 下方按 6 大領域 + 24 項缺口分析。每項都帶「為什麼專業級需要」+「在現有架構怎麼插」。
 

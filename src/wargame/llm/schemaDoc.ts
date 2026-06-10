@@ -46,6 +46,7 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
       },
       "waypoints": [[121.4, 25.3], [121.0, 25.2]],
       "detectedByPlayer": "own",       // own | tracked | classified | unknown | hidden
+      "roe": "weapons_free",           // 僅己方單位有：交戰規則（見下）
       "constraints": { "forbidDomains": ["land"] }  // 不可進入的域
     }
   ]
@@ -65,6 +66,7 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
     { "kind": "set_speed", "unitId": "BLUE-SH-01", "speedKnots": 25 },
     { "kind": "engage", "unitId": "BLUE-SH-01", "targetUnitId": "RED-SH-01" },
     { "kind": "hold", "unitId": "BLUE-SH-01" },
+    { "kind": "set_roe", "unitId": "BLUE-SH-01", "roe": "weapons_tight" },
     { "kind": "update_attributes", "unitId": "BLUE-SH-01",
       "core": { "rangeKm": 200, "speedKnots": 28 }
     }
@@ -93,7 +95,25 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
    - \`drone\` 海陸皆可
 2. **燃料**：所有 waypoint 累計距離應 ≤ \`fuel.remainingKm\`，否則只 warning（單位會中途停下）
 3. **速率 / 屬性**：超過 catalog 範圍會被 clamp 並回 warning
-4. **engage 目標**：必須是已偵測到的敵方（detectedByPlayer !== "hidden"），否則 engine 可能拒絕
+4. **接戰需先「分類」**：偵測是漸進的 — 接觸後先 \`unknown\`（看到光點但不知是誰），
+   約 20s 後升 \`classified\`（可開火），再 20s 升 \`tracked\`（穩定追蹤）。失去接觸會反向降級。
+   **必須 detectedByPlayer ≥ classified 才能開火**（unknown 階段 engage 會被 engine 拒絕）。
+
+## 交戰規則 ROE（set_roe）
+| roe | 行為 |
+|---|---|
+| \`weapons_free\` | 主動接戰射程內任何已分類（≥ classified）敵方（預設）|
+| \`weapons_tight\` | 只接戰已 \`tracked\`（完成正面識別）的敵方 |
+| \`defensive_only\` | 只反擊「正對我方發射飛彈」的敵方 |
+| \`weapons_hold\` | 不主動接戰；只打你用 \`engage\` 明確指定的目標 |
+
+戰術用途：佈防階段可下 \`weapons_hold\` 避免過早暴露 / 誤擊；接敵時切 \`weapons_free\`。
+
+## 分層防空（自動）
+艦艇 / SAM 車會**自動**對來襲飛彈發射攔截彈（你不需下令）：愛國者（長程）→ 中程 SAM
+→ 艦載點防禦逐層接戰，每發攔截有機率失敗。**單發攻擊常被攔下** — 想突破密集防空網
+應「飽和攻擊」：對同一目標**集中多單位、多枚飛彈**同時來襲，耗盡其攔截彈與火力通道。
+攔截彈與攻擊共用單位彈艙（ammo），持續接戰會耗盡，需靠補給艦 / 機場再裝填。
 5. **只能命令己方**（side === "blue" 且 isPlayer === true 的陣營）；命令對方單位會被允許但沒意義
 6. **JSON 必須合法**：尤其 \`version\` 欄位必須完全相同
 

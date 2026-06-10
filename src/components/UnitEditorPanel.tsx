@@ -13,12 +13,28 @@
  */
 
 import { useEffect, useSyncExternalStore } from "react";
-import type { CoreAttributes } from "../wargame/types";
+import type { CoreAttributes, RoeMode } from "../wargame/types";
 import { scenarioStore } from "../wargame/scenarioStore";
+import { viewStore } from "../wargame/viewStore";
 import { editorStore } from "../wargame/editor/editorStore";
 import { UNIT_CATALOG, CORE_ATTRIBUTE_LABELS } from "../wargame/catalog/units";
 import { wargameClock } from "../wargame/clock";
 import { validatePlan } from "../wargame/sim/validate";
+
+const ROE_OPTIONS: { value: RoeMode; label: string }[] = [
+  { value: "weapons_free", label: "自由接戰 (Free)" },
+  { value: "weapons_tight", label: "限制接戰 (Tight)" },
+  { value: "defensive_only", label: "僅防禦 (Defensive)" },
+  { value: "weapons_hold", label: "停止接戰 (Hold)" },
+];
+
+const CONTACT_LABEL: Record<string, string> = {
+  hidden: "未偵測",
+  unknown: "未識別接觸",
+  classified: "已分類（可接戰）",
+  tracked: "穩定追蹤",
+  own: "己方",
+};
 
 const CORE_KEYS: (keyof CoreAttributes)[] = [
   "rangeKm",
@@ -44,7 +60,7 @@ function buildSnapshot(): Snapshot {
   return {
     selectedUnitId: id,
     signature: id && u
-      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}`
+      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}`
       : "",
     editorMode: editorStore.getMode(),
     planningUnitId: editorStore.getPlanningUnitId(),
@@ -108,6 +124,23 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
   const catalog = UNIT_CATALOG[targetUnit.kind];
   const side = scenarioStore.getState().scenario.sides.find((s) => s.id === targetUnit.sideId);
   const sideColor = side?.colorPrimary ?? "#888";
+
+  // ROE / 偵測狀態（相對於當前 POV）
+  const activeSide = viewStore.getActiveSideId();
+  const isOwnUnit = activeSide == null || targetUnit.sideId === activeSide;
+  const effectiveRoe: RoeMode = targetUnit.roe ?? side?.roe ?? "weapons_free";
+  const contactState = (activeSide && targetUnit.sideId !== activeSide && (side?.isHostileTo?.length ?? 0) >= 0)
+    ? (targetUnit.detectedBy[activeSide] ?? "hidden")
+    : "own";
+  const setRoe = (roe: RoeMode) => {
+    scenarioStore.enqueueCommand({
+      id: `ui-roe-${Date.now()}`,
+      unitId: targetUnit.id,
+      simAtSec: wargameClock.getSimTime(),
+      kind: "set_roe",
+      roe,
+    });
+  };
 
   const pending = editorStore.getPendingWaypoints();
   const isPlanning = mode === "planRoute";
@@ -226,6 +259,46 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
           max={targetUnit.ammoMax}
           color="#fbbf24"
         />
+      </div>
+
+      {/* ROE（己方）/ 偵測狀態（敵方） */}
+      <div
+        style={{
+          padding: "10px 14px",
+          borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
+        }}
+      >
+        {isOwnUnit ? (
+          <div>
+            <div style={{ fontSize: 15, color: "#94a3b8", marginBottom: 6 }}>交戰規則 (ROE)</div>
+            <select
+              value={effectiveRoe}
+              onChange={(e) => setRoe(e.target.value as RoeMode)}
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                fontSize: 17,
+                background: "rgba(30, 41, 59, 0.9)",
+                color: "#e2e8f0",
+                border: "1px solid rgba(148, 163, 184, 0.3)",
+                borderRadius: 6,
+                cursor: "pointer",
+              }}
+            >
+              {ROE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div style={{ fontSize: 16, color: "#94a3b8", display: "flex", justifyContent: "space-between" }}>
+            <span>偵測狀態</span>
+            <span style={{ color: contactState === "tracked" || contactState === "classified" ? "#86efac"
+              : contactState === "unknown" ? "#facc15" : "#64748b", fontWeight: 600 }}>
+              {CONTACT_LABEL[contactState] ?? contactState}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Planning banner */}

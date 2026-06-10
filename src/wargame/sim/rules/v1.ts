@@ -9,8 +9,12 @@
  * scenarioStore / combat.ts 完全不動。
  */
 import type { CombatRuleSet } from "../combat";
-import type { Missile } from "../../types";
+import type { Missile, MissileProfile } from "../../types";
 import { haversineKm } from "../geo";
+import { detectionRank, MIN_ENGAGE_STATE } from "../detection";
+import { UNIT_CATALOG } from "../../catalog/units";
+
+const MIN_ENGAGE_RANK = detectionRank(MIN_ENGAGE_STATE);
 
 const COOLDOWN_SEC = 5;
 const MISSILE_SPEED_KNOTS = 600;
@@ -22,6 +26,8 @@ export const COMBAT_RULES_V1: CombatRuleSet = {
     if (target.hpCurrent <= 0) return false;
     if (attacker.hpCurrent <= 0) return false;
     if (attacker.ammoCurrent <= 0) return false;     // 沒彈藥 → 不能開火
+    // 識別閘門：必須對目標 ≥ classified 才能釋放武器（含手動 engage 命令）
+    if (detectionRank(target.detectedBy[attacker.sideId]) < MIN_ENGAGE_RANK) return false;
     const d = haversineKm(
       [attacker.position.lng, attacker.position.lat],
       [target.position.lng, target.position.lat],
@@ -37,6 +43,9 @@ export const COMBAT_RULES_V1: CombatRuleSet = {
   },
 
   spawnMissile(attacker, target, simSec): Missile {
+    // 飛行剖面：打海上目標 → 海面掠飛（難攔）；其餘 → 巡弋
+    const targetDomain = UNIT_CATALOG[target.kind].domain;
+    const profile: MissileProfile = targetDomain === "sea" ? "sea_skim" : "cruise";
     return {
       id: `msl-${simSec.toFixed(1)}-${attacker.id}-${target.id}`,
       attackerId: attacker.id,
@@ -47,6 +56,8 @@ export const COMBAT_RULES_V1: CombatRuleSet = {
       damage: target.core.hpMax * DAMAGE_FRAC,
       spawnedAtSimSec: simSec,
       distanceTravelledKm: 0,
+      role: "attack",
+      profile,
     };
   },
 

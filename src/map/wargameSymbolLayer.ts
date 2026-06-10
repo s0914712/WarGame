@@ -26,6 +26,8 @@ interface FeatureProps {
   selected: boolean;
   /** 1 = 玩家方視角看得到（己方 / 中立 / 已偵測敵方）；0 = 玩家方未偵測 */
   visible: number;
+  /** 1 = 未識別接觸（unknown）：顯示為匿名 "?"、不洩漏身份 / HP */
+  unknownContact: number;
   hpBar: string;           // "▰▰▰▱▱" 之類的 5 段條
   hpColor: string;         // 顏色按 HP % 換 green/yellow/red
   hpText: string;          // "180/250"
@@ -54,9 +56,12 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
   const features: GeoJSON.Feature<GeoJSON.Point, FeatureProps>[] = [];
   for (const u of Object.values(units)) {
     let visible = 1;
+    let unknownContact = 0;
     if (activeSide && hostileToActive.includes(u.sideId)) {
       const det = u.detectedBy[activeSide];
       visible = det && det !== "hidden" ? 1 : 0;
+      // 漸進偵測：unknown 階段只看到匿名接觸，尚未識別身份 / HP
+      if (det === "unknown") unknownContact = 1;
     }
     // Spectator (activeSide == null) → everything visible 100%
     // FoW 嚴格 + 非 spectator + 未偵測 → skip 渲染
@@ -68,12 +73,14 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
       properties: {
         unitId: u.id,
         icon: iconNameOf(u.kind, u.sideId),
-        callsign: u.callsign,
+        // unknown 接觸：不洩漏真實 callsign / HP
+        callsign: unknownContact ? "未識別接觸" : u.callsign,
         selected: u.id === selectedId,
         visible,
-        hpBar: hpBarText(hpFrac),
+        unknownContact,
+        hpBar: unknownContact ? "" : hpBarText(hpFrac),
         hpColor: hpColorOf(hpFrac),
-        hpText: `${u.hpCurrent}/${u.core.hpMax}`,
+        hpText: unknownContact ? "" : `${u.hpCurrent}/${u.core.hpMax}`,
       },
       geometry: { type: "Point", coordinates: [u.position.lng, u.position.lat] },
     });
@@ -106,12 +113,12 @@ export function attachWargameSymbolLayer(map: MapboxMap): () => void {
       "icon-anchor": "center",
     },
     paint: {
-      // 未偵測敵方淡化到 15%（仍看得到位置但醒目度低）
+      // 未偵測敵方淡化到 15%；unknown 接觸 0.55（看得到光點但醒目度低）；已識別 1.0
       "icon-opacity": [
         "case",
-        ["==", ["get", "visible"], 1],
+        ["==", ["get", "visible"], 0], 0.15,
+        ["==", ["get", "unknownContact"], 1], 0.55,
         1.0,
-        0.15,
       ],
     },
   });

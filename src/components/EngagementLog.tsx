@@ -5,7 +5,7 @@
  * Auto-scroll：新事件出現時自動捲到底。
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Eye, Crosshair, Zap, MinusCircle, Skull, ScrollText, ChevronUp, ChevronDown } from "lucide-react";
+import { Eye, Crosshair, Zap, MinusCircle, Skull, Shield, ScrollText, ChevronUp, ChevronDown } from "lucide-react";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { wargameClock, formatTPlus } from "../wargame/clock";
 import type { EngagementEvent, EngagementEventKind } from "../wargame/types";
@@ -146,6 +146,7 @@ function colorFor(k: EngagementEventKind): string {
     case "hit": return "#86efac";
     case "miss": return "#94a3b8";
     case "destroyed": return "#fca5a5";
+    case "intercept": return "#38bdf8";
   }
 }
 
@@ -156,6 +157,7 @@ function iconFor(k: EngagementEventKind) {
     case "hit": return Zap;
     case "miss": return MinusCircle;
     case "destroyed": return Skull;
+    case "intercept": return Shield;
   }
 }
 

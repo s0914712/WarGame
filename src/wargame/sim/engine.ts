@@ -51,16 +51,19 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
     unitsAfterMove[u.id] = advanceUnit(u, dtSec);
   }
 
-  // 4. 偵測
-  const unitsAfterDetect = computeDetection(unitsAfterMove, state.scenario.sides);
+  // 4. 偵測（漸進狀態機；emit detection 事件）
+  const nextSimSec = state.simTimeSec + dtSec;
+  const detection = computeDetection(unitsAfterMove, state.scenario.sides, dtSec, nextSimSec);
 
-  // 5. 戰鬥
+  // 5. 戰鬥 — 把 detection 事件併入本 tick：eventsThisTick 由此重置、eventsAll 先接 detection
   const afterCombat = runCombat(
     {
       ...state,
-      units: unitsAfterDetect,
+      units: detection.units,
       pendingCommands,
-      simTimeSec: state.simTimeSec + dtSec,
+      simTimeSec: nextSimSec,
+      eventsThisTick: detection.events,
+      eventsAll: [...state.eventsAll, ...detection.events],
     },
     COMBAT_RULES_V1,
     dtSec,

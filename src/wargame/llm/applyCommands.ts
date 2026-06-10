@@ -15,7 +15,9 @@ import { scenarioStore } from "../scenarioStore";
 import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
 import { validatePlan } from "../sim/validate";
-import type { Command, CoreAttributes, SideId } from "../types";
+import type { Command, CoreAttributes, RoeMode, SideId } from "../types";
+
+const VALID_ROE: RoeMode[] = ["weapons_free", "weapons_tight", "defensive_only", "weapons_hold"];
 import {
   COMMANDS_VERSION,
   RESULT_VERSION,
@@ -176,6 +178,21 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
     case "hold": {
       const id = makeCmdId();
       scenarioStore.enqueueCommand({ id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "hold" });
+      return { index, status: "applied", commandId: id };
+    }
+
+    // ── set_roe ──
+    case "set_roe": {
+      if (!VALID_ROE.includes(cmd.roe)) {
+        return {
+          index, status: "rejected",
+          reason: `'roe' must be one of ${VALID_ROE.join(" | ")}; got "${cmd.roe}"`,
+        };
+      }
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_roe", roe: cmd.roe,
+      });
       return { index, status: "applied", commandId: id };
     }
 

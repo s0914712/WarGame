@@ -59,6 +59,8 @@ export interface UnitCatalogEntry {
   /** 補給單位專用：每秒可恢復多少 km 油 + 多少發彈藥 */
   supplyFuelKmPerSec?: number;
   supplyAmmoPerSec?: number;
+  /** 防空攔截能力（B8）；省略 = 無攔截能力 */
+  defaultInterceptor?: InterceptorCapability;
 }
 
 export interface UnitConstraints {
@@ -110,6 +112,21 @@ export interface Position {
 
 export type DetectionState = "hidden" | "unknown" | "classified" | "tracked";
 
+/**
+ * 交戰規則（Rules of Engagement）。沿用 CMO 慣例：
+ *   - weapons_free   ：可主動接戰射程內任何「已分類（≥ classified）」的敵方（預設）
+ *   - weapons_tight  ：只接戰已完成正面識別（tracked）的敵方
+ *   - defensive_only ：只反擊「正對我方發射飛彈」的敵方
+ *   - weapons_hold   ：完全不主動接戰；只接受明確 engage 命令
+ *
+ * 有效 ROE = unit.roe ?? side.roe ?? "weapons_free"（per-unit 覆寫 per-side 預設）。
+ */
+export type RoeMode =
+  | "weapons_free"
+  | "weapons_tight"
+  | "defensive_only"
+  | "weapons_hold";
+
 // ── unit runtime instance ────────────────────────────────
 export interface Unit {
   id: UnitId;
@@ -139,9 +156,22 @@ export interface Unit {
     ammoPerSec: number;
   };
   detectedBy: Partial<Record<SideId, DetectionState>>;
+  /**
+   * 偵測狀態機計時（per 觀察方 side）：
+   *   - inSec ：在有效感測範圍內持續接觸的累計秒數（驅動 unknown→classified→tracked 升級）
+   *   - outSec：失去接觸後的累計秒數（驅動降級 / 失聯）
+   * optional → 既有場景 / replay JSON 不需含此欄位（detection.ts 會初始化）。
+   */
+  detectionTimers?: Partial<Record<SideId, { inSec: number; outSec: number }>>;
   lastTickSimSec: number;
   parentId?: UnitId;
   engagingTargetId?: UnitId;
+  /** Per-unit ROE 覆寫；省略 → 用 side.roe ?? "weapons_free" */
+  roe?: RoeMode;
+  /** Per-unit 攔截能力覆寫；省略 → 用 catalog.defaultInterceptor */
+  interceptor?: InterceptorCapability;
+  /** 最近一次發射攔截彈的 sim sec（攔截冷卻計時用） */
+  lastInterceptSimSec?: number;
 }
 
 // ── commands ─────────────────────────────────────────────
@@ -154,7 +184,8 @@ export type Command =
     }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_speed"; speedKnots: number }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "engage"; targetUnitId: UnitId }
-  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "hold" };
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "hold" }
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_roe"; roe: RoeMode };
 
 // ── events ───────────────────────────────────────────────
 export type EngagementEventKind =
@@ -162,7 +193,8 @@ export type EngagementEventKind =
   | "weapon_release"
   | "hit"
   | "miss"
-  | "destroyed";
+  | "destroyed"
+  | "intercept";
 
 export interface EngagementEvent {
   id: string;
@@ -193,6 +225,8 @@ export interface Side {
   isPlayer: boolean;            // 預設玩家方（保留向後相容）
   ownership: SideOwnership;
   isHostileTo: SideId[];
+  /** 陣營預設 ROE；省略 → "weapons_free"。可被 unit.roe 覆寫 */
+  roe?: RoeMode;
 }
 
 // ── scenario ─────────────────────────────────────────────
@@ -223,6 +257,17 @@ export interface Scenario {
 }
 
 // ── 飛彈（in-flight） ────────────────────────────────────
+/**
+ * 飛行剖面（B7，簡化版）— 決定哪種防空攔截器可接戰：
+ *   - sea_skim ：海面掠飛反艦彈，只有點防禦 / 低空 SAM 攔得到
+ *   - cruise   ：一般巡弋 / 空對空 / SAM
+ *   - ballistic：彈道，只有長程 SAM（愛國者）攔得到
+ *   - pop_up   ：末端拉高俯衝
+ */
+export type MissileProfile = "sea_skim" | "cruise" | "ballistic" | "pop_up";
+/** 飛彈角色：attack = 攻擊彈打單位；interceptor = 攔截彈打來襲飛彈 */
+export type MissileRole = "attack" | "interceptor";
+
 export interface Missile {
   id: string;
   attackerId: UnitId;
@@ -234,6 +279,31 @@ export interface Missile {
   damage: number;           // 命中時對 target 造成的 hp 傷害
   spawnedAtSimSec: number;
   distanceTravelledKm: number;
+  /** 角色；省略 = "attack"（向後相容） */
+  role?: MissileRole;
+  /** 飛行剖面（attack 彈用）；省略 = "cruise" */
+  profile?: MissileProfile;
+  /** interceptor 專用：正在追擊的來襲飛彈 id（每 tick 重新導引到其當前位置） */
+  interceptTargetMissileId?: string;
+  /** interceptor 專用：攔截成功機率 */
+  interceptPKill?: number;
+}
+
+/**
+ * 防空攔截能力（B8 分層防空）。掛在 UnitCatalogEntry.defaultInterceptor，
+ * 可被 Unit.interceptor 覆寫。攔截彈消耗單位 ammoCurrent（與攻擊共用彈艙）。
+ */
+export interface InterceptorCapability {
+  /** 對來襲飛彈的接戰範圍（km） */
+  rangeKm: number;
+  /** 每發攔截成功機率 */
+  pKill: number;
+  /** 可攔截的來襲飛行剖面 */
+  profiles: MissileProfile[];
+  /** 兩次發射的最小間隔（sim sec）— 限制齊射火力 */
+  cooldownSec: number;
+  /** 攔截彈速度（knots）— 須明顯快於攻擊彈才追得上 */
+  speedKnots: number;
 }
 
 // ── 爆炸特效 ─────────────────────────────────────────────
