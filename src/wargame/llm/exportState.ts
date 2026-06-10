@@ -63,7 +63,10 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
       detectedByPlayer,
       // 己方單位才回報 ROE（有效值：unit 覆寫 > side 預設 > weapons_free）
       ...(u.sideId === povSide
-        ? { roe: u.roe ?? sideMap.get(u.sideId)?.roe ?? "weapons_free" }
+        ? {
+            roe: u.roe ?? sideMap.get(u.sideId)?.roe ?? "weapons_free",
+            ...(UNIT_CATALOG[u.kind].acoustics?.active ? { activeSonar: u.activeSonar === true } : {}),
+          }
         : {}),
       constraints: {
         forbidDomains: cat.constraints.forbidDomains,

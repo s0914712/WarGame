@@ -65,6 +65,12 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       requireRoundTrip: true,
     },
     defaultAmmoMax: 2,                // UAV 通常掛 1–2 彈
+    // 反潛機 / 反潛直升機投放聲標（sonobuoy）被動聽音；空中載台本身水下不發聲
+    acoustics: {
+      sourceLevelDb: 80,
+      targetStrengthDb: 0,
+      passive: { arrayGainDb: 16, dtDb: 6, selfNoiseDb: 38 },
+    },
   },
 
   ship_surface: {
@@ -101,6 +107,14 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       cooldownSec: 6,
       speedKnots: 2400,
     },
+    // 反潛聲學：水面艦吵（易被潛艦聽到）、艦艏被動聲納普通、可拍發主動聲納
+    acoustics: {
+      sourceLevelDb: 150,
+      noisePerKnotDb: 1.0,
+      targetStrengthDb: 25,
+      passive: { arrayGainDb: 12, dtDb: 8, selfNoiseDb: 55 },
+      active: { sourceLevelDb: 230 },
+    },
   },
 
   submarine: {
@@ -130,6 +144,13 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 43200,  // 12 hr 巡邏
     },
     defaultAmmoMax: 8,                // Mk-48 重型魚雷 8 + Harpoon
+    // 反潛聲學：潛艦安靜（低聲源級）、被動聲納佳（高陣列增益、低門檻）；預設不拍主動（保持隱蔽）
+    acoustics: {
+      sourceLevelDb: 132,
+      noisePerKnotDb: 1.2,             // 高速衝刺會變吵 → 易被偵測
+      targetStrengthDb: 12,
+      passive: { arrayGainDb: 20, dtDb: 5, selfNoiseDb: 42 },
+    },
   },
 
   fighter: {
@@ -284,12 +305,13 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     },
     defaultAmmoMax: 16,               // PAC-3 4 launcher × 4 missiles
     // 長程 / 反彈道 SAM：PAC-3 / 天弓 III，可攔彈道與高空巡弋
+    // 攔截彈須快於彈道彈（3200kn）才追得上 → 4200kn
     defaultInterceptor: {
       rangeKm: 130,
       pKill: 0.55,
       profiles: ["cruise", "ballistic", "pop_up"],
       cooldownSec: 8,
-      speedKnots: 3200,
+      speedKnots: 4200,
     },
   },
 
@@ -322,6 +344,12 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     supplyRangeKm: 6,                 // RAS 並航 6 km 內可補
     supplyFuelKmPerSec: 8,            // 每秒回 8 km 燃料
     supplyAmmoPerSec: 0.15,           // 每秒回 0.15 發（~6.7 秒 / 發）
+    // 反潛聲學：補給艦極吵、無聲納（潛艦的肥羊目標）
+    acoustics: {
+      sourceLevelDb: 152,
+      noisePerKnotDb: 1.0,
+      targetStrengthDb: 28,
+    },
   },
 
   airbase: {

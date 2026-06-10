@@ -5,12 +5,17 @@
 
 ## 目前已有
 偵測（**漸進狀態機 unknown→classified→tracked，A2 ✅**）/ **ROE 交戰規則（D15 ✅）** /
-自動接戰 / 飛彈 + 拖尾 + 爆炸 / **飛行剖面 sea_skim/cruise（B7 部分 ✅）** /
-**分層防空攔截彈 CIWS/SAM/愛國者（B8 ✅）** / 殘骸 / NATO SIDC / FoW / 多陣營 / POV /
-5 場景 + 9 單位 / Plan Mode / Replay JSON / LLM Adversary / 勝負判定 / 戰況統計
+自動接戰 / 飛彈 + 拖尾 + 爆炸 / **飛行剖面 sea_skim/cruise/ballistic（B7 ✅）** /
+**分層防空攔截彈 CIWS/SAM/愛國者 + 反彈道（B8 ✅）** /
+**地形遮蔽 + 雷達地平線（A5 ✅）** / **反潛聲納方程式 主動/被動（E20 ✅）** /
+殘骸 / NATO SIDC / FoW / 多陣營 / POV /
+**8 場景**（含反潛護航）+ 11 單位 / Plan Mode / Replay JSON / LLM Adversary / 勝負判定 / 戰況統計
 
-> 進度（2026-06）：A2 偵測狀態機 + D15 ROE + B7/B8 飛行剖面與分層防空已實作。
-> 下一波建議：B7 補 ballistic 剖面（DF-26 須單位 subtype）、B6 多武器掛載、A5 地形遮蔽。
+> 進度（2026-06）：A2 偵測狀態機 + D15 ROE + B7/B8 飛行剖面與分層防空 + A5 地形遮蔽/地平線
+> + E20 反潛聲納（聲納方程式）已實作。
+> A5 用 `Scenario.terrainOcclusion`（預設啟用）；E20 用 `Scenario.acousticModel`（預設關閉，
+> 在「反潛護航」場景啟用）。地形 LOS 為中央山脈三角剖面近似（無 DEM）。
+> 下一波建議：B6 多武器掛載（攔截彈與攻擊分艙）、A1 多 sensor type、A5 升級真實 DEM。
 
 下方按 6 大領域 + 24 項缺口分析。每項都帶「為什麼專業級需要」+「在現有架構怎麼插」。
 
@@ -184,12 +189,14 @@
 - wargameClock 加 `getSunAngle(lng, lat)` 換算當地日照
 - 對 visual sensor effective range × max(0.1, sin(sunAngle))
 
-### E20. 聲學層（潛艦戰）
-**現況**：潛艦只用 stealth 多倍率打折偵測
-**為什麼重要**：CZ（convergence zone）、temperature layer、噪音來源 — 反潛戰的核心
-**如何插**：
-- 加 SoundLayer 場景元素（溫躍層深度、聲波 CZ 50 km 跳遠）
-- sonar sensor 依目標深度查能否「聽到」（near surface / above layer / deep CZ）
+### E20. 聲學層（潛艦戰）✅ 已實作
+**現況**：`sim/sonar.ts` 主動/被動聲納方程式
+（被動 SE = SL−TL−(NL−DI)−DT；主動 SE = SL_ping−2·TL+TS−(NL−DI)−DT）。
+傳播損失含球面擴散 + 吸收 + 溫躍層跨層損失；噪音隨航速增加；
+主動聲納偵潛遠但 ping 曝露自身。**會聚區（CZ）**於 ~N×55km 環內降低 TL 形成偵測環、環間陰影區聽不到
+（`Scenario.convergenceZoneKm`）。`Scenario.acousticModel` 啟用，`asw_escort_2031` 場景示範。
+**未做（未來）**：可指令控制下潛深度（目前固定深度）、被動測向三角定位、拖曳陣列 vs 艦艏陣列分離、
+海底地形/聲速剖面 SSP。
 
 ---
 
