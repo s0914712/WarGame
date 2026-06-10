@@ -52,6 +52,8 @@ export interface LlmUnitView {
   detectedByPlayer: "hidden" | "unknown" | "classified" | "tracked" | "own";
   /** 己方單位（own）的當前 ROE；敵方省略 */
   roe?: RoeMode;
+  /** 己方單位（own）主動聲納是否拍發中（E20）；非聲納單位省略 */
+  activeSonar?: boolean;
   constraints: {
     forbidDomains?: ("land" | "air" | "sea" | "subsurface")[];
   };
@@ -64,6 +66,7 @@ export type LlmCommand =
   | LlmEngageCommand
   | LlmHoldCommand
   | LlmSetRoeCommand
+  | LlmSetActiveSonarCommand
   | LlmUpdateAttributesCommand;
 
 export interface LlmSetWaypointsCommand {
@@ -102,6 +105,14 @@ export interface LlmSetRoeCommand {
   kind: "set_roe";
   unitId: string;
   roe: RoeMode;
+  executeAtSimSec?: number;
+}
+
+/** 開 / 關主動聲納（反潛）。on=true 拍發 ping → 偵潛距離大增，但自身被敵方被動聲納遠距偵知 */
+export interface LlmSetActiveSonarCommand {
+  kind: "set_active_sonar";
+  unitId: string;
+  on: boolean;
   executeAtSimSec?: number;
 }
 

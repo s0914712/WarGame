@@ -48,5 +48,7 @@ function applyOne(unit: Unit, cmd: Command): Unit {
       return { ...unit, waypoints: [], position: { ...unit.position, speedKnots: 0 } };
     case "set_roe":
       return { ...unit, roe: cmd.roe };
+    case "set_active_sonar":
+      return { ...unit, activeSonar: cmd.on };
   }
 }

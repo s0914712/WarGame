@@ -63,6 +63,8 @@ export interface UnitCatalogEntry {
   defaultInterceptor?: InterceptorCapability;
   /** 武器飛行剖面預設（B7）；省略 → 依目標域推導（打海上=sea_skim、其餘=cruise） */
   weaponProfile?: MissileProfile;
+  /** 聲學特性（E20 反潛）；省略 = 無聲納特徵（不參與聲學偵測） */
+  acoustics?: AcousticProfile;
 }
 
 export interface UnitConstraints {
@@ -176,6 +178,8 @@ export interface Unit {
   lastInterceptSimSec?: number;
   /** Per-unit 武器飛行剖面覆寫（B7）；如 DF-26 設 "ballistic"。省略 → catalog.weaponProfile ?? 域推導 */
   weaponProfile?: MissileProfile;
+  /** 主動聲納是否開啟（E20）。開 = 拍發 ping，偵測潛艦距離大增，但自身被動曝露給敵方被動聲納 */
+  activeSonar?: boolean;
 }
 
 // ── commands ─────────────────────────────────────────────
@@ -189,7 +193,8 @@ export type Command =
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_speed"; speedKnots: number }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "engage"; targetUnitId: UnitId }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "hold" }
-  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_roe"; roe: RoeMode };
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_roe"; roe: RoeMode }
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_active_sonar"; on: boolean };
 
 // ── events ───────────────────────────────────────────────
 export type EngagementEventKind =
@@ -264,6 +269,13 @@ export interface Scenario {
    * 潛艦（subsurface，聲納regime）不受影響。設 false 可關閉（保留舊平衡）。
    */
   terrainOcclusion?: boolean;
+  /**
+   * 反潛聲納模型（E20）。省略 = 關閉（潛艦沿用舊雷達 + stealth 偵測模型，保留既有場景平衡）。
+   * 啟用後：潛艦只能被聲納（聲納方程式）偵測，雷達看不到水下；水中目標走被動/主動聲納。
+   */
+  acousticModel?: boolean;
+  /** 聲學溫躍層深度（公尺，E20）。跨層聲傳會額外衰減；省略 = 60m */
+  sonarLayerDepthM?: number;
 }
 
 // ── 飛彈（in-flight） ────────────────────────────────────
@@ -314,6 +326,26 @@ export interface InterceptorCapability {
   cooldownSec: number;
   /** 攔截彈速度（knots）— 須明顯快於攻擊彈才追得上 */
   speedKnots: number;
+}
+
+/**
+ * 聲學特性（E20 反潛聲納模型）。掛在 UnitCatalogEntry.acoustics。
+ * 用於聲納方程式（被動 passive sonar / 主動 active sonar）：
+ *   被動 SE = SL − TL − (NL − DI) − DT
+ *   主動 SE = SL_ping − 2·TL + TS − (NL − DI) − DT
+ * SE（signal excess）≥ 0 → 偵測到。
+ */
+export interface AcousticProfile {
+  /** 自身輻射噪音源平（dB，安靜巡航時）— 作為被別人聽到的「聲源」 */
+  sourceLevelDb: number;
+  /** 每節航速額外增加的噪音（dB/kn）— 高速 = 吵 = 易被聽到 */
+  noisePerKnotDb?: number;
+  /** 目標強度（dB）— 主動聲納回波用 */
+  targetStrengthDb: number;
+  /** 作為被動接收方的能力（沒有 = 不能被動偵測） */
+  passive?: { arrayGainDb: number; dtDb: number; selfNoiseDb: number };
+  /** 作為主動聲納發射方的能力（沒有 = 不能主動拍發） */
+  active?: { sourceLevelDb: number };
 }
 
 // ── 爆炸特效 ─────────────────────────────────────────────

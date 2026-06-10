@@ -60,7 +60,7 @@ function buildSnapshot(): Snapshot {
   return {
     selectedUnitId: id,
     signature: id && u
-      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}`
+      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}|${u.activeSonar ? 1 : 0}`
       : "",
     editorMode: editorStore.getMode(),
     planningUnitId: editorStore.getPlanningUnitId(),
@@ -139,6 +139,18 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
       simAtSec: wargameClock.getSimTime(),
       kind: "set_roe",
       roe,
+    });
+  };
+  // 主動聲納（E20）：僅具拍發能力的單位（如水面艦）顯示開關
+  const canPing = UNIT_CATALOG[targetUnit.kind].acoustics?.active != null;
+  const sonarOn = targetUnit.activeSonar === true;
+  const toggleSonar = () => {
+    scenarioStore.enqueueCommand({
+      id: `ui-sonar-${Date.now()}`,
+      unitId: targetUnit.id,
+      simAtSec: wargameClock.getSimTime(),
+      kind: "set_active_sonar",
+      on: !sonarOn,
     });
   };
 
@@ -289,6 +301,26 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            {canPing && (
+              <button
+                onClick={toggleSonar}
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  padding: "8px 10px",
+                  fontSize: 16,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  border: sonarOn ? "1px solid #38bdf8" : "1px solid rgba(148,163,184,0.3)",
+                  background: sonarOn ? "rgba(56,189,248,0.22)" : "rgba(148,163,184,0.12)",
+                  color: sonarOn ? "#7dd3fc" : "#cbd5e1",
+                }}
+                title="主動聲納：偵潛距離大增，但會曝露自身位置給敵方被動聲納"
+              >
+                主動聲納 {sonarOn ? "● ON（拍發中／已曝露）" : "○ OFF（靜默）"}
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ fontSize: 16, color: "#94a3b8", display: "flex", justifyContent: "space-between" }}>

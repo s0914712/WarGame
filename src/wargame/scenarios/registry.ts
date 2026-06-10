@@ -11,6 +11,7 @@ import { CSG_DEFENSE_2032 } from "./csg_defense_2032";
 import { BASHI_BLOCKADE_2030 } from "./bashi_blockade_2030";
 import { AMMO_TEST_2030 } from "./ammo_test_2030";
 import { INVASION_H_HOUR_2030 } from "./invasion_h_hour_2030";
+import { ASW_ESCORT_2031 } from "./asw_escort_2031";
 
 export interface ScenarioEntry {
   scenario: Scenario;
@@ -55,6 +56,11 @@ export const SCENARIO_REGISTRY: ScenarioEntry[] = [
     scenario: INVASION_H_HOUR_2030,
     shortDescription: "三線兩棲登陸 + 彈道飛彈壓制 · ~70 單位 · 90 分鐘",
     tags: ["高難度", "登島", "ROC", "USN", "PLA", "全要素"],
+  },
+  {
+    scenario: ASW_ESCORT_2031,
+    shortDescription: "反潛護航 · 主動/被動聲納方程式 · 40 分鐘",
+    tags: ["反潛", "ASW", "聲納", "ROC", "PLA", "潛艦"],
   },
 ];
 

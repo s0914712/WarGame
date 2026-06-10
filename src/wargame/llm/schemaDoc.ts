@@ -67,6 +67,7 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
     { "kind": "engage", "unitId": "BLUE-SH-01", "targetUnitId": "RED-SH-01" },
     { "kind": "hold", "unitId": "BLUE-SH-01" },
     { "kind": "set_roe", "unitId": "BLUE-SH-01", "roe": "weapons_tight" },
+    { "kind": "set_active_sonar", "unitId": "BLUE-FFG-01", "on": true },
     { "kind": "update_attributes", "unitId": "BLUE-SH-01",
       "core": { "rangeKm": 200, "speedKnots": 28 }
     }
@@ -122,6 +123,14 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
 - **雷達地平線**：低空目標（貼海艦艇 / 掠海彈）只能近距被發現；
   高山雷達站、空中載台（高高度）才看得遠 → 善用雷達站 / 預警機建立遠程偵測網。
 - 潛艦（聲納）不受地形 / 地平線影響。
+
+## 反潛聲納（E20，僅 acousticModel 場景如「反潛護航」）
+潛艦在水下**雷達看不到**，只能靠聲納（聲納方程式）偵測：
+- **被動聲納**（預設、靜默）：聽對方輻射噪音。吵的目標（水面艦 / 補給艦）很遠就被潛艦聽到；
+  安靜潛艦水面艦幾乎聽不到。**高速會變吵 → 易被偵獲**，潛艦應慢速潛行。
+- **主動聲納**（\`set_active_sonar on:true\`，拍發 ping）：偵潛距離大增（~十餘 km），
+  但 ping 極響，自身位置會被敵方被動聲納在 **>100km** 外聽到 → 高風險高回報。
+- 反潛戰術：用 P-8 反潛機（聲標被動）大範圍掃蕩 + 巡防艦在接觸後開主動聲納精確定位 → 進入魚雷射程擊沉。
 5. **只能命令己方**（side === "blue" 且 isPlayer === true 的陣營）；命令對方單位會被允許但沒意義
 6. **JSON 必須合法**：尤其 \`version\` 欄位必須完全相同
 

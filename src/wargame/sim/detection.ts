@@ -22,6 +22,7 @@ import type { DetectionState, EngagementEvent, Side, SideId, Unit, UnitId } from
 import { haversineKm } from "./geo";
 import { UNIT_CATALOG } from "../catalog/units";
 import { radarHorizonKm, isTerrainOccluded } from "./los";
+import { sonarDetects, acousticsOf, DEFAULT_LAYER_DEPTH_M } from "./sonar";
 
 /** 平台有效感測高度（公尺）：取座標高度與 catalog 平台高度的大者 + 桅高 */
 function platformAltM(u: Unit): number {
@@ -75,6 +76,8 @@ export function computeDetection(
   dtSec: number,
   simSec: number,
   occlusionEnabled = true,
+  acousticModel = false,
+  sonarLayerDepthM = DEFAULT_LAYER_DEPTH_M,
 ): DetectionResult {
   const sideMap = new Map<SideId, Side>(sides.map((s) => [s.id, s]));
   const events: EngagementEvent[] = [];
@@ -106,33 +109,49 @@ export function computeDetection(
         || (myOwnSide?.isHostileTo.includes(observerSideId) ?? false);
       if (!isHostileToObserver) continue;
 
-      // 判斷是否在任一 sensor 有效範圍內（含 A5 地平線 + 地形遮蔽）
+      // 判斷是否在任一 sensor 有效範圍內（含 A5 地平線 + 地形遮蔽 + E20 聲納）
       const sensors = sensorsBySide.get(observerSideId);
       const uDomain = UNIT_CATALOG[u.kind].domain;
       const uAlt = platformAltM(u);
+      const targetInWater = uDomain === "sea" || uDomain === "subsurface";
+      // 啟用聲納模型時，水下目標只能靠聲納偵測（雷達看不到水下）
+      const radarCanSeeTarget = !acousticModel || uDomain !== "subsurface";
       let inRange = false;
       if (sensors && sensors.length > 0) {
         for (const s of sensors) {
-          const effRangeKm = s.core.detectionRangeKm * (1 - stealth);
-          if (effRangeKm <= 0) continue;
-          const d = haversineKm(
-            [s.position.lng, s.position.lat],
-            [u.position.lng, u.position.lat],
-          );
-          if (d > effRangeKm) continue;
-          // A5：雷達/光學 regime 才受遮蔽；潛艦聲納（subsurface）不適用
-          if (occlusionEnabled) {
-            const sDomain = UNIT_CATALOG[s.kind].domain;
-            if (sDomain !== "subsurface" && uDomain !== "subsurface") {
-              const sAlt = platformAltM(s);
-              if (d > radarHorizonKm(sAlt, uAlt)) continue;           // 超出雷達地平線
-              if (isTerrainOccluded(
-                [s.position.lng, s.position.lat], sAlt,
-                [u.position.lng, u.position.lat], uAlt,
-              )) continue;                                            // 山脈遮蔽
+          const sDomain = UNIT_CATALOG[s.kind].domain;
+
+          // ── 雷達 / 光學路徑 ──（潛艦在水下不用雷達；水下目標雷達看不到）
+          if (radarCanSeeTarget && (!acousticModel || sDomain !== "subsurface")) {
+            const effRangeKm = s.core.detectionRangeKm * (1 - stealth);
+            if (effRangeKm > 0) {
+              const d = haversineKm(
+                [s.position.lng, s.position.lat],
+                [u.position.lng, u.position.lat],
+              );
+              if (d <= effRangeKm) {
+                let blocked = false;
+                if (occlusionEnabled && sDomain !== "subsurface" && uDomain !== "subsurface") {
+                  const sAlt = platformAltM(s);
+                  if (d > radarHorizonKm(sAlt, uAlt)) blocked = true;        // 超出雷達地平線
+                  else if (isTerrainOccluded(
+                    [s.position.lng, s.position.lat], sAlt,
+                    [u.position.lng, u.position.lat], uAlt,
+                  )) blocked = true;                                         // 山脈遮蔽
+                }
+                if (!blocked) { inRange = true; break; }
+              }
             }
           }
-          inRange = true; break;
+
+          // ── 聲納路徑（E20）──（水中目標 + 雙方具聲學特性）
+          if (acousticModel && targetInWater && acousticsOf(s)) {
+            const d = haversineKm(
+              [s.position.lng, s.position.lat],
+              [u.position.lng, u.position.lat],
+            );
+            if (sonarDetects(s, u, d, sonarLayerDepthM)) { inRange = true; break; }
+          }
         }
       }
 

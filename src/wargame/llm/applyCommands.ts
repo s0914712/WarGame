@@ -196,6 +196,18 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
       return { index, status: "applied", commandId: id };
     }
 
+    // ── set_active_sonar ──
+    case "set_active_sonar": {
+      if (typeof cmd.on !== "boolean") {
+        return { index, status: "rejected", reason: "'on' must be a boolean" };
+      }
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_active_sonar", on: cmd.on,
+      });
+      return { index, status: "applied", commandId: id };
+    }
+
     // ── update_attributes（直接寫，不走指令佇列）──
     case "update_attributes": {
       if (!cmd.core || typeof cmd.core !== "object") {

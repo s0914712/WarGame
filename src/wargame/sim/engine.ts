@@ -51,11 +51,13 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
     unitsAfterMove[u.id] = advanceUnit(u, dtSec);
   }
 
-  // 4. 偵測（漸進狀態機 + A5 地形遮蔽/地平線；emit detection 事件）
+  // 4. 偵測（漸進狀態機 + A5 地形遮蔽/地平線 + E20 反潛聲納；emit detection 事件）
   const nextSimSec = state.simTimeSec + dtSec;
   const occlusionEnabled = state.scenario.terrainOcclusion !== false;   // 省略 = 啟用
+  const acousticModel = state.scenario.acousticModel === true;          // 省略 = 關閉
   const detection = computeDetection(
-    unitsAfterMove, state.scenario.sides, dtSec, nextSimSec, occlusionEnabled,
+    unitsAfterMove, state.scenario.sides, dtSec, nextSimSec,
+    occlusionEnabled, acousticModel, state.scenario.sonarLayerDepthM,
   );
 
   // 5. 戰鬥 — 把 detection 事件併入本 tick：eventsThisTick 由此重置、eventsAll 先接 detection
