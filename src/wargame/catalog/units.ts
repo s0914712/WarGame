@@ -93,6 +93,14 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 14400,
     },
     defaultAmmoMax: 16,               // Aegis VLS 取捷 / Harpoon 4 + ASROC + SAM
+    // 神盾艦分層防空：SM-2/ESSM (中程) + RAM/Phalanx CIWS (點防禦)
+    defaultInterceptor: {
+      rangeKm: 45,
+      pKill: 0.5,
+      profiles: ["cruise", "sea_skim", "pop_up"],
+      cooldownSec: 6,
+      speedKnots: 2400,
+    },
   },
 
   submarine: {
@@ -210,6 +218,14 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 7200,
     },
     defaultAmmoMax: 8,                // SAM 攔截彈
+    // 中程 SAM：天弓 II / 海弓 III，攔巡弋彈與低空掠海彈
+    defaultInterceptor: {
+      rangeKm: 55,
+      pKill: 0.5,
+      profiles: ["cruise", "sea_skim"],
+      cooldownSec: 6,
+      speedKnots: 2200,
+    },
   },
 
   mobile_radar: {
@@ -267,6 +283,14 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 10800,
     },
     defaultAmmoMax: 16,               // PAC-3 4 launcher × 4 missiles
+    // 長程 / 反彈道 SAM：PAC-3 / 天弓 III，可攔彈道與高空巡弋
+    defaultInterceptor: {
+      rangeKm: 130,
+      pKill: 0.55,
+      profiles: ["cruise", "ballistic", "pop_up"],
+      cooldownSec: 8,
+      speedKnots: 3200,
+    },
   },
 
   supply_ship: {

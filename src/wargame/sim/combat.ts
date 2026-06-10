@@ -19,6 +19,7 @@ import type {
 import { advanceTowardKm, haversineKm, knotsToKmPerSec } from "./geo";
 import { makeRng, seedFromStrings } from "./rng";
 import { detectionRank, MIN_ENGAGE_STATE } from "./detection";
+import { planInterceptors } from "./airDefense";
 
 const MIN_ENGAGE_RANK = detectionRank(MIN_ENGAGE_STATE);
 
@@ -121,9 +122,89 @@ export function runCombat(
     });
   }
 
+  // ── 2.5 分層防空：守方發射攔截彈 ──
+  {
+    const plan = planInterceptors(units, missiles, simSec);
+    if (plan.interceptors.length > 0) {
+      missiles = [...missiles, ...plan.interceptors];
+      for (const [uid, patched] of Object.entries(plan.unitPatches)) {
+        units = { ...units, [uid]: patched };
+      }
+      for (const e of plan.events) events.push(e);
+    }
+  }
+
   // ── 3. 飛彈推進 ──
   const nextMissiles: Missile[] = [];
+
+  // 3a. 攔截彈先推進並判定 — 攔截成功的來襲彈記入 destroyedThreatIds，
+  //     稍後攻擊彈推進時跳過（攔截在抵達前發生 → 取消命中）
+  const destroyedThreatIds = new Set<string>();
+  const attackById = new Map<string, Missile>();
   for (const m of missiles) {
+    if ((m.role ?? "attack") === "attack") attackById.set(m.id, m);
+  }
+  for (const mi of missiles) {
+    if (mi.role !== "interceptor") continue;
+    const threatId = mi.interceptTargetMissileId;
+    const threat = threatId ? attackById.get(threatId) : undefined;
+    // 來襲彈已不存在（已被攔 / 已命中 / 已被其他攔截彈摧毀）→ 攔截彈失效消失
+    if (!threat || (threatId && destroyedThreatIds.has(threatId))) continue;
+
+    const stepKm = knotsToKmPerSec(mi.speedKnots) * dtSec;
+    const from: LngLat = [mi.position.lng, mi.position.lat];
+    const aim: LngLat = [threat.position.lng, threat.position.lat];
+    const dist = haversineKm(from, aim);
+
+    if (dist <= MISSILE_ARRIVE_THRESHOLD_KM || stepKm >= dist) {
+      // 抵達 → 擲骰判定攔截
+      const rng = makeRng(seedFromStrings(mi.id, simSec));
+      const success = rng() < (mi.interceptPKill ?? 0.5);
+      explosions = [...explosions, {
+        id: `exp-${mi.id}`,
+        position: aim,
+        spawnedAtSimSec: simSec,
+        durationSec: EXPLOSION_DURATION_SEC,
+        hit: success,
+      }];
+      if (success) {
+        destroyedThreatIds.add(threat.id);
+        events.push({
+          id: `evt-${simSec}-${mi.id}-kill`,
+          simAtSec: simSec,
+          kind: "intercept",
+          attackerId: mi.attackerId,
+          targetId: threat.attackerId,
+          position: aim,
+          message: `攔截成功 — 擊落來襲飛彈`,
+        });
+      } else {
+        events.push({
+          id: `evt-${simSec}-${mi.id}-leak`,
+          simAtSec: simSec,
+          kind: "miss",
+          attackerId: mi.attackerId,
+          position: aim,
+          message: `攔截失敗 — 飛彈漏防`,
+        });
+      }
+      continue;   // 攔截彈用畢消失
+    }
+
+    // 續飛：每 tick 重新導引到來襲彈當前位置
+    const [nlng, nlat] = advanceTowardKm(from, aim, stepKm);
+    nextMissiles.push({
+      ...mi,
+      position: { lng: nlng, lat: nlat },
+      targetPositionAtFire: aim,
+      distanceTravelledKm: mi.distanceTravelledKm + stepKm,
+    });
+  }
+
+  // 3b. 攻擊彈推進（被攔截的跳過 → 不結算命中）
+  for (const m of missiles) {
+    if ((m.role ?? "attack") !== "attack") continue;
+    if (destroyedThreatIds.has(m.id)) continue;
     const stepKm = knotsToKmPerSec(m.speedKnots) * dtSec;
     const from: LngLat = [m.position.lng, m.position.lat];
     const distToTarget = haversineKm(from, m.targetPositionAtFire);

@@ -22,7 +22,7 @@ function buildMissilesFC(missiles: Missile[]): GeoJSON.FeatureCollection {
     type: "FeatureCollection",
     features: missiles.map((m) => ({
       type: "Feature",
-      properties: { id: m.id, attackerId: m.attackerId },
+      properties: { id: m.id, attackerId: m.attackerId, interceptor: m.role === "interceptor" },
       geometry: { type: "Point", coordinates: [m.position.lng, m.position.lat] },
     })),
   };
@@ -39,7 +39,7 @@ function buildTrailsFC(missiles: Missile[], units: ReturnType<typeof scenarioSto
         : m.targetPositionAtFire; // attacker 死了就用發射時的目標座標當起點
       return {
         type: "Feature",
-        properties: { id: m.id },
+        properties: { id: m.id, interceptor: m.role === "interceptor" },
         geometry: {
           type: "LineString",
           coordinates: [start, [m.position.lng, m.position.lat]],
@@ -91,21 +91,22 @@ export function attachWargameCombatLayer(map: MapboxMap): () => void {
     type: "line",
     source: SRC_MISSILE_TRAILS,
     paint: {
-      "line-color": "#fed7aa",
+      // 攔截彈青色 / 攻擊彈橘色
+      "line-color": ["case", ["get", "interceptor"], "#7dd3fc", "#fed7aa"],
       "line-width": 1.5,
       "line-opacity": 0.7,
     },
   });
 
-  // ── 飛彈光點 ──
+  // ── 飛彈光點（攔截彈青 / 攻擊彈橘） ──
   map.addLayer({
     id: LAYER_MISSILE,
     type: "circle",
     source: SRC_MISSILES,
     paint: {
-      "circle-color": "#fb923c",
+      "circle-color": ["case", ["get", "interceptor"], "#38bdf8", "#fb923c"],
       "circle-radius": 4,
-      "circle-stroke-color": "#fff7ed",
+      "circle-stroke-color": ["case", ["get", "interceptor"], "#e0f2fe", "#fff7ed"],
       "circle-stroke-width": 1.5,
       "circle-blur": 0.3,
     },

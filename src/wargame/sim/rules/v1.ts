@@ -9,9 +9,10 @@
  * scenarioStore / combat.ts 完全不動。
  */
 import type { CombatRuleSet } from "../combat";
-import type { Missile } from "../../types";
+import type { Missile, MissileProfile } from "../../types";
 import { haversineKm } from "../geo";
 import { detectionRank, MIN_ENGAGE_STATE } from "../detection";
+import { UNIT_CATALOG } from "../../catalog/units";
 
 const MIN_ENGAGE_RANK = detectionRank(MIN_ENGAGE_STATE);
 
@@ -42,6 +43,9 @@ export const COMBAT_RULES_V1: CombatRuleSet = {
   },
 
   spawnMissile(attacker, target, simSec): Missile {
+    // 飛行剖面：打海上目標 → 海面掠飛（難攔）；其餘 → 巡弋
+    const targetDomain = UNIT_CATALOG[target.kind].domain;
+    const profile: MissileProfile = targetDomain === "sea" ? "sea_skim" : "cruise";
     return {
       id: `msl-${simSec.toFixed(1)}-${attacker.id}-${target.id}`,
       attackerId: attacker.id,
@@ -52,6 +56,8 @@ export const COMBAT_RULES_V1: CombatRuleSet = {
       damage: target.core.hpMax * DAMAGE_FRAC,
       spawnedAtSimSec: simSec,
       distanceTravelledKm: 0,
+      role: "attack",
+      profile,
     };
   },
 
