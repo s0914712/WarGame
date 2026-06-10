@@ -20,6 +20,16 @@
  */
 import type { DetectionState, EngagementEvent, Side, SideId, Unit, UnitId } from "../types";
 import { haversineKm } from "./geo";
+import { UNIT_CATALOG } from "../catalog/units";
+import { radarHorizonKm, isTerrainOccluded } from "./los";
+
+/** 平台有效感測高度（公尺）：取座標高度與 catalog 平台高度的大者 + 桅高 */
+function platformAltM(u: Unit): number {
+  const cat = UNIT_CATALOG[u.kind];
+  const base = Math.max(u.position.altMeters, cat.defaultAltitudeM);
+  const mast = cat.domain === "sea" ? 20 : cat.domain === "land" ? 10 : 0;
+  return base + mast;
+}
 
 // ── 調平衡常數 ───────────────────────────────────────────
 const CLASSIFY_SEC = 20;     // unknown → classified
@@ -64,6 +74,7 @@ export function computeDetection(
   sides: Side[],
   dtSec: number,
   simSec: number,
+  occlusionEnabled = true,
 ): DetectionResult {
   const sideMap = new Map<SideId, Side>(sides.map((s) => [s.id, s]));
   const events: EngagementEvent[] = [];
@@ -95,8 +106,10 @@ export function computeDetection(
         || (myOwnSide?.isHostileTo.includes(observerSideId) ?? false);
       if (!isHostileToObserver) continue;
 
-      // 判斷是否在任一 sensor 有效範圍內
+      // 判斷是否在任一 sensor 有效範圍內（含 A5 地平線 + 地形遮蔽）
       const sensors = sensorsBySide.get(observerSideId);
+      const uDomain = UNIT_CATALOG[u.kind].domain;
+      const uAlt = platformAltM(u);
       let inRange = false;
       if (sensors && sensors.length > 0) {
         for (const s of sensors) {
@@ -106,7 +119,20 @@ export function computeDetection(
             [s.position.lng, s.position.lat],
             [u.position.lng, u.position.lat],
           );
-          if (d <= effRangeKm) { inRange = true; break; }
+          if (d > effRangeKm) continue;
+          // A5：雷達/光學 regime 才受遮蔽；潛艦聲納（subsurface）不適用
+          if (occlusionEnabled) {
+            const sDomain = UNIT_CATALOG[s.kind].domain;
+            if (sDomain !== "subsurface" && uDomain !== "subsurface") {
+              const sAlt = platformAltM(s);
+              if (d > radarHorizonKm(sAlt, uAlt)) continue;           // 超出雷達地平線
+              if (isTerrainOccluded(
+                [s.position.lng, s.position.lat], sAlt,
+                [u.position.lng, u.position.lat], uAlt,
+              )) continue;                                            // 山脈遮蔽
+            }
+          }
+          inRange = true; break;
         }
       }
 

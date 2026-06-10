@@ -5,12 +5,14 @@
 
 ## 目前已有
 偵測（**漸進狀態機 unknown→classified→tracked，A2 ✅**）/ **ROE 交戰規則（D15 ✅）** /
-自動接戰 / 飛彈 + 拖尾 + 爆炸 / **飛行剖面 sea_skim/cruise（B7 部分 ✅）** /
-**分層防空攔截彈 CIWS/SAM/愛國者（B8 ✅）** / 殘骸 / NATO SIDC / FoW / 多陣營 / POV /
+自動接戰 / 飛彈 + 拖尾 + 爆炸 / **飛行剖面 sea_skim/cruise/ballistic（B7 ✅）** /
+**分層防空攔截彈 CIWS/SAM/愛國者 + 反彈道（B8 ✅）** /
+**地形遮蔽 + 雷達地平線（A5 ✅）** / 殘骸 / NATO SIDC / FoW / 多陣營 / POV /
 5 場景 + 9 單位 / Plan Mode / Replay JSON / LLM Adversary / 勝負判定 / 戰況統計
 
-> 進度（2026-06）：A2 偵測狀態機 + D15 ROE + B7/B8 飛行剖面與分層防空已實作。
-> 下一波建議：B7 補 ballistic 剖面（DF-26 須單位 subtype）、B6 多武器掛載、A5 地形遮蔽。
+> 進度（2026-06）：A2 偵測狀態機 + D15 ROE + B7/B8 飛行剖面與分層防空 + A5 地形遮蔽/地平線已實作。
+> A5 用 `Scenario.terrainOcclusion`（預設啟用）控制；地形 LOS 為中央山脈三角剖面近似（無 DEM）。
+> 下一波建議：B6 多武器掛載（攔截彈與攻擊分艙）、A1 多 sensor type、A5 升級真實 DEM。
 
 下方按 6 大領域 + 24 項缺口分析。每項都帶「為什麼專業級需要」+「在現有架構怎麼插」。
 

@@ -21,6 +21,14 @@ const MISSILE_SPEED_KNOTS = 600;
 const DAMAGE_FRAC = 0.6;
 const DEFAULT_P_KILL = 0.6;
 
+/** 各飛行剖面的飛彈速度（knots）。彈道彈極快，只有長程 SAM 攔得到 */
+const PROFILE_SPEED_KNOTS: Record<MissileProfile, number> = {
+  sea_skim: 600,
+  cruise: 700,
+  pop_up: 700,
+  ballistic: 3200,
+};
+
 export const COMBAT_RULES_V1: CombatRuleSet = {
   canEngage(attacker, target, _currentSimSec) {
     if (target.hpCurrent <= 0) return false;
@@ -43,16 +51,19 @@ export const COMBAT_RULES_V1: CombatRuleSet = {
   },
 
   spawnMissile(attacker, target, simSec): Missile {
-    // 飛行剖面：打海上目標 → 海面掠飛（難攔）；其餘 → 巡弋
+    // 飛行剖面優先序：unit 覆寫 > catalog 預設 > 域推導（打海上=sea_skim、其餘=cruise）
     const targetDomain = UNIT_CATALOG[target.kind].domain;
-    const profile: MissileProfile = targetDomain === "sea" ? "sea_skim" : "cruise";
+    const profile: MissileProfile =
+      attacker.weaponProfile
+      ?? UNIT_CATALOG[attacker.kind].weaponProfile
+      ?? (targetDomain === "sea" ? "sea_skim" : "cruise");
     return {
       id: `msl-${simSec.toFixed(1)}-${attacker.id}-${target.id}`,
       attackerId: attacker.id,
       targetId: target.id,
       position: { lng: attacker.position.lng, lat: attacker.position.lat },
       targetPositionAtFire: [target.position.lng, target.position.lat],
-      speedKnots: MISSILE_SPEED_KNOTS,
+      speedKnots: PROFILE_SPEED_KNOTS[profile] ?? MISSILE_SPEED_KNOTS,
       damage: target.core.hpMax * DAMAGE_FRAC,
       spawnedAtSimSec: simSec,
       distanceTravelledKm: 0,

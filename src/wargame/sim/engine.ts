@@ -51,9 +51,12 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
     unitsAfterMove[u.id] = advanceUnit(u, dtSec);
   }
 
-  // 4. 偵測（漸進狀態機；emit detection 事件）
+  // 4. 偵測（漸進狀態機 + A5 地形遮蔽/地平線；emit detection 事件）
   const nextSimSec = state.simTimeSec + dtSec;
-  const detection = computeDetection(unitsAfterMove, state.scenario.sides, dtSec, nextSimSec);
+  const occlusionEnabled = state.scenario.terrainOcclusion !== false;   // 省略 = 啟用
+  const detection = computeDetection(
+    unitsAfterMove, state.scenario.sides, dtSec, nextSimSec, occlusionEnabled,
+  );
 
   // 5. 戰鬥 — 把 detection 事件併入本 tick：eventsThisTick 由此重置、eventsAll 先接 detection
   const afterCombat = runCombat(

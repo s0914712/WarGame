@@ -284,12 +284,13 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     },
     defaultAmmoMax: 16,               // PAC-3 4 launcher × 4 missiles
     // 長程 / 反彈道 SAM：PAC-3 / 天弓 III，可攔彈道與高空巡弋
+    // 攔截彈須快於彈道彈（3200kn）才追得上 → 4200kn
     defaultInterceptor: {
       rangeKm: 130,
       pKill: 0.55,
       profiles: ["cruise", "ballistic", "pop_up"],
       cooldownSec: 8,
-      speedKnots: 3200,
+      speedKnots: 4200,
     },
   },
 

@@ -61,6 +61,8 @@ export interface UnitCatalogEntry {
   supplyAmmoPerSec?: number;
   /** 防空攔截能力（B8）；省略 = 無攔截能力 */
   defaultInterceptor?: InterceptorCapability;
+  /** 武器飛行剖面預設（B7）；省略 → 依目標域推導（打海上=sea_skim、其餘=cruise） */
+  weaponProfile?: MissileProfile;
 }
 
 export interface UnitConstraints {
@@ -172,6 +174,8 @@ export interface Unit {
   interceptor?: InterceptorCapability;
   /** 最近一次發射攔截彈的 sim sec（攔截冷卻計時用） */
   lastInterceptSimSec?: number;
+  /** Per-unit 武器飛行剖面覆寫（B7）；如 DF-26 設 "ballistic"。省略 → catalog.weaponProfile ?? 域推導 */
+  weaponProfile?: MissileProfile;
 }
 
 // ── commands ─────────────────────────────────────────────
@@ -254,6 +258,12 @@ export interface Scenario {
   camera: { center: LngLat; zoom: number; pitch: number; bearing: number };
   victoryConditions: VictoryCondition[];
   pauseOnEvents?: EngagementEventKind[];
+  /**
+   * 地形遮蔽 + 雷達地平線（A5）。省略 = 啟用。
+   * 啟用後：山脈會遮蔽低空雷達視線、海平面 horizon 限制低空目標偵測距離。
+   * 潛艦（subsurface，聲納regime）不受影響。設 false 可關閉（保留舊平衡）。
+   */
+  terrainOcclusion?: boolean;
 }
 
 // ── 飛彈（in-flight） ────────────────────────────────────
