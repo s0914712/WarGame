@@ -53,11 +53,21 @@ export function runReplenishment(state: SimulationState, dtSec: number): Simulat
           nextU = { ...nextU, distanceTravelledKm: Math.max(0, nextU.distanceTravelledKm - xfer) };
         }
       }
-      // 補彈藥
-      if (ammoRate > 0 && u.ammoCurrent < u.ammoMax) {
-        const xfer = Math.min(u.ammoMax - u.ammoCurrent, ammoRate * dtSec);
-        if (xfer > 0.001) {
-          nextU = { ...nextU, ammoCurrent: Math.min(nextU.ammoMax, nextU.ammoCurrent + xfer) };
+      // 補彈藥（B6：分配到各武器彈艙；同步 aggregate ammoCurrent）
+      if (ammoRate > 0 && u.weapons && u.ammoCurrent < u.ammoMax) {
+        let budget = ammoRate * dtSec;
+        if (budget > 0.001) {
+          const weapons = nextU.weapons!.map((m) => ({ ...m }));
+          for (const m of weapons) {
+            if (budget <= 0) break;
+            const need = m.ammoMax - m.ammoCurrent;
+            if (need <= 0) continue;
+            const add = Math.min(need, budget);
+            m.ammoCurrent += add;
+            budget -= add;
+          }
+          const ammoCurrent = Math.min(nextU.ammoMax, weapons.reduce((s, m) => s + m.ammoCurrent, 0));
+          nextU = { ...nextU, weapons, ammoCurrent };
         }
       }
 

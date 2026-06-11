@@ -1,83 +1,25 @@
 /**
- * v1 戰鬥規則 — 簡單但完整：
- *   - canEngage：射程內 + target 仍存活
- *   - shouldFire：5 秒冷卻，避免飛彈洪水
- *   - spawnMissile：飛彈速 600 kn、damage = 60% target.hpMax
- *   - resolveImpact：擲骰 vs pKill 0.6（可被 unit.extensions.pKillBase 覆寫）
+ * v1 戰鬥規則 — B6 後僅保留命中判定（resolveImpact）。
  *
- * 之後想換 Salvo Combat Model / Lanchester / 滑窗統計 — 整個 v1 swap 掉，
- * scenarioStore / combat.ts 完全不動。
+ * 武器選擇 / 開火 / 飛彈剖面與速度已移到 combat.ts（依 catalog/weapons 掛載）。
+ * pKill 與 damageFrac 由發射武器寫入 Missile，這裡直接讀。
+ *
+ * 之後想換 Salvo Combat Model / Lanchester — 換掉此 resolveImpact 即可。
  */
 import type { CombatRuleSet } from "../combat";
-import type { Missile, MissileProfile } from "../../types";
-import { haversineKm } from "../geo";
-import { detectionRank, MIN_ENGAGE_STATE } from "../detection";
-import { UNIT_CATALOG } from "../../catalog/units";
 
-const MIN_ENGAGE_RANK = detectionRank(MIN_ENGAGE_STATE);
-
-const COOLDOWN_SEC = 5;
-const MISSILE_SPEED_KNOTS = 600;
 const DAMAGE_FRAC = 0.6;
 const DEFAULT_P_KILL = 0.6;
 
-/** 各飛行剖面的飛彈速度（knots）。彈道彈極快，只有長程 SAM 攔得到 */
-const PROFILE_SPEED_KNOTS: Record<MissileProfile, number> = {
-  sea_skim: 600,
-  cruise: 700,
-  pop_up: 700,
-  ballistic: 3200,
-};
-
 export const COMBAT_RULES_V1: CombatRuleSet = {
-  canEngage(attacker, target, _currentSimSec) {
-    if (target.hpCurrent <= 0) return false;
-    if (attacker.hpCurrent <= 0) return false;
-    if (attacker.ammoCurrent <= 0) return false;     // 沒彈藥 → 不能開火
-    // 識別閘門：必須對目標 ≥ classified 才能釋放武器（含手動 engage 命令）
-    if (detectionRank(target.detectedBy[attacker.sideId]) < MIN_ENGAGE_RANK) return false;
-    const d = haversineKm(
-      [attacker.position.lng, attacker.position.lat],
-      [target.position.lng, target.position.lat],
-    );
-    return d <= attacker.core.rangeKm;
-  },
-
-  shouldFire(attacker, target, missilesInFlight) {
-    // 同 attacker→target 已有飛彈在飛 → skip（cooldown）
-    return !missilesInFlight.some((m) =>
-      m.attackerId === attacker.id && m.targetId === target.id
-    );
-  },
-
-  spawnMissile(attacker, target, simSec): Missile {
-    // 飛行剖面優先序：unit 覆寫 > catalog 預設 > 域推導（打海上=sea_skim、其餘=cruise）
-    const targetDomain = UNIT_CATALOG[target.kind].domain;
-    const profile: MissileProfile =
-      attacker.weaponProfile
-      ?? UNIT_CATALOG[attacker.kind].weaponProfile
-      ?? (targetDomain === "sea" ? "sea_skim" : "cruise");
-    return {
-      id: `msl-${simSec.toFixed(1)}-${attacker.id}-${target.id}`,
-      attackerId: attacker.id,
-      targetId: target.id,
-      position: { lng: attacker.position.lng, lat: attacker.position.lat },
-      targetPositionAtFire: [target.position.lng, target.position.lat],
-      speedKnots: PROFILE_SPEED_KNOTS[profile] ?? MISSILE_SPEED_KNOTS,
-      damage: target.core.hpMax * DAMAGE_FRAC,
-      spawnedAtSimSec: simSec,
-      distanceTravelledKm: 0,
-      role: "attack",
-      profile,
-    };
-  },
-
-  resolveImpact(_missile, target, rng) {
-    const pKill = typeof target.extensions.pKillBase === "number"
-      ? (target.extensions.pKillBase as number)
-      : DEFAULT_P_KILL;
+  resolveImpact(missile, target, rng) {
+    const pKill = typeof missile.pKill === "number"
+      ? missile.pKill
+      : (typeof target.extensions.pKillBase === "number"
+          ? (target.extensions.pKillBase as number)
+          : DEFAULT_P_KILL);
     const hit = rng() < pKill;
-    return { hit, damageFrac: hit ? DAMAGE_FRAC : 0 };
+    const damageFrac = typeof missile.damageFrac === "number" ? missile.damageFrac : DAMAGE_FRAC;
+    return { hit, damageFrac: hit ? damageFrac : 0 };
   },
 };
-void COOLDOWN_SEC; // 之後 cooldown timestamp 機制會用到，先保留變數

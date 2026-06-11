@@ -14,12 +14,15 @@
  * 直接 swap ruleSet 即可。
  */
 import type {
-  EngagementEvent, Explosion, LngLat, Missile, RoeMode, SideId, SimulationState, Unit, UnitId, Wreck,
+  EngagementEvent, Explosion, LngLat, Missile, MissileProfile, RoeMode, SideId,
+  SimulationState, Unit, UnitId, Wreck,
 } from "../types";
 import { advanceTowardKm, haversineKm, knotsToKmPerSec } from "./geo";
 import { makeRng, seedFromStrings } from "./rng";
 import { detectionRank, MIN_ENGAGE_STATE } from "./detection";
 import { planInterceptors } from "./airDefense";
+import { UNIT_CATALOG } from "../catalog/units";
+import { loadoutOf, consumeAmmo, PROFILE_SPEED_KNOTS, type LoadedWeapon } from "../catalog/weapons";
 
 const MIN_ENGAGE_RANK = detectionRank(MIN_ENGAGE_STATE);
 
@@ -37,16 +40,77 @@ function isShootingAtSide(
   );
 }
 
+/**
+ * B6：選擇對目標最合適的攻擊武器 —— 目標域相符、在該武器射程內、有彈、冷卻過。
+ * 多個可用時取 pKill 最高（同分取射程遠者）。null = 此單位無法攻擊該目標。
+ */
+function selectOffenseWeapon(attacker: Unit, target: Unit, simSec: number): LoadedWeapon | null {
+  const targetDomain = UNIT_CATALOG[target.kind].domain;
+  const dist = haversineKm(
+    [attacker.position.lng, attacker.position.lat],
+    [target.position.lng, target.position.lat],
+  );
+  let best: LoadedWeapon | null = null;
+  for (const lw of loadoutOf(attacker)) {
+    if (lw.spec.targetDomains.length === 0) continue;             // 純攔截武器不主動攻擊
+    if (!lw.spec.targetDomains.includes(targetDomain)) continue;  // 域不符（如 AAM 打不到艦）
+    if (lw.mag.ammoCurrent <= 0) continue;
+    if (dist > lw.rangeKm) continue;
+    if (lw.spec.cooldownSec && lw.mag.lastFireSimSec != null &&
+        simSec - lw.mag.lastFireSimSec < lw.spec.cooldownSec) continue;
+    if (!best ||
+        lw.spec.pKill > best.spec.pKill ||
+        (lw.spec.pKill === best.spec.pKill && lw.rangeKm > best.rangeKm)) {
+      best = lw;
+    }
+  }
+  return best;
+}
+
+/** 開火閘門：存活 + 偵測 ≥ classified + 有可用武器 → 回傳選用武器，否則 null */
+function canEngageWeapon(attacker: Unit, target: Unit, simSec: number): LoadedWeapon | null {
+  if (target.hpCurrent <= 0 || attacker.hpCurrent <= 0) return null;
+  if (detectionRank(target.detectedBy[attacker.sideId]) < MIN_ENGAGE_RANK) return null;
+  return selectOffenseWeapon(attacker, target, simSec);
+}
+
+/** 同一 attacker→target 已有攻擊彈在飛 → 暫不重複開火 */
+function shouldFire(attacker: Unit, target: Unit, missiles: Missile[]): boolean {
+  return !missiles.some((m) =>
+    (m.role ?? "attack") === "attack" && m.attackerId === attacker.id && m.targetId === target.id
+  );
+}
+
+/** 由選用武器產生攻擊彈（剖面：unit 覆寫 > 武器 > 目標域推導） */
+function spawnOffenseMissile(attacker: Unit, target: Unit, lw: LoadedWeapon, simSec: number): Missile {
+  const targetDomain = UNIT_CATALOG[target.kind].domain;
+  const profile: MissileProfile =
+    attacker.weaponProfile ?? lw.spec.profile ?? (targetDomain === "sea" ? "sea_skim" : "cruise");
+  const speed = lw.spec.speedKnots ?? PROFILE_SPEED_KNOTS[profile] ?? 600;
+  return {
+    id: `msl-${simSec.toFixed(1)}-${attacker.id}-${target.id}-${lw.mag.weaponId}`,
+    attackerId: attacker.id,
+    targetId: target.id,
+    position: { lng: attacker.position.lng, lat: attacker.position.lat },
+    targetPositionAtFire: [target.position.lng, target.position.lat],
+    speedKnots: speed,
+    damage: 0,
+    spawnedAtSimSec: simSec,
+    distanceTravelledKm: 0,
+    role: "attack",
+    profile,
+    pKill: lw.spec.pKill,
+    damageFrac: lw.spec.damageFrac ?? 0.6,
+  };
+}
+
 const MISSILE_ARRIVE_THRESHOLD_KM = 1.0;
 const EXPLOSION_DURATION_SEC = 6;
 const WRECK_DURATION_SEC = 30;       // 殘骸停留 30 sim-sec
 const AUTO_ENGAGE = true;            // Phase 5 預設自動鎖敵；之後可加 toggle
 
-// ── CombatRuleSet 抽象 ───────────────────────────────────
+// ── CombatRuleSet 抽象（B6 後僅保留命中判定；武器選擇 / 開火在 combat.ts）─────
 export interface CombatRuleSet {
-  canEngage(attacker: Unit, target: Unit, currentSimSec: number): boolean;
-  shouldFire(attacker: Unit, target: Unit, missilesInFlight: Missile[]): boolean;
-  spawnMissile(attacker: Unit, target: Unit, simSec: number): Missile;
   resolveImpact(
     missile: Missile, target: Unit, rng: () => number,
   ): { hit: boolean; damageFrac: number };
@@ -76,7 +140,7 @@ export function runCombat(
       if (hostiles.length === 0) continue;
       const roe = effectiveRoe(u.roe, mySide.roe);
       if (roe === "weapons_hold") continue;   // 不主動接戰，只接受明確 engage 命令
-      // 找最近、符合 ROE + 已分類（≥ classified）+ 在射程內的敵方
+      // 找最近、符合 ROE + 已分類（≥ classified）+ 有可用武器（域+射程+彈）的敵方
       let best: { id: UnitId; dist: number } | null = null;
       for (const o of Object.values(units)) {
         if (!hostiles.includes(o.sideId)) continue;
@@ -85,8 +149,8 @@ export function runCombat(
         if (detectionRank(det) < MIN_ENGAGE_RANK) continue;   // 未分類不可主動接戰
         if (roe === "weapons_tight" && det !== "tracked") continue;
         if (roe === "defensive_only" && !isShootingAtSide(o, u.sideId, missiles, units)) continue;
+        if (!selectOffenseWeapon(u, o, simSec)) continue;     // 無合適武器（域/射程/彈）→ 跳過
         const d = haversineKm([u.position.lng, u.position.lat], [o.position.lng, o.position.lat]);
-        if (d > u.core.rangeKm) continue;
         if (!best || d < best.dist) best = { id: o.id, dist: d };
       }
       if (best) {
@@ -105,12 +169,13 @@ export function runCombat(
       units = { ...units, [u.id]: { ...u, engagingTargetId: undefined } };
       continue;
     }
-    if (!ruleSet.canEngage(u, target, simSec)) continue;
-    if (!ruleSet.shouldFire(u, target, missiles)) continue;
-    const m = ruleSet.spawnMissile(u, target, simSec);
-    missiles = [...missiles, m];
-    // 扣 1 彈藥
-    units = { ...units, [u.id]: { ...u, ammoCurrent: Math.max(0, u.ammoCurrent - 1) } };
+    const lw = canEngageWeapon(u, target, simSec);
+    if (!lw) continue;
+    if (!shouldFire(u, target, missiles)) continue;
+    missiles = [...missiles, spawnOffenseMissile(u, target, lw, simSec)];
+    // 扣該武器彈艙 1 發（同步 aggregate ammoCurrent）
+    const fired = consumeAmmo(u, lw.mag.weaponId, simSec);
+    units = { ...units, [u.id]: fired };
     events.push({
       id: `evt-${simSec}-${u.id}-${target.id}-fire`,
       simAtSec: simSec,
@@ -118,7 +183,7 @@ export function runCombat(
       attackerId: u.id,
       targetId: target.id,
       position: [u.position.lng, u.position.lat],
-      message: `${u.callsign} → ${target.callsign} 開火（剩彈 ${u.ammoCurrent - 1}/${u.ammoMax}）`,
+      message: `${u.callsign} → ${target.callsign} 發射${lw.spec.name}（剩 ${Math.max(0, lw.mag.ammoCurrent - 1)}）`,
     });
   }
 

@@ -59,12 +59,15 @@ export interface UnitCatalogEntry {
   /** 補給單位專用：每秒可恢復多少 km 油 + 多少發彈藥 */
   supplyFuelKmPerSec?: number;
   supplyAmmoPerSec?: number;
-  /** 防空攔截能力（B8）；省略 = 無攔截能力 */
-  defaultInterceptor?: InterceptorCapability;
   /** 武器飛行剖面預設（B7）；省略 → 依目標域推導（打海上=sea_skim、其餘=cruise） */
   weaponProfile?: MissileProfile;
   /** 聲學特性（E20 反潛）；省略 = 無聲納特徵（不參與聲學偵測） */
   acoustics?: AcousticProfile;
+  /**
+   * 武器掛載（B6）。省略 → engine 合成單一主武器（射程 = core.rangeKm、彈量 = defaultAmmoMax、
+   * 可打全域），以保留舊行為。攔截能力由掛載中具 interceptProfiles 的武器提供。
+   */
+  defaultLoadout?: { weaponId: string; ammoMax: number; rangeKm?: number | "core" }[];
 }
 
 export interface UnitConstraints {
@@ -104,6 +107,40 @@ export type ExtensionKey =
   | "stealth";
 
 export type ExtensionAttributes = Partial<Record<ExtensionKey, number | string>>;
+
+// ── 武器掛載（B6 多武器）─────────────────────────────────
+/**
+ * 武器規格（靜態）。一種武器可同時具攻擊能力（targetDomains 非空）
+ * 與攔截能力（interceptProfiles 非空）—— 如艦載 SAM 既打飛機也攔飛彈。
+ */
+export interface WeaponSpec {
+  id: string;
+  name: string;
+  /** 射程（km）；"core" = 用 unit.core.rangeKm（讓場景的 rangeKm 調校生效） */
+  rangeKm: number | "core";
+  pKill: number;
+  /** 可攻擊的目標域；[] = 不能主動攻擊單位（純攔截武器，如 CIWS） */
+  targetDomains: Domain[];
+  /** 攻擊彈飛行剖面；省略 → 依目標域推導 */
+  profile?: MissileProfile;
+  speedKnots?: number;
+  /** 可攔截的來襲飛行剖面；非空 = 此武器可作防空攔截（B8） */
+  interceptProfiles?: MissileProfile[];
+  /** 射擊冷卻（sim sec） */
+  cooldownSec?: number;
+  /** 命中傷害（target.hpMax 比例）；省略 = 0.6 */
+  damageFrac?: number;
+}
+
+/** 武器彈艙（runtime，per unit）。每種武器獨立計彈。 */
+export interface WeaponMagazine {
+  weaponId: string;
+  ammoCurrent: number;
+  ammoMax: number;
+  /** 此 entry 的射程覆寫（concrete km）；省略 → 用 WeaponSpec.rangeKm 解析 */
+  rangeKm?: number;
+  lastFireSimSec?: number;
+}
 
 // ── position / dynamic state ─────────────────────────────
 export interface Position {
@@ -172,16 +209,14 @@ export interface Unit {
   engagingTargetId?: UnitId;
   /** Per-unit ROE 覆寫；省略 → 用 side.roe ?? "weapons_free" */
   roe?: RoeMode;
-  /** Per-unit 攔截能力覆寫；省略 → 用 catalog.defaultInterceptor */
-  interceptor?: InterceptorCapability;
-  /** 最近一次發射攔截彈的 sim sec（攔截冷卻計時用） */
-  lastInterceptSimSec?: number;
   /** Per-unit 武器飛行剖面覆寫（B7）；如 DF-26 設 "ballistic"。省略 → catalog.weaponProfile ?? 域推導 */
   weaponProfile?: MissileProfile;
   /** 主動聲納是否開啟（E20）。開 = 拍發 ping，偵測潛艦距離大增，但自身被動曝露給敵方被動聲納 */
   activeSonar?: boolean;
   /** 目標下潛深度（公尺，正值；潛艦用）。引擎以固定速率漸變 altMeters 趨近 −targetDepthM */
   targetDepthM?: number;
+  /** 武器彈艙（B6，runtime）。loadScenario 時由 catalog.defaultLoadout 或合成初始化 */
+  weapons?: WeaponMagazine[];
 }
 
 // ── commands ─────────────────────────────────────────────
@@ -309,6 +344,10 @@ export interface Missile {
   damage: number;           // 命中時對 target 造成的 hp 傷害
   spawnedAtSimSec: number;
   distanceTravelledKm: number;
+  /** 攻擊彈命中機率（B6 由發射武器決定）；resolveImpact 讀此值 */
+  pKill?: number;
+  /** 攻擊彈命中傷害比例（target.hpMax）；省略 = 0.6 */
+  damageFrac?: number;
   /** 角色；省略 = "attack"（向後相容） */
   role?: MissileRole;
   /** 飛行剖面（attack 彈用）；省略 = "cruise" */
@@ -317,23 +356,6 @@ export interface Missile {
   interceptTargetMissileId?: string;
   /** interceptor 專用：攔截成功機率 */
   interceptPKill?: number;
-}
-
-/**
- * 防空攔截能力（B8 分層防空）。掛在 UnitCatalogEntry.defaultInterceptor，
- * 可被 Unit.interceptor 覆寫。攔截彈消耗單位 ammoCurrent（與攻擊共用彈艙）。
- */
-export interface InterceptorCapability {
-  /** 對來襲飛彈的接戰範圍（km） */
-  rangeKm: number;
-  /** 每發攔截成功機率 */
-  pKill: number;
-  /** 可攔截的來襲飛行剖面 */
-  profiles: MissileProfile[];
-  /** 兩次發射的最小間隔（sim sec）— 限制齊射火力 */
-  cooldownSec: number;
-  /** 攔截彈速度（knots）— 須明顯快於攻擊彈才追得上 */
-  speedKnots: number;
 }
 
 /**
