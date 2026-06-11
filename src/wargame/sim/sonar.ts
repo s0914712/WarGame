@@ -51,6 +51,17 @@ export function depthOf(u: Unit): number {
   return Math.max(0, -u.position.altMeters);
 }
 
+// ── 可控下潛深度 ─────────────────────────────────────────
+/** 潛艦最大下潛深度（公尺） */
+export const SUB_MAX_DEPTH_M = 500;
+/** ≤ 此深度視為潛望鏡 / 呼吸管深度 → 暴露於雷達 / 光學偵測 */
+export const PERISCOPE_EXPOSE_MAX_M = 25;
+
+/** 潛艦是否在潛望鏡 / 近水面深度（會被雷達 / 反潛機看到） */
+export function isPeriscopeDepth(u: Unit): boolean {
+  return depthOf(u) <= PERISCOPE_EXPOSE_MAX_M;
+}
+
 /** dB 功率相加 */
 function dbSum(a: number, b: number): number {
   return 10 * Math.log10(10 ** (a / 10) + 10 ** (b / 10));

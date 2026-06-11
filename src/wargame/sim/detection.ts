@@ -22,7 +22,7 @@ import type { DetectionState, EngagementEvent, Side, SideId, Unit, UnitId } from
 import { haversineKm } from "./geo";
 import { UNIT_CATALOG } from "../catalog/units";
 import { radarHorizonKm, isTerrainOccluded } from "./los";
-import { sonarDetects, acousticsOf, DEFAULT_LAYER_DEPTH_M } from "./sonar";
+import { sonarDetects, acousticsOf, isPeriscopeDepth, DEFAULT_LAYER_DEPTH_M } from "./sonar";
 
 /** 平台有效感測高度（公尺）：取座標高度與 catalog 平台高度的大者 + 桅高 */
 function platformAltM(u: Unit): number {
@@ -115,15 +115,17 @@ export function computeDetection(
       const uDomain = UNIT_CATALOG[u.kind].domain;
       const uAlt = platformAltM(u);
       const targetInWater = uDomain === "sea" || uDomain === "subsurface";
-      // 啟用聲納模型時，水下目標只能靠聲納偵測（雷達看不到水下）
-      const radarCanSeeTarget = !acousticModel || uDomain !== "subsurface";
+      // 啟用聲納模型時，水下目標只能靠聲納偵測（雷達看不到水下）；
+      // 但潛望鏡 / 近水面深度的潛艦會暴露於雷達 / 光學
+      const radarCanSeeTarget = !acousticModel || uDomain !== "subsurface" || isPeriscopeDepth(u);
       let inRange = false;
       if (sensors && sensors.length > 0) {
         for (const s of sensors) {
           const sDomain = UNIT_CATALOG[s.kind].domain;
 
-          // ── 雷達 / 光學路徑 ──（潛艦在水下不用雷達；水下目標雷達看不到）
-          if (radarCanSeeTarget && (!acousticModel || sDomain !== "subsurface")) {
+          // ── 雷達 / 光學路徑 ──（潛艦深潛不用雷達；潛望鏡深度可升桅用雷達）
+          const sensorCanRadar = !acousticModel || sDomain !== "subsurface" || isPeriscopeDepth(s);
+          if (radarCanSeeTarget && sensorCanRadar) {
             const effRangeKm = s.core.detectionRangeKm * (1 - stealth);
             if (effRangeKm > 0) {
               const d = haversineKm(
