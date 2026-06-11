@@ -60,7 +60,7 @@ function buildSnapshot(): Snapshot {
   return {
     selectedUnitId: id,
     signature: id && u
-      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}|${u.activeSonar ? 1 : 0}`
+      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}|${u.activeSonar ? 1 : 0}|${Math.round(u.position.altMeters)}|${u.targetDepthM ?? ""}`
       : "",
     editorMode: editorStore.getMode(),
     planningUnitId: editorStore.getPlanningUnitId(),
@@ -153,6 +153,25 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
       on: !sonarOn,
     });
   };
+  // 可控下潛深度（E20）：僅潛艦
+  const isSubmarine = UNIT_CATALOG[targetUnit.kind].domain === "subsurface";
+  const curDepthM = Math.round(Math.max(0, -targetUnit.position.altMeters));
+  const layerM = scenarioStore.getState().scenario.sonarLayerDepthM ?? 60;
+  const setDepth = (depthM: number) => {
+    scenarioStore.enqueueCommand({
+      id: `ui-depth-${Date.now()}`,
+      unitId: targetUnit.id,
+      simAtSec: wargameClock.getSimTime(),
+      kind: "set_depth",
+      depthM,
+    });
+  };
+  const DEPTH_PRESETS: { label: string; depthM: number }[] = [
+    { label: "潛望鏡 18m", depthM: 18 },
+    { label: `層上 ${Math.max(10, layerM - 20)}m`, depthM: Math.max(10, layerM - 20) },
+    { label: `層下 ${layerM + 60}m`, depthM: layerM + 60 },
+    { label: "深潛 250m", depthM: 250 },
+  ];
 
   const pending = editorStore.getPendingWaypoints();
   const isPlanning = mode === "planRoute";
@@ -320,6 +339,36 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
               >
                 主動聲納 {sonarOn ? "● ON（拍發中／已曝露）" : "○ OFF（靜默）"}
               </button>
+            )}
+            {isSubmarine && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 15, color: "#94a3b8", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
+                  <span>下潛深度</span>
+                  <span style={{ color: curDepthM <= 25 ? "#fca5a5" : curDepthM > layerM ? "#7dd3fc" : "#cbd5e1", fontFamily: "ui-monospace, monospace" }}>
+                    {curDepthM}m {curDepthM <= 25 ? "（潛望鏡·曝露）" : curDepthM > layerM ? "（層下·藏匿）" : "（層上）"}
+                  </span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  {DEPTH_PRESETS.map((p) => (
+                    <button
+                      key={p.label}
+                      onClick={() => setDepth(p.depthM)}
+                      style={{
+                        padding: "6px 8px",
+                        fontSize: 14,
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        border: "1px solid rgba(148,163,184,0.3)",
+                        background: Math.abs((targetUnit.targetDepthM ?? curDepthM) - p.depthM) < 1
+                          ? "rgba(56,189,248,0.22)" : "rgba(148,163,184,0.12)",
+                        color: "#cbd5e1",
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         ) : (

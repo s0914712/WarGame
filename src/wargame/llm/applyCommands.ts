@@ -15,6 +15,7 @@ import { scenarioStore } from "../scenarioStore";
 import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
 import { validatePlan } from "../sim/validate";
+import { SUB_MAX_DEPTH_M } from "../sim/sonar";
 import type { Command, CoreAttributes, RoeMode, SideId } from "../types";
 
 const VALID_ROE: RoeMode[] = ["weapons_free", "weapons_tight", "defensive_only", "weapons_hold"];
@@ -206,6 +207,25 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
         id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_active_sonar", on: cmd.on,
       });
       return { index, status: "applied", commandId: id };
+    }
+
+    // ── set_depth（潛艦）──
+    case "set_depth": {
+      if (typeof cmd.depthM !== "number" || cmd.depthM < 0) {
+        return { index, status: "rejected", reason: "'depthM' must be a non-negative number" };
+      }
+      if (UNIT_CATALOG[unit.kind].domain !== "subsurface") {
+        return { index, status: "rejected", reason: `Unit "${cmd.unitId}" is not a submarine` };
+      }
+      const clamped = clamp(cmd.depthM, 0, SUB_MAX_DEPTH_M);
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_depth", depthM: clamped,
+      });
+      const warnings = clamped !== cmd.depthM
+        ? [`depthM clamped ${cmd.depthM} → ${clamped} (allowed 0–${SUB_MAX_DEPTH_M})`]
+        : undefined;
+      return warnings ? { index, status: "applied", commandId: id, warnings } : { index, status: "applied", commandId: id };
     }
 
     // ── update_attributes（直接寫，不走指令佇列）──

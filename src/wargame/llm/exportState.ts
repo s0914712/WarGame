@@ -66,6 +66,7 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
         ? {
             roe: u.roe ?? sideMap.get(u.sideId)?.roe ?? "weapons_free",
             ...(UNIT_CATALOG[u.kind].acoustics?.active ? { activeSonar: u.activeSonar === true } : {}),
+            ...(cat.domain === "subsurface" ? { depthM: Math.round(Math.max(0, -u.position.altMeters)) } : {}),
           }
         : {}),
       constraints: {

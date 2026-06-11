@@ -54,6 +54,8 @@ export interface LlmUnitView {
   roe?: RoeMode;
   /** 己方單位（own）主動聲納是否拍發中（E20）；非聲納單位省略 */
   activeSonar?: boolean;
+  /** 己方潛艦（own）當前深度（公尺，正值）；非潛艦省略 */
+  depthM?: number;
   constraints: {
     forbidDomains?: ("land" | "air" | "sea" | "subsurface")[];
   };
@@ -67,6 +69,7 @@ export type LlmCommand =
   | LlmHoldCommand
   | LlmSetRoeCommand
   | LlmSetActiveSonarCommand
+  | LlmSetDepthCommand
   | LlmUpdateAttributesCommand;
 
 export interface LlmSetWaypointsCommand {
@@ -113,6 +116,14 @@ export interface LlmSetActiveSonarCommand {
   kind: "set_active_sonar";
   unitId: string;
   on: boolean;
+  executeAtSimSec?: number;
+}
+
+/** 設定潛艦下潛深度（公尺，正值 0–500）。層下藏匿、潛望鏡深度（≤25m）暴露於雷達 */
+export interface LlmSetDepthCommand {
+  kind: "set_depth";
+  unitId: string;
+  depthM: number;
   executeAtSimSec?: number;
 }
 

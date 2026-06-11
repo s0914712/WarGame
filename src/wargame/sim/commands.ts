@@ -4,6 +4,7 @@
  * 純函式：傳入 state → 回傳 { units, pendingCommands }（已套用的指令會從佇列移除）
  */
 import type { Command, SimulationState, Unit, UnitId } from "../types";
+import { SUB_MAX_DEPTH_M } from "./sonar";
 
 interface CommandsResult {
   units: Record<UnitId, Unit>;
@@ -50,5 +51,7 @@ function applyOne(unit: Unit, cmd: Command): Unit {
       return { ...unit, roe: cmd.roe };
     case "set_active_sonar":
       return { ...unit, activeSonar: cmd.on };
+    case "set_depth":
+      return { ...unit, targetDepthM: Math.max(0, Math.min(SUB_MAX_DEPTH_M, cmd.depthM)) };
   }
 }

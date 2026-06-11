@@ -68,6 +68,7 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
     { "kind": "hold", "unitId": "BLUE-SH-01" },
     { "kind": "set_roe", "unitId": "BLUE-SH-01", "roe": "weapons_tight" },
     { "kind": "set_active_sonar", "unitId": "BLUE-FFG-01", "on": true },
+    { "kind": "set_depth", "unitId": "BLUE-SS-01", "depthM": 120 },
     { "kind": "update_attributes", "unitId": "BLUE-SH-01",
       "core": { "rangeKm": 200, "speedKnots": 28 }
     }
@@ -133,6 +134,11 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
 - 反潛戰術：用 P-8 反潛機（聲標被動）大範圍掃蕩 + 巡防艦在接觸後開主動聲納精確定位 → 進入魚雷射程擊沉。
 - **會聚區（CZ）**：深水中於 ~55km、~110km 處形成偵測環，環內可遠距聽到吵雜目標、環間（陰影區）聽不到。
   潛艦常利用 CZ 遠距偵知吵雜船團；接觸時注意「直達區 → 陰影區（失聯）→ 會聚環（再現）」的距離結構。
+- **下潛深度（\`set_depth\`，潛艦）**：溫躍層約 60m。
+  - **層下（>60m，如 120m）**：水面艦在層上，跨層聲傳額外衰減 → 潛艦難被偵獲（建議伏擊深度）。
+  - **同層獵殺**：欲被動獵殺另一艘層下潛艦，自己也下潛到層下（不跨層）聽得更清楚。
+  - **潛望鏡深度（≤25m）**：可升桅用雷達，但**會暴露於敵方雷達 / 反潛機**（高風險）。
+  - 深度漸變（~3 m/s），下令後需時間到位。
 5. **只能命令己方**（side === "blue" 且 isPlayer === true 的陣營）；命令對方單位會被允許但沒意義
 6. **JSON 必須合法**：尤其 \`version\` 欄位必須完全相同
 

@@ -180,6 +180,8 @@ export interface Unit {
   weaponProfile?: MissileProfile;
   /** 主動聲納是否開啟（E20）。開 = 拍發 ping，偵測潛艦距離大增，但自身被動曝露給敵方被動聲納 */
   activeSonar?: boolean;
+  /** 目標下潛深度（公尺，正值；潛艦用）。引擎以固定速率漸變 altMeters 趨近 −targetDepthM */
+  targetDepthM?: number;
 }
 
 // ── commands ─────────────────────────────────────────────
@@ -194,7 +196,8 @@ export type Command =
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "engage"; targetUnitId: UnitId }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "hold" }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_roe"; roe: RoeMode }
-  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_active_sonar"; on: boolean };
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_active_sonar"; on: boolean }
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_depth"; depthM: number };
 
 // ── events ───────────────────────────────────────────────
 export type EngagementEventKind =

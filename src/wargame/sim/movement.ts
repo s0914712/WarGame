@@ -10,8 +10,26 @@
  */
 import type { LngLat, Unit } from "../types";
 import { advanceTowardKm, bearingDeg, haversineKm, knotsToKmPerSec } from "./geo";
+import { UNIT_CATALOG } from "../catalog/units";
+import { SUB_MAX_DEPTH_M } from "./sonar";
 
 const ARRIVE_THRESHOLD_KM = 0.5;
+const DIVE_RATE_M_PER_SEC = 3;   // 潛艦變深速率（~180 m/min）
+
+/**
+ * 漸變下潛深度 — 朝 targetDepthM 以固定速率調整 altMeters（潛艦專用）。
+ * 在 engine 移動步驟後套用。沒設 targetDepthM 或非潛艦 → 原樣返回。
+ */
+export function adjustDepth(unit: Unit, dtSec: number): Unit {
+  if (unit.targetDepthM == null) return unit;
+  if (UNIT_CATALOG[unit.kind].domain !== "subsurface") return unit;
+  const targetAlt = -Math.max(0, Math.min(SUB_MAX_DEPTH_M, unit.targetDepthM));
+  const curAlt = unit.position.altMeters;
+  if (Math.abs(curAlt - targetAlt) < 0.01) return unit;
+  const maxStep = DIVE_RATE_M_PER_SEC * dtSec;
+  const delta = Math.max(-maxStep, Math.min(maxStep, targetAlt - curAlt));
+  return { ...unit, position: { ...unit.position, altMeters: curAlt + delta } };
+}
 
 export function advanceUnit(unit: Unit, dtSec: number): Unit {
   // 料盡 → 停下

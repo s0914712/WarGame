@@ -14,7 +14,7 @@
 import type { SimulationState, Unit, UnitId } from "../types";
 import { applyDueCommands } from "./commands";
 import { computeDetection } from "./detection";
-import { advanceUnit } from "./movement";
+import { advanceUnit, adjustDepth } from "./movement";
 import { runCombat } from "./combat";
 import { COMBAT_RULES_V1 } from "./rules/v1";
 import { checkVictory } from "./victory";
@@ -48,7 +48,7 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
   // 3. 移動
   const unitsAfterMove: Record<UnitId, Unit> = {};
   for (const u of Object.values(unitsAfterRtb)) {
-    unitsAfterMove[u.id] = advanceUnit(u, dtSec);
+    unitsAfterMove[u.id] = adjustDepth(advanceUnit(u, dtSec), dtSec);
   }
 
   // 4. 偵測（漸進狀態機 + A5 地形遮蔽/地平線 + E20 反潛聲納；emit detection 事件）
