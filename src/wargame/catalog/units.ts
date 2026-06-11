@@ -37,6 +37,7 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 3600,
     },
     defaultAmmoMax: 4,                // 雄三 TEL 4 發
+    defaultLoadout: [{ weaponId: "asm", ammoMax: 4 }],   // 反艦飛彈（DF-26 由 weaponProfile 改彈道）
   },
 
   drone: {
@@ -65,6 +66,11 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       requireRoundTrip: true,
     },
     defaultAmmoMax: 2,                // UAV 通常掛 1–2 彈
+    // 對地/海小型攻擊彈 + 輕型反潛魚雷（反潛機投放）
+    defaultLoadout: [
+      { weaponId: "asm", ammoMax: 2, rangeKm: "core" },
+      { weaponId: "torpedo", ammoMax: 2, rangeKm: 15 },
+    ],
     // 反潛機 / 反潛直升機投放聲標（sonobuoy）被動聽音；空中載台本身水下不發聲
     acoustics: {
       sourceLevelDb: 80,
@@ -99,14 +105,13 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 14400,
     },
     defaultAmmoMax: 16,               // Aegis VLS 取捷 / Harpoon 4 + ASROC + SAM
-    // 神盾艦分層防空：SM-2/ESSM (中程) + RAM/Phalanx CIWS (點防禦)
-    defaultInterceptor: {
-      rangeKm: 45,
-      pKill: 0.5,
-      profiles: ["cruise", "sea_skim", "pop_up"],
-      cooldownSec: 6,
-      speedKnots: 2400,
-    },
+    // 多武器：SAM（防空+攔截）+ CIWS（點防禦）+ 反艦飛彈（core 射程）+ ASW 魚雷
+    defaultLoadout: [
+      { weaponId: "sam_ship", ammoMax: 8 },
+      { weaponId: "ciws", ammoMax: 200 },
+      { weaponId: "asm", ammoMax: 8, rangeKm: "core" },
+      { weaponId: "torpedo", ammoMax: 4, rangeKm: 18 },
+    ],
     // 反潛聲學：水面艦吵（易被潛艦聽到）、艦艏被動聲納普通、可拍發主動聲納
     acoustics: {
       sourceLevelDb: 150,
@@ -144,6 +149,11 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 43200,  // 12 hr 巡邏
     },
     defaultAmmoMax: 8,                // Mk-48 重型魚雷 8 + Harpoon
+    // 多武器：重型魚雷（core 射程，反艦+反潛）+ 潛射反艦飛彈
+    defaultLoadout: [
+      { weaponId: "torpedo", ammoMax: 6, rangeKm: "core" },
+      { weaponId: "asm", ammoMax: 2, rangeKm: 120 },
+    ],
     // 反潛聲學：潛艦安靜（低聲源級）、被動聲納佳（高陣列增益、低門檻）；預設不拍主動（保持隱蔽）
     acoustics: {
       sourceLevelDb: 132,
@@ -182,6 +192,11 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       requireRoundTrip: true,
     },
     defaultAmmoMax: 6,                // 4 AAM + 2 AGM 典型掛載
+    // 多武器：空對空飛彈（core 射程）+ 小型反艦彈
+    defaultLoadout: [
+      { weaponId: "aam", ammoMax: 4, rangeKm: "core" },
+      { weaponId: "asm", ammoMax: 2, rangeKm: 60 },
+    ],
   },
 
   radar_station: {
@@ -239,14 +254,8 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 7200,
     },
     defaultAmmoMax: 8,                // SAM 攔截彈
-    // 中程 SAM：天弓 II / 海弓 III，攔巡弋彈與低空掠海彈
-    defaultInterceptor: {
-      rangeKm: 55,
-      pKill: 0.5,
-      profiles: ["cruise", "sea_skim"],
-      cooldownSec: 6,
-      speedKnots: 2200,
-    },
+    // 中程 SAM：天弓 II / 海弓 III — 打飛機（core 射程）兼攔巡弋彈 / 掠海彈
+    defaultLoadout: [{ weaponId: "sam_coast", ammoMax: 8, rangeKm: "core" }],
   },
 
   mobile_radar: {
@@ -304,15 +313,8 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 10800,
     },
     defaultAmmoMax: 16,               // PAC-3 4 launcher × 4 missiles
-    // 長程 / 反彈道 SAM：PAC-3 / 天弓 III，可攔彈道與高空巡弋
-    // 攔截彈須快於彈道彈（3200kn）才追得上 → 4200kn
-    defaultInterceptor: {
-      rangeKm: 130,
-      pKill: 0.55,
-      profiles: ["cruise", "ballistic", "pop_up"],
-      cooldownSec: 8,
-      speedKnots: 4200,
-    },
+    // 長程 / 反彈道 SAM：PAC-3 / 天弓 III — 打飛機（core 射程）兼攔彈道 / 高空巡弋
+    defaultLoadout: [{ weaponId: "sam_patriot", ammoMax: 16, rangeKm: "core" }],
   },
 
   supply_ship: {
