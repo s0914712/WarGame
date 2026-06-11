@@ -14,6 +14,8 @@
 import type { Command, CoreAttributes, Scenario, SimulationState, Unit, UnitId } from "./types";
 // 用 scenarios/empty 的版本（含 sides 配置）— Plan Mode 入口需要
 import { EMPTY_SCENARIO } from "./scenarios/empty";
+import { UNIT_CATALOG } from "./catalog/units";
+import { initUnitWeapons } from "./catalog/weapons";
 
 type Listener = () => void;
 
@@ -60,7 +62,9 @@ export const scenarioStore = {
 
   loadScenario(scenario: Scenario): void {
     const units: Record<UnitId, Unit> = {};
-    for (const u of scenario.units) units[u.id] = u;
+    for (const u of scenario.units) {
+      units[u.id] = initUnitWeapons(u, UNIT_CATALOG[u.kind].defaultLoadout);
+    }
     state = {
       scenario,
       simTimeSec: scenario.startSimTimeSec,
@@ -137,7 +141,8 @@ export const scenarioStore = {
 
   /** Plan Mode：放置新單位（立即插入 state，不走指令佇列） */
   addUnit(unit: Unit): void {
-    state = { ...state, units: { ...state.units, [unit.id]: unit } };
+    const u = initUnitWeapons(unit, UNIT_CATALOG[unit.kind].defaultLoadout);
+    state = { ...state, units: { ...state.units, [u.id]: u } };
     notify();
   },
 
