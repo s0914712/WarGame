@@ -20,6 +20,8 @@ import { COMBAT_RULES_V1 } from "./rules/v1";
 import { checkVictory } from "./victory";
 import { runReplenishment } from "./replenishment";
 import { runRtb } from "./rtb";
+import { deriveSonarEnv } from "./acousticEnvironment";
+import type { SonarEnv } from "./sonar";
 
 const SUBTICK_MAX_SEC = 0.5;
 
@@ -59,10 +61,20 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
   const nextSimSec = nextSimSec0;
   const occlusionEnabled = state.scenario.terrainOcclusion !== false;   // 省略 = 啟用
   const acousticModel = state.scenario.acousticModel === true;          // 省略 = 關閉
+  // 聲學環境（使用者設定）→ 導出層深 / 會聚區 / 環境噪音 / 淺水底損；省略則用場景固定值
+  let effLayerDepthM = state.scenario.sonarLayerDepthM;
+  let effCzKm = state.scenario.convergenceZoneKm;
+  let sonarEnv: SonarEnv = {};
+  if (state.scenario.acousticEnv) {
+    const d = deriveSonarEnv(state.scenario.acousticEnv, state.scenario.convergenceZoneKm);
+    effLayerDepthM = d.layerDepthM;
+    effCzKm = d.czSpacingKm;
+    sonarEnv = d.sonarEnv;
+  }
   const detection = computeDetection(
     unitsAfterMove, state.scenario.sides, dtSec, nextSimSec,
-    occlusionEnabled, acousticModel, state.scenario.sonarLayerDepthM,
-    state.scenario.convergenceZoneKm, sonobuoys,
+    occlusionEnabled, acousticModel, effLayerDepthM,
+    effCzKm, sonobuoys, sonarEnv,
   );
 
   // 5. 戰鬥 — 把 detection 事件併入本 tick：eventsThisTick 由此重置、eventsAll 先接 detection

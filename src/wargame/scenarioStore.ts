@@ -126,6 +126,12 @@ export const scenarioStore = {
     notify();
   },
 
+  /** 套用使用者設定的聲學環境（場景開始前設定畫面）→ 寫入 scenario.acousticEnv */
+  applyAcousticEnv(env: import("./types").AcousticEnvironment): void {
+    state = { ...state, scenario: { ...state.scenario, acousticEnv: env } };
+    notify();
+  },
+
   /** Phase 3 內部 tick 呼叫；其他地方不要直接寫 */
   setState(next: SimulationState): void {
     state = next;
