@@ -18,11 +18,20 @@
  *
  * 純函式：傳入 units 全集 + sides + dt + simSec → 回傳 { units, events }。
  */
-import type { DetectionState, EngagementEvent, Side, SideId, Sonobuoy, Unit, UnitId } from "../types";
-import { haversineKm } from "./geo";
+import type {
+  ContactQuality, DetectionState, EngagementEvent, PassiveContact, Side, SideId,
+  Sonobuoy, TmaTrack, Unit, UnitId,
+} from "../types";
+import { haversineKm, bearingDeg } from "./geo";
 import { UNIT_CATALOG } from "../catalog/units";
 import { radarHorizonKm, isTerrainOccluded } from "./los";
-import { sonarDetects, acousticsOf, isPeriscopeDepth, DEFAULT_LAYER_DEPTH_M, type SonarEnv } from "./sonar";
+import {
+  sonarActiveDetects, sonarPassiveDetects, acousticsOf, isPeriscopeDepth,
+  PERISCOPE_VISUAL_RANGE_KM, DEFAULT_LAYER_DEPTH_M, type SonarEnv,
+} from "./sonar";
+import {
+  advanceTmaTrack, tmaSolved, bearingSpreadDeg, TRIANGULATE_MIN_SPREAD_DEG,
+} from "./localization";
 
 /** 平台有效感測高度（公尺）：取座標高度與 catalog 平台高度的大者 + 桅高 */
 function platformAltM(u: Unit): number {
@@ -68,6 +77,10 @@ function stateFromInSec(inSec: number): DetectionState {
 export interface DetectionResult {
   units: Record<UnitId, Unit>;
   events: EngagementEvent[];
+  /** 被動測向接觸（E21）— 供測向射線渲染 */
+  passiveContacts: PassiveContact[];
+  /** TMA 機動測距追蹤（E21）：sensorId → (targetId → TmaTrack) */
+  tmaTracks: Record<UnitId, Record<UnitId, TmaTrack>>;
 }
 
 export function computeDetection(
@@ -81,9 +94,12 @@ export function computeDetection(
   sonarConvergenceKm = 0,
   sonobuoys: Sonobuoy[] = [],
   sonarEnv: SonarEnv = {},
+  prevTmaTracks: Record<UnitId, Record<UnitId, TmaTrack>> = {},
 ): DetectionResult {
   const sideMap = new Map<SideId, Side>(sides.map((s) => [s.id, s]));
   const events: EngagementEvent[] = [];
+  const passiveContacts: PassiveContact[] = [];
+  const tmaTracks: Record<UnitId, Record<UnitId, TmaTrack>> = {};
 
   // 1. 收集每個 sideId 下有偵測能力（detectionRange > 0）的 sensor units
   const sensorsBySide = new Map<SideId, Unit[]>();
@@ -102,16 +118,24 @@ export function computeDetection(
     arr.push(b);
   }
 
-  // 2. 對每個 unit 重算 detectedBy + detectionTimers
+  // 2. 對每個 unit 重算 detectedBy + detectionTimers + contactQuality
   const next: Record<UnitId, Unit> = {};
   for (const u of Object.values(units)) {
     const detectedBy: Unit["detectedBy"] = {};
     const timers: Partial<Record<SideId, Timer>> = {};
+    const contactQuality: Partial<Record<SideId, ContactQuality>> = {};
 
     // stealth：目標 extensions.stealth (0..0.95) → 等比例壓低感測器有效範圍
     const stealthRaw = typeof u.extensions.stealth === "number"
       ? (u.extensions.stealth as number) : 0;
     const stealth = Math.max(0, Math.min(0.95, stealthRaw));
+    const uDomain = UNIT_CATALOG[u.kind].domain;
+    const uAlt = platformAltM(u);
+    const uPos: [number, number] = [u.position.lng, u.position.lat];
+    const targetInWater = uDomain === "sea" || uDomain === "subsurface";
+    // 啟用聲納模型時，水下目標只能靠聲納偵測（雷達看不到水下）；
+    // 但潛望鏡 / 近水面深度的潛艦會暴露於雷達 / 光學
+    const radarCanSeeTarget = !acousticModel || uDomain !== "subsurface" || isPeriscopeDepth(u);
 
     for (const [observerSideId, side] of sideMap) {
       if (observerSideId === u.sideId) continue;
@@ -120,64 +144,66 @@ export function computeDetection(
         || (myOwnSide?.isHostileTo.includes(observerSideId) ?? false);
       if (!isHostileToObserver) continue;
 
-      // 判斷是否在任一 sensor 有效範圍內（含 A5 地平線 + 地形遮蔽 + E20 聲納）
+      // 分離「測距偵測」(rangingHit → 位置已知 fixed) 與「被動測向」(passiveHolds → 只得方位)
       const sensors = sensorsBySide.get(observerSideId);
-      const uDomain = UNIT_CATALOG[u.kind].domain;
-      const uAlt = platformAltM(u);
-      const targetInWater = uDomain === "sea" || uDomain === "subsurface";
-      // 啟用聲納模型時，水下目標只能靠聲納偵測（雷達看不到水下）；
-      // 但潛望鏡 / 近水面深度的潛艦會暴露於雷達 / 光學
-      const radarCanSeeTarget = !acousticModel || uDomain !== "subsurface" || isPeriscopeDepth(u);
-      let inRange = false;
+      let rangingHit = false;
+      const passiveHolds: { sensor: Unit; bearingDeg: number }[] = [];
+
       if (sensors && sensors.length > 0) {
         for (const s of sensors) {
           const sDomain = UNIT_CATALOG[s.kind].domain;
+          const sPos: [number, number] = [s.position.lng, s.position.lat];
 
-          // ── 雷達 / 光學路徑 ──（潛艦深潛不用雷達；潛望鏡深度可升桅用雷達）
-          const sensorCanRadar = !acousticModel || sDomain !== "subsurface" || isPeriscopeDepth(s);
+          // ── 雷達 / 光學路徑 ──（聲學模型下潛艦不用雷達搜索，改走潛望鏡目視）
+          const sensorCanRadar = !acousticModel || sDomain !== "subsurface";
           if (radarCanSeeTarget && sensorCanRadar) {
             const effRangeKm = s.core.detectionRangeKm * (1 - stealth);
             if (effRangeKm > 0) {
-              const d = haversineKm(
-                [s.position.lng, s.position.lat],
-                [u.position.lng, u.position.lat],
-              );
+              const d = haversineKm(sPos, uPos);
               if (d <= effRangeKm) {
                 let blocked = false;
                 if (occlusionEnabled && sDomain !== "subsurface" && uDomain !== "subsurface") {
                   const sAlt = platformAltM(s);
                   if (d > radarHorizonKm(sAlt, uAlt)) blocked = true;        // 超出雷達地平線
-                  else if (isTerrainOccluded(
-                    [s.position.lng, s.position.lat], sAlt,
-                    [u.position.lng, u.position.lat], uAlt,
-                  )) blocked = true;                                         // 山脈遮蔽
+                  else if (isTerrainOccluded(sPos, sAlt, uPos, uAlt)) blocked = true;  // 山脈遮蔽
                 }
-                if (!blocked) { inRange = true; break; }
+                if (!blocked) rangingHit = true;
               }
             }
           }
 
-          // ── 聲納路徑（E20）──（水中目標 + 雙方具聲學特性）
+          // ── 潛望鏡目視（B3）──（潛艦在潛望鏡深度，目視 ~7浬內的水面 / 空中目標 → 給距離 fixed）
+          if (acousticModel && sDomain === "subsurface" && isPeriscopeDepth(s)
+              && uDomain !== "subsurface") {
+            if (haversineKm(sPos, uPos) <= PERISCOPE_VISUAL_RANGE_KM) rangingHit = true;
+          }
+
+          // ── 聲納路徑（E20）──（水中目標 + sensor 具聲學特性）
           if (acousticModel && targetInWater && acousticsOf(s)) {
-            const d = haversineKm(
-              [s.position.lng, s.position.lat],
-              [u.position.lng, u.position.lat],
-            );
-            if (sonarDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm, sonarEnv)) { inRange = true; break; }
+            const d = haversineKm(sPos, uPos);
+            // 主動 / 吊放聲納 → 給距離 → fixed
+            if (sonarActiveDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm, sonarEnv)) {
+              rangingHit = true;
+            }
+            // 被動聲納 → 只得方位 → bearing-only（待三角交會 / TMA 才升 fixed）
+            if (sonarPassiveDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm, sonarEnv)) {
+              passiveHolds.push({ sensor: s, bearingDeg: bearingDeg(sPos, uPos) });
+            }
           }
         }
       }
 
-      // ── 聲標屏幕路徑 ──（水中目標 + 觀察方有聲標在 MDR 內）
-      if (!inRange && targetInWater) {
+      // ── 聲標屏幕路徑 ──（水中目標 + 觀察方有聲標在 MDR 內 → 點偵測給位置 → fixed）
+      if (targetInWater && !rangingHit) {
         const buoys = buoysBySide.get(observerSideId);
         if (buoys) {
           for (const b of buoys) {
-            const d = haversineKm(b.position, [u.position.lng, u.position.lat]);
-            if (d <= b.mdrKm) { inRange = true; break; }
+            if (haversineKm(b.position, uPos) <= b.mdrKm) { rangingHit = true; break; }
           }
         }
       }
+
+      const inRange = rangingHit || passiveHolds.length > 0;
 
       const prevState: DetectionState = u.detectedBy[observerSideId] ?? "hidden";
       const prev: Timer = u.detectionTimers?.[observerSideId] ?? { inSec: 0, outSec: 0 };
@@ -209,20 +235,63 @@ export function computeDetection(
       detectedBy[observerSideId] = newState;
       if (inSec !== 0 || outSec !== 0) timers[observerSideId] = { inSec, outSec };
 
+      // ── TMA 機動測距追蹤：持有被動接觸的每個感測器累積自身機動 ──
+      for (const h of passiveHolds) {
+        const adv = advanceTmaTrack(
+          prevTmaTracks[h.sensor.id]?.[u.id], h.sensor.position.headingDeg, dtSec,
+        );
+        let bucket = tmaTracks[h.sensor.id];
+        if (!bucket) { bucket = {}; tmaTracks[h.sensor.id] = bucket; }
+        bucket[u.id] = adv;
+      }
+
+      // ── 定位品質：測距 → fixed；否則雙感測三角交會 / 單感測 TMA 解算 → fixed；皆無 → bearing ──
+      let quality: ContactQuality | undefined;
+      if (inRange) {
+        if (rangingHit) {
+          quality = "fixed";
+        } else {
+          const spread = bearingSpreadDeg(passiveHolds.map((h) => h.bearingDeg));
+          const triangulated = passiveHolds.length >= 2 && spread >= TRIANGULATE_MIN_SPREAD_DEG;
+          const solved = passiveHolds.some((h) => tmaSolved(tmaTracks[h.sensor.id]?.[u.id]));
+          quality = triangulated || solved ? "fixed" : "bearing";
+        }
+      } else if (newState !== "hidden") {
+        // 記憶接觸（失聯衰減中）：沿用上一 tick 定位品質，bearing 接觸不會在失聯時突現位置
+        quality = u.contactQuality?.[observerSideId] ?? "fixed";
+      }
+      if (quality) {
+        contactQuality[observerSideId] = quality;
+        // 被動測向接觸 → 輸出射線（fixed 也輸出，渲染層自行決定畫不畫）
+        for (const h of passiveHolds) {
+          passiveContacts.push({
+            observerSideId,
+            sensorId: h.sensor.id,
+            sensorPos: [h.sensor.position.lng, h.sensor.position.lat],
+            bearingDeg: h.bearingDeg,
+            targetId: u.id,
+            quality,
+          });
+        }
+      }
+
       // ── emit 關鍵升降級事件 ──
       const ev = detectionEvent(prevState, newState, side, u, simSec);
       if (ev) events.push(ev);
     }
 
     const nextTimers = Object.keys(timers).length > 0 ? timers : undefined;
-    if (sameDetectedBy(u.detectedBy, detectedBy) && sameTimers(u.detectionTimers, nextTimers)) {
+    const nextQuality = Object.keys(contactQuality).length > 0 ? contactQuality : undefined;
+    if (sameDetectedBy(u.detectedBy, detectedBy)
+        && sameTimers(u.detectionTimers, nextTimers)
+        && sameDetectedBy(u.contactQuality ?? {}, contactQuality)) {
       next[u.id] = u;
     } else {
-      next[u.id] = { ...u, detectedBy, detectionTimers: nextTimers };
+      next[u.id] = { ...u, detectedBy, detectionTimers: nextTimers, contactQuality: nextQuality };
     }
   }
 
-  return { units: next, events };
+  return { units: next, events, passiveContacts, tmaTracks };
 }
 
 /** 只在「發現 / 完成分類 / 鎖定 / 失去接觸」這幾個有意義的門檻發事件，避免洗版 */
@@ -253,7 +322,9 @@ function detectionEvent(
   };
 }
 
-function sameDetectedBy(a: Unit["detectedBy"], b: Unit["detectedBy"]): boolean {
+function sameDetectedBy(
+  a: Partial<Record<SideId, string>>, b: Partial<Record<SideId, string>>,
+): boolean {
   const ak = Object.keys(a);
   const bk = Object.keys(b);
   if (ak.length !== bk.length) return false;

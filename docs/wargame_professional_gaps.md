@@ -195,8 +195,20 @@
 傳播損失含球面擴散 + 吸收 + 溫躍層跨層損失；噪音隨航速增加；
 主動聲納偵潛遠但 ping 曝露自身。**會聚區（CZ）**於 ~N×55km 環內降低 TL 形成偵測環、環間陰影區聽不到
 （`Scenario.convergenceZoneKm`）。`Scenario.acousticModel` 啟用，`asw_escort_2031` 場景示範。
-**未做（未來）**：可指令控制下潛深度（目前固定深度）、被動測向三角定位、拖曳陣列 vs 艦艏陣列分離、
-海底地形/聲速剖面 SSP。
+
+### E21. 被動測向 / TMA / 吊放聲納 / 混響限制 ✅ 已實作
+- **被動接觸維持「未定位」**：被動聲納只得方位（`PassiveContact` 測向射線），位置 `contactQuality="bearing"`
+  → 符號層不顯示精確位置、combat 不可開火。**三角交會**（≥2 感測器、方位張角 ≥25°）或
+  **TMA 機動測距**（單一感測器持續追蹤 ≥60s + 自身機動 ≥30°，Ekelund）→ 升 `"fixed"` 才定位可射控。
+  （`sim/localization.ts` + `detection.ts` 的 ranging/passive 分離）
+- **主動聲納混響限制（reverberation-limited）**：淺水 / 海底反射強 → `SonarEnv.reverbScatterDb` > 0，
+  主動 SE = min(噪音限制, TS+DI−Sr−DT)；回波與混響同隨 SL/距離變化相消 → 拍強 ping 也無益。
+- **反潛直升機吊放聲納（dipping sonar）**：新 `asw_helo` 單位種類，懸停（`isDippingActive`）時換能器入水
+  做主動點偵測（吊放至層下 → 略過跨層損失）。
+- **潛艦深度 × 武器/感測**：可指令 `set_depth`；下潛只能發射魚雷、潛射巡弋飛彈須潛望鏡深度；
+  潛望鏡深度可目視 ~7 浬（`PERISCOPE_VISUAL_RANGE_KM`）。**水文（BT 溫深剖面）+ 深度** 決定跨層損失
+  → 偵測機率差異（`asw_escort_2031` 場景：層內淺潛易偵獲、層下深潛難偵獲）。
+**未做（未來）**：拖曳陣列 left/right 模糊、海底地形 bathymetry、聲速剖面射線追蹤 SSP。
 
 ---
 

@@ -13,6 +13,7 @@
  */
 import type { LngLat, SideId, Unit, UnitId, UnitKind } from "../types";
 import { scenarioStore } from "../scenarioStore";
+import { viewStore } from "../viewStore";
 import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
 import { DEFAULT_MDR_KM } from "../sim/sonobuoyField";
@@ -267,6 +268,38 @@ export const editorStore = {
       const cruise = Math.max(1, Math.round(unit.core.speedKnots * 0.6));
       scenarioStore.enqueueCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_speed", speedKnots: cruise });
     }
+  },
+
+  /**
+   * RTS 式右鍵攻擊：右鍵點到敵方單位 → 對選中的己方單位下達「接戰」攻擊計畫。
+   * 回傳 true = 已下達攻擊命令（呼叫端就不要再當成移動處理）；false = 非有效敵方目標。
+   * 注意：未定位（bearing）/ 未進入射程的目標仍可下令，combat 會在定位 + 進射程後自動開火。
+   */
+  quickEngage(attackerId: UnitId, targetId: UnitId): boolean {
+    if (attackerId === targetId) return false;
+    const state = scenarioStore.getState();
+    const attacker = state.units[attackerId];
+    const target = state.units[targetId];
+    if (!attacker || !target) return false;
+    if (attacker.hpCurrent <= 0 || target.hpCurrent <= 0) return false;
+    // 只能命令己方單位（spectator 視角不限）
+    const activeSide = viewStore.getActiveSideId();
+    if (activeSide && attacker.sideId !== activeSide) return false;
+    // 目標必須與攻方敵對
+    const sides = state.scenario.sides;
+    const atkSide = sides.find((s) => s.id === attacker.sideId);
+    const tgtSide = sides.find((s) => s.id === target.sideId);
+    const hostile = (atkSide?.isHostileTo.includes(target.sideId) ?? false)
+      || (tgtSide?.isHostileTo.includes(attacker.sideId) ?? false);
+    if (!hostile) return false;
+    scenarioStore.enqueueCommand({
+      id: makeCmdId(),
+      unitId: attackerId,
+      simAtSec: wargameClock.getSimTime(),
+      kind: "engage",
+      targetUnitId: targetId,
+    });
+    return true;
   },
 
   /** 清掉某個單位「目前已套用」的 waypoint（不是 pending）。 */

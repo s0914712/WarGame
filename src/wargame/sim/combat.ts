@@ -20,6 +20,7 @@ import type {
 import { advanceTowardKm, haversineKm, knotsToKmPerSec } from "./geo";
 import { makeRng, seedFromStrings } from "./rng";
 import { detectionRank, MIN_ENGAGE_STATE } from "./detection";
+import { isPeriscopeDepth } from "./sonar";
 import { planInterceptors } from "./airDefense";
 import { UNIT_CATALOG } from "../catalog/units";
 import { loadoutOf, consumeAmmo, PROFILE_SPEED_KNOTS, type LoadedWeapon } from "../catalog/weapons";
@@ -50,10 +51,13 @@ function selectOffenseWeapon(attacker: Unit, target: Unit, simSec: number): Load
     [attacker.position.lng, attacker.position.lat],
     [target.position.lng, target.position.lat],
   );
+  // 潛艦下潛時只能發射魚雷；潛射巡弋飛彈（Club / Harpoon 等）須升至潛望鏡深度才能發射
+  const submergedSub = attacker.kind === "submarine" && !isPeriscopeDepth(attacker);
   let best: LoadedWeapon | null = null;
   for (const lw of loadoutOf(attacker)) {
     if (lw.spec.targetDomains.length === 0) continue;             // 純攔截武器不主動攻擊
     if (!lw.spec.targetDomains.includes(targetDomain)) continue;  // 域不符（如 AAM 打不到艦）
+    if (submergedSub && lw.mag.weaponId !== "torpedo") continue;  // 下潛潛艦：僅魚雷
     if (lw.mag.ammoCurrent <= 0) continue;
     if (dist > lw.rangeKm) continue;
     if (lw.spec.cooldownSec && lw.mag.lastFireSimSec != null &&
@@ -71,6 +75,8 @@ function selectOffenseWeapon(attacker: Unit, target: Unit, simSec: number): Load
 function canEngageWeapon(attacker: Unit, target: Unit, simSec: number): LoadedWeapon | null {
   if (target.hpCurrent <= 0 || attacker.hpCurrent <= 0) return null;
   if (detectionRank(target.detectedBy[attacker.sideId]) < MIN_ENGAGE_RANK) return null;
+  // 未定位（僅方位）接觸無射控解算 → 不可開火，須先三角交會 / TMA / 主動定位
+  if (target.contactQuality?.[attacker.sideId] === "bearing") return null;
   return selectOffenseWeapon(attacker, target, simSec);
 }
 
@@ -149,6 +155,7 @@ export function runCombat(
         if (o.hpCurrent <= 0) continue;
         const det = o.detectedBy[u.sideId];
         if (detectionRank(det) < MIN_ENGAGE_RANK) continue;   // 未分類不可主動接戰
+        if (o.contactQuality?.[u.sideId] === "bearing") continue;  // 未定位接觸無射控解算
         if (roe === "weapons_tight" && det !== "tracked") continue;
         if (roe === "defensive_only" && !isShootingAtSide(o, u.sideId, missiles, units)) continue;
         if (!selectOffenseWeapon(u, o, simSec)) continue;     // 無合適武器（域/射程/彈）→ 跳過

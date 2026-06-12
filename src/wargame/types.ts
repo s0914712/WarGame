@@ -36,7 +36,8 @@ export type UnitKind =
   | "mobile_radar"     // 機動雷達車（YLC-2 / 蜂眼）
   | "sam_patriot"      // 重型 SAM（Patriot PAC-3 / 天弓 III）
   | "supply_ship"      // 補給艦（RAS 補油料 + 彈藥；無武器）
-  | "airbase";         // 空軍基地（戰機 RTB 目標；大範圍 supply）
+  | "airbase"          // 空軍基地（戰機 RTB 目標；大範圍 supply）
+  | "asw_helo";        // 反潛直升機（吊放聲納 dipping sonar 點偵測 + 輕型魚雷）
 export type Domain = "land" | "air" | "sea" | "subsurface";
 
 export interface UnitCatalogEntry {
@@ -154,6 +155,42 @@ export interface Position {
 export type DetectionState = "hidden" | "unknown" | "classified" | "tracked";
 
 /**
+ * 接觸定位品質（E21 被動測向 / TMA）。獨立於 DetectionState（識別等級）：
+ *   - "bearing" ：僅得方位、不得距離（單一被動聲納）→ 位置「未定位」，不顯示精確座標、不可開火
+ *   - "fixed"   ：位置已知（雷達 / 主動聲納 / 聲標點偵測 / 潛望鏡目視 / 雙感測三角交會 / TMA 機動測距解算）
+ * 省略 = 視為 "fixed"（無聲學模型時雷達直接給距離，保留舊行為）。
+ */
+export type ContactQuality = "bearing" | "fixed";
+
+/**
+ * TMA（Target Motion Analysis）機動測距追蹤（per 感測器 × 目標）。
+ * 單一被動感測器需「自身機動」（航向變化）累積足夠才能解算距離（Ekelund / 機動測距）。
+ */
+export interface TmaTrack {
+  /** 持續被動接觸累計秒數 */
+  holdSec: number;
+  /** 上一 tick 感測器航向（算航向變化用） */
+  lastHeadingDeg: number;
+  /** 接觸期間累計航向變化量（度）— 達門檻 + holdSec 足夠 → 解算成立 */
+  maneuverDeg: number;
+}
+
+/**
+ * 被動測向接觸（E21）— 供測向射線渲染。每 tick 由 detection 重算。
+ * 被動聲納只得方位不得距離 → 從感測器沿 bearingDeg 畫射線（固定長度，不洩漏真實距離）。
+ */
+export interface PassiveContact {
+  observerSideId: SideId;
+  sensorId: UnitId;
+  sensorPos: LngLat;
+  /** 感測器→目標方位（度，0=北 順時針） */
+  bearingDeg: number;
+  targetId: UnitId;
+  /** 此接觸對該觀察方的定位品質（bearing = 未定位、fixed = 已交會/解算） */
+  quality: ContactQuality;
+}
+
+/**
  * 交戰規則（Rules of Engagement）。沿用 CMO 慣例：
  *   - weapons_free   ：可主動接戰射程內任何「已分類（≥ classified）」的敵方（預設）
  *   - weapons_tight  ：只接戰已完成正面識別（tracked）的敵方
@@ -204,6 +241,11 @@ export interface Unit {
    * optional → 既有場景 / replay JSON 不需含此欄位（detection.ts 會初始化）。
    */
   detectionTimers?: Partial<Record<SideId, { inSec: number; outSec: number }>>;
+  /**
+   * 接觸定位品質（per 觀察方 side，E21）：bearing = 未定位（僅方位）、fixed = 位置已知。
+   * 由 detection 每 tick 重算；省略 = 該方未偵測或視為 fixed。渲染層 / combat 開火閘門讀此值。
+   */
+  contactQuality?: Partial<Record<SideId, ContactQuality>>;
   lastTickSimSec: number;
   parentId?: UnitId;
   engagingTargetId?: UnitId;
@@ -467,6 +509,15 @@ export interface SimulationState {
   wreckages: Wreck[];
   /** 已佈放的聲標（反潛屏幕）；無聲標時為空陣列 */
   sonobuoys: Sonobuoy[];
+  /**
+   * 被動測向接觸（E21）— 每 tick 由 detection 重算，供測向射線渲染。省略 = 空。
+   */
+  passiveContacts?: PassiveContact[];
+  /**
+   * TMA 機動測距追蹤（E21）：sensorId → (targetId → TmaTrack)。engine 內部狀態，
+   * 跨 tick 累積感測器機動量；省略 = 空。replay JSON 可省略（detection 會初始化）。
+   */
+  tmaTracks?: Record<UnitId, Record<UnitId, TmaTrack>>;
   /**
    * hold_area 條件計時：condition index → 該方第一次進入區域的 simSec；
    * 不在區域內 → null。達到 forSec 即勝。

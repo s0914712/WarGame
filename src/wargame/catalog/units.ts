@@ -391,6 +391,44 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     supplyFuelKmPerSec: 25,           // 地勤快速加油
     supplyAmmoPerSec: 0.5,            // 每 2 秒一發
   },
+
+  asw_helo: {
+    kind: "asw_helo",
+    displayName: "反潛直升機",
+    domain: "air",
+    defaultAltitudeM: 30,             // 懸停吊放聲納時低空，換能器入水
+    iconShape: "triangle_inverted",
+    // S-70C / MH-60R 反潛直升機：吊放聲納（dipping sonar）點偵測 + 輕型魚雷（Mk-46/54 ~10km）
+    // 巡航 ~140 kn；自帶小型水面搜索雷達；真正的反潛感測是吊放聲納（懸停才作業）
+    defaultCore: {
+      rangeKm: 12,
+      speedKnots: 140,
+      movementRangeKm: 700,
+      detectionRangeKm: 40,           // 小型水面搜索雷達（水下靠吊放聲納，另計）
+      hpMax: 30,
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 40,    step: 2,   unit: "km" },
+      speedKnots:       { min: 0,   max: 160,   step: 5,   unit: "kn" },
+      movementRangeKm:  { min: 100, max: 1500,  step: 50,  unit: "km" },
+      detectionRangeKm: { min: 0,   max: 150,   step: 10,  unit: "km" },
+      hpMax:            { min: 20,  max: 120,   step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 7200,   // 2 hr 任務窗
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 2,                // 2 枚輕型反潛魚雷
+    defaultLoadout: [{ weaponId: "torpedo", ammoMax: 2, rangeKm: 12 }],
+    // 吊放聲納（dipping sonar）：懸停時換能器入水做主動點偵測 + 被動聽音（isDippingActive 控制）。
+    // 換能器吊放至溫躍層下 → 不受跨層損失。helo 在空中，本身非聲納目標（targetStrength 不參與）。
+    acoustics: {
+      sourceLevelDb: 70,
+      targetStrengthDb: 0,
+      passive: { arrayGainDb: 18, dtDb: 5, selfNoiseDb: 40 },
+      active: { sourceLevelDb: 212 },
+    },
+  },
 };
 
 /** UI 顯示名稱對照 */

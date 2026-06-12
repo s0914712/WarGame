@@ -57,15 +57,20 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
   for (const u of Object.values(units)) {
     let visible = 1;
     let unknownContact = 0;
+    let bearingOnly = false;
     if (activeSide && hostileToActive.includes(u.sideId)) {
       const det = u.detectedBy[activeSide];
       visible = det && det !== "hidden" ? 1 : 0;
       // 漸進偵測：unknown 階段只看到匿名接觸，尚未識別身份 / HP
       if (det === "unknown") unknownContact = 1;
+      // 被動測向「未定位」接觸：位置未知 → 不畫單位圖示（改由測向射線呈現），等三角交會 / TMA 才定位
+      if (visible === 1 && u.contactQuality?.[activeSide] === "bearing") bearingOnly = true;
     }
     // Spectator (activeSide == null) → everything visible 100%
     // FoW 嚴格 + 非 spectator + 未偵測 → skip 渲染
     if (visible === 0 && fogStrict) continue;
+    // 未定位（僅方位）→ 不洩漏精確位置，跳過圖示渲染
+    if (bearingOnly) continue;
 
     const hpFrac = u.hpCurrent / u.core.hpMax;
     features.push({

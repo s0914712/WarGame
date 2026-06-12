@@ -70,6 +70,27 @@ export function bottomLossDbPerKm(
   return Math.max(0, Math.min(4, loss));
 }
 
+/** 底質的混響後向散射基準強度（dB，A3）：岩底反射最強、泥底最吸聲 */
+function bottomScatterBaseDb(bottomType: AcousticEnvironment["bottomType"]): number {
+  switch (bottomType) {
+    case "rock": return 20;
+    case "sand": return 14;
+    case "mud":  return 8;
+  }
+}
+
+/**
+ * 淺水主動聲納混響散射強度（dB，A3）。深水 → 0（純噪音限制）；
+ * 越淺、底質反射越強 → 混響越大 → 主動聲納改為混響限制（拍強 ping 也無益）。
+ */
+export function reverbScatterDb(
+  bottomType: AcousticEnvironment["bottomType"], waterDepthM: number,
+): number {
+  if (waterDepthM >= SHALLOW_WATER_M) return 0;
+  const shallowness = (SHALLOW_WATER_M - waterDepthM) / SHALLOW_WATER_M;   // 0..1
+  return Math.max(0, bottomScatterBaseDb(bottomType) * shallowness);
+}
+
 /**
  * 由聲學環境導出 engine/detection 要用的有效參數：
  *   - layerDepthM（SLD）
@@ -86,6 +107,7 @@ export function deriveSonarEnv(
     sonarEnv: {
       ambientNlDb: seaStateToAmbientNlDb(env.seaState),
       bottomLossDbPerKm: bottomLossDbPerKm(env.bottomType, env.waterDepthM),
+      reverbScatterDb: reverbScatterDb(env.bottomType, env.waterDepthM),
     },
   };
 }
