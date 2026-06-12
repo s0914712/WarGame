@@ -18,7 +18,7 @@
  *
  * 純函式：傳入 units 全集 + sides + dt + simSec → 回傳 { units, events }。
  */
-import type { DetectionState, EngagementEvent, Side, SideId, Unit, UnitId } from "../types";
+import type { DetectionState, EngagementEvent, Side, SideId, Sonobuoy, Unit, UnitId } from "../types";
 import { haversineKm } from "./geo";
 import { UNIT_CATALOG } from "../catalog/units";
 import { radarHorizonKm, isTerrainOccluded } from "./los";
@@ -79,6 +79,7 @@ export function computeDetection(
   acousticModel = false,
   sonarLayerDepthM = DEFAULT_LAYER_DEPTH_M,
   sonarConvergenceKm = 0,
+  sonobuoys: Sonobuoy[] = [],
 ): DetectionResult {
   const sideMap = new Map<SideId, Side>(sides.map((s) => [s.id, s]));
   const events: EngagementEvent[] = [];
@@ -90,6 +91,14 @@ export function computeDetection(
     let arr = sensorsBySide.get(u.sideId);
     if (!arr) { arr = []; sensorsBySide.set(u.sideId, arr); }
     arr.push(u);
+  }
+
+  // 1b. 聲標屏幕：依陣營分組（水中目標在 MDR 內即被該陣營偵測）
+  const buoysBySide = new Map<SideId, Sonobuoy[]>();
+  for (const b of sonobuoys) {
+    let arr = buoysBySide.get(b.sideId);
+    if (!arr) { arr = []; buoysBySide.set(b.sideId, arr); }
+    arr.push(b);
   }
 
   // 2. 對每個 unit 重算 detectedBy + detectionTimers
@@ -154,6 +163,17 @@ export function computeDetection(
               [u.position.lng, u.position.lat],
             );
             if (sonarDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm)) { inRange = true; break; }
+          }
+        }
+      }
+
+      // ── 聲標屏幕路徑 ──（水中目標 + 觀察方有聲標在 MDR 內）
+      if (!inRange && targetInWater) {
+        const buoys = buoysBySide.get(observerSideId);
+        if (buoys) {
+          for (const b of buoys) {
+            const d = haversineKm(b.position, [u.position.lng, u.position.lat]);
+            if (d <= b.mdrKm) { inRange = true; break; }
           }
         }
       }

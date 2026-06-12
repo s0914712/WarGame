@@ -75,6 +75,11 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
     };
   });
 
+  // 己方聲標屏幕
+  const ownBuoys = (state.sonobuoys ?? [])
+    .filter((b) => b.sideId === povSide)
+    .map((b) => ({ lng: round6(b.position[0]), lat: round6(b.position[1]), mdrKm: b.mdrKm, side: b.sideId }));
+
   return {
     version: STATE_VERSION,
     scenario: {
@@ -94,6 +99,7 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
       hostileTo: s.isHostileTo,
     })),
     units,
+    ...(ownBuoys.length > 0 ? { sonobuoys: ownBuoys } : {}),
   };
 }
 

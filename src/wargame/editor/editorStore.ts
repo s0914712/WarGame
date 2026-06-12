@@ -15,15 +15,23 @@ import type { LngLat, SideId, Unit, UnitId, UnitKind } from "../types";
 import { scenarioStore } from "../scenarioStore";
 import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
+import { DEFAULT_MDR_KM } from "../sim/sonobuoyField";
 
 type Listener = () => void;
 
-export type EditorMode = "view" | "planRoute" | "placeUnit";
+export type EditorMode = "view" | "planRoute" | "placeUnit" | "defineSonobuoyArea";
 
 let mode: EditorMode = "view";
 let planningUnitId: UnitId | null = null;
 let pendingWaypoints: LngLat[] = [];
 let wasRunningBeforePlan = false;
+
+// 聲標反潛屏幕 draft（defineSonobuoyArea 模式）
+let sonobuoyUnitId: UnitId | null = null;
+let sonobuoyCornerA: LngLat | null = null;
+let sonobuoyCornerB: LngLat | null = null;
+let sonobuoyCount = 12;
+let sonobuoyMdrKm = DEFAULT_MDR_KM;
 
 // Plan Mode：當前選中要放置的單位種類 + 陣營
 let placingKind: UnitKind = "ship_surface";
@@ -161,11 +169,71 @@ export const editorStore = {
     this.exitPlanMode();
   },
 
+  // ── 聲標反潛屏幕（兩角定框）──────────────────────────────
+  getSonobuoyDraft() {
+    return {
+      unitId: sonobuoyUnitId,
+      cornerA: sonobuoyCornerA,
+      cornerB: sonobuoyCornerB,
+      count: sonobuoyCount,
+      mdrKm: sonobuoyMdrKm,
+    };
+  },
+
+  startSonobuoyArea(unitId: UnitId): void {
+    mode = "defineSonobuoyArea";
+    sonobuoyUnitId = unitId;
+    sonobuoyCornerA = null;
+    sonobuoyCornerB = null;
+    wasRunningBeforePlan = !wargameClock.isPaused();
+    wargameClock.pause();
+    notify();
+  },
+
+  /** 點地圖：第 1 點存 A、第 2 點存 B；已滿兩角則重設為新 A */
+  setSonobuoyCorner(lng: number, lat: number): void {
+    if (mode !== "defineSonobuoyArea") return;
+    if (!sonobuoyCornerA || sonobuoyCornerB) {
+      sonobuoyCornerA = [lng, lat];
+      sonobuoyCornerB = null;
+    } else {
+      sonobuoyCornerB = [lng, lat];
+    }
+    notify();
+  },
+
+  setSonobuoyCount(n: number): void {
+    const v = Math.max(1, Math.min(64, Math.round(n)));
+    if (v === sonobuoyCount) return;
+    sonobuoyCount = v;
+    notify();
+  },
+
+  commitSonobuoyField(): void {
+    if (mode !== "defineSonobuoyArea" || !sonobuoyUnitId) return;
+    if (sonobuoyCornerA && sonobuoyCornerB) {
+      scenarioStore.enqueueCommand({
+        id: makeCmdId(),
+        unitId: sonobuoyUnitId,
+        simAtSec: wargameClock.getSimTime(),
+        kind: "deploy_sonobuoys",
+        cornerA: sonobuoyCornerA,
+        cornerB: sonobuoyCornerB,
+        count: sonobuoyCount,
+        mdrKm: sonobuoyMdrKm,
+      });
+    }
+    this.exitPlanMode();
+  },
+
   /** 內部：退出規劃模式並（可選）恢復原本的播放狀態 */
   exitPlanMode(): void {
     mode = "view";
     planningUnitId = null;
     pendingWaypoints = [];
+    sonobuoyUnitId = null;
+    sonobuoyCornerA = null;
+    sonobuoyCornerB = null;
     if (wasRunningBeforePlan) {
       wargameClock.resume();
       wasRunningBeforePlan = false;

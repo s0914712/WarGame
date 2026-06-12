@@ -228,6 +228,27 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
       return warnings ? { index, status: "applied", commandId: id, warnings } : { index, status: "applied", commandId: id };
     }
 
+    // ── deploy_sonobuoys（反潛機佈放聲標屏幕）──
+    case "deploy_sonobuoys": {
+      const okCorner = (c: unknown): c is [number, number] =>
+        Array.isArray(c) && c.length === 2 && typeof c[0] === "number" && typeof c[1] === "number";
+      if (!okCorner(cmd.cornerA) || !okCorner(cmd.cornerB)) {
+        return { index, status: "rejected", reason: "'cornerA'/'cornerB' must be [lng, lat]" };
+      }
+      if (typeof cmd.count !== "number" || cmd.count < 1) {
+        return { index, status: "rejected", reason: "'count' must be a positive number" };
+      }
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "deploy_sonobuoys",
+        cornerA: cmd.cornerA, cornerB: cmd.cornerB,
+        count: Math.min(64, Math.round(cmd.count)),
+        ...(typeof cmd.mdrKm === "number" ? { mdrKm: cmd.mdrKm } : {}),
+        ...(typeof cmd.lifetimeSec === "number" ? { lifetimeSec: cmd.lifetimeSec } : {}),
+      });
+      return { index, status: "applied", commandId: id };
+    }
+
     // ── update_attributes（直接寫，不走指令佇列）──
     case "update_attributes": {
       if (!cmd.core || typeof cmd.core !== "object") {

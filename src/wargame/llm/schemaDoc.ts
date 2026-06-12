@@ -69,6 +69,7 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
     { "kind": "set_roe", "unitId": "BLUE-SH-01", "roe": "weapons_tight" },
     { "kind": "set_active_sonar", "unitId": "BLUE-FFG-01", "on": true },
     { "kind": "set_depth", "unitId": "BLUE-SS-01", "depthM": 120 },
+    { "kind": "deploy_sonobuoys", "unitId": "BLUE-P8-01", "cornerA": [122.9, 22.4], "cornerB": [123.3, 22.7], "count": 16 },
     { "kind": "update_attributes", "unitId": "BLUE-SH-01",
       "core": { "rangeKm": 200, "speedKnots": 28 }
     }
@@ -132,6 +133,9 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
 - **主動聲納**（\`set_active_sonar on:true\`，拍發 ping）：偵潛距離大增（~十餘 km），
   但 ping 極響，自身位置會被敵方被動聲納在 **>100km** 外聽到 → 高風險高回報。
 - 反潛戰術：用 P-8 反潛機（聲標被動）大範圍掃蕩 + 巡防艦在接觸後開主動聲納精確定位 → 進入魚雷射程擊沉。
+- **聲標反潛屏幕（\`deploy_sonobuoys\`）**：反潛機以兩角 cornerA/cornerB 定義搜索框，自動格網佈點，
+  每枚聲標在 MDR（~4km）內偵測敵潛。**橫跨敵潛逼近船團的軸線佈一道屏幕**，攔截穿越的潛艦；
+  聲標有電池壽命（~1hr）會失效。state.sonobuoys 列出己方已佈聲標。
 - **會聚區（CZ）**：深水中於 ~55km、~110km 處形成偵測環，環內可遠距聽到吵雜目標、環間（陰影區）聽不到。
   潛艦常利用 CZ 遠距偵知吵雜船團；接觸時注意「直達區 → 陰影區（失聯）→ 會聚環（再現）」的距離結構。
 - **下潛深度（\`set_depth\`，潛艦）**：溫躍層約 60m。

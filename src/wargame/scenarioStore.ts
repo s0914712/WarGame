@@ -29,6 +29,7 @@ let state: SimulationState = {
   missiles: [],
   explosions: [],
   wreckages: [],
+  sonobuoys: [],
   holdProgress: {},
   outcome: null,
 };
@@ -75,6 +76,7 @@ export const scenarioStore = {
       missiles: [],
       explosions: [],
       wreckages: [],
+      sonobuoys: [],
       holdProgress: {},
       outcome: null,
     };

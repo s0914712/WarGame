@@ -32,6 +32,8 @@ export interface LlmStateExport {
     hostileTo: SideId[];
   }>;
   units: LlmUnitView[];
+  /** 己方已佈放的聲標屏幕（反潛）；無則省略 */
+  sonobuoys?: Array<{ lng: number; lat: number; mdrKm: number; side: SideId }>;
 }
 
 export interface LlmUnitView {
@@ -70,6 +72,7 @@ export type LlmCommand =
   | LlmSetRoeCommand
   | LlmSetActiveSonarCommand
   | LlmSetDepthCommand
+  | LlmDeploySonobuoysCommand
   | LlmUpdateAttributesCommand;
 
 export interface LlmSetWaypointsCommand {
@@ -124,6 +127,21 @@ export interface LlmSetDepthCommand {
   kind: "set_depth";
   unitId: string;
   depthM: number;
+  executeAtSimSec?: number;
+}
+
+/**
+ * 反潛機佈放聲標反潛屏幕：兩角定義搜索框，自動格網佈點。
+ * 每枚聲標在 mdrKm 內偵測敵潛。cornerA/B 為 [lng, lat]。
+ */
+export interface LlmDeploySonobuoysCommand {
+  kind: "deploy_sonobuoys";
+  unitId: string;
+  cornerA: [number, number];
+  cornerB: [number, number];
+  count: number;
+  mdrKm?: number;
+  lifetimeSec?: number;
   executeAtSimSec?: number;
 }
 
