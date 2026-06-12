@@ -20,6 +20,7 @@ import { editorStore } from "../wargame/editor/editorStore";
 import { UNIT_CATALOG, CORE_ATTRIBUTE_LABELS } from "../wargame/catalog/units";
 import { wargameClock } from "../wargame/clock";
 import { validatePlan } from "../wargame/sim/validate";
+import { planSonobuoyField } from "../wargame/sim/sonobuoyField";
 
 const ROE_OPTIONS: { value: RoeMode; label: string }[] = [
   { value: "weapons_free", label: "自由接戰 (Free)" },
@@ -50,6 +51,7 @@ interface Snapshot {
   editorMode: string;
   planningUnitId: string | null;
   pendingCount: number;
+  sonobuoySig: string;
 }
 
 let cached: Snapshot = buildSnapshot();
@@ -65,7 +67,13 @@ function buildSnapshot(): Snapshot {
     editorMode: editorStore.getMode(),
     planningUnitId: editorStore.getPlanningUnitId(),
     pendingCount: editorStore.getPendingWaypoints().length,
+    sonobuoySig: sonobuoyDraftSig(),
   };
+}
+
+function sonobuoyDraftSig(): string {
+  const d = editorStore.getSonobuoyDraft();
+  return `${d.unitId ?? ""}|${d.cornerA?.join(",") ?? ""}|${d.cornerB?.join(",") ?? ""}|${d.count}`;
 }
 
 function getSnapshot(): Snapshot {
@@ -75,7 +83,8 @@ function getSnapshot(): Snapshot {
     next.selectedUnitId !== cached.selectedUnitId ||
     next.editorMode !== cached.editorMode ||
     next.planningUnitId !== cached.planningUnitId ||
-    next.pendingCount !== cached.pendingCount
+    next.pendingCount !== cached.pendingCount ||
+    next.sonobuoySig !== cached.sonobuoySig
   ) {
     cached = next;
   }
@@ -93,24 +102,29 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
 
   const mode = editorStore.getMode();
   const planningUnitId = editorStore.getPlanningUnitId();
-  // 規劃模式時 panel 跟著規劃中的 unit；否則跟選中的
-  const targetUnit = mode === "planRoute" && planningUnitId
-    ? scenarioStore.getState().units[planningUnitId] ?? null
+  const sonobuoyDraft = editorStore.getSonobuoyDraft();
+  // 規劃 / 佈聲標模式時 panel 跟著該 unit；否則跟選中的
+  const followUnitId = mode === "planRoute" ? planningUnitId
+    : mode === "defineSonobuoyArea" ? sonobuoyDraft.unitId
+    : null;
+  const targetUnit = followUnitId
+    ? scenarioStore.getState().units[followUnitId] ?? null
     : scenarioStore.getSelectedUnit();
 
   // 鍵盤捷徑：Enter 套用 / Esc 取消 / Backspace 移除最後一點
   useEffect(() => {
-    if (mode !== "planRoute") return;
+    if (mode !== "planRoute" && mode !== "defineSonobuoyArea") return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "Enter") {
         e.preventDefault();
-        editorStore.commit();
+        if (mode === "defineSonobuoyArea") editorStore.commitSonobuoyField();
+        else editorStore.commit();
       } else if (e.key === "Escape") {
         e.preventDefault();
         editorStore.cancel();
-      } else if (e.key === "Backspace") {
+      } else if (e.key === "Backspace" && mode === "planRoute") {
         e.preventDefault();
         editorStore.removeLastWaypoint();
       }
@@ -172,6 +186,14 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
     { label: `層下 ${layerM + 60}m`, depthM: layerM + 60 },
     { label: "深潛 250m", depthM: 250 },
   ];
+
+  // 聲標反潛屏幕：反潛機（drone 具被動聲納）可佈放
+  const canDeploySonobuoys = UNIT_CATALOG[targetUnit.kind].domain === "air"
+    && UNIT_CATALOG[targetUnit.kind].acoustics?.passive != null;
+  const isSonobuoyMode = mode === "defineSonobuoyArea" && sonobuoyDraft.unitId === targetUnit.id;
+  const sonobuoyPlan = (isSonobuoyMode && sonobuoyDraft.cornerA && sonobuoyDraft.cornerB)
+    ? planSonobuoyField({ cornerA: sonobuoyDraft.cornerA, cornerB: sonobuoyDraft.cornerB, count: sonobuoyDraft.count, mdrKm: sonobuoyDraft.mdrKm })
+    : null;
 
   const pending = editorStore.getPendingWaypoints();
   const isPlanning = mode === "planRoute";
@@ -370,6 +392,19 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
                 </div>
               </div>
             )}
+            {canDeploySonobuoys && !isSonobuoyMode && (
+              <button
+                onClick={() => editorStore.startSonobuoyArea(targetUnit.id)}
+                style={{
+                  marginTop: 10, width: "100%", padding: "8px 10px", fontSize: 16, fontWeight: 600,
+                  borderRadius: 6, cursor: "pointer", border: "1px solid #38bdf8",
+                  background: "rgba(56,189,248,0.18)", color: "#7dd3fc",
+                }}
+                title="點地圖兩角定義搜索框，佈放聲標反潛屏幕"
+              >
+                佈放聲標反潛屏幕
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ fontSize: 16, color: "#94a3b8", display: "flex", justifyContent: "space-between" }}>
@@ -381,6 +416,57 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
           </div>
         )}
       </div>
+
+      {/* 聲標反潛屏幕 banner */}
+      {isSonobuoyMode && (
+        <div
+          style={{
+            padding: "10px 14px",
+            background: "rgba(56, 189, 248, 0.12)",
+            borderBottom: "1px solid rgba(56, 189, 248, 0.3)",
+            fontSize: 15, color: "#bae6fd",
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>佈放聲標反潛屏幕</div>
+          <div>
+            點地圖<b>兩角</b>定義搜索框 · Enter 佈放 · Esc 取消
+            {!sonobuoyDraft.cornerA && "（請點第 1 角）"}
+            {sonobuoyDraft.cornerA && !sonobuoyDraft.cornerB && "（請點第 2 角）"}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 4 }}>
+              <span>聲標數量</span>
+              <span style={{ fontFamily: "ui-monospace, monospace" }}>{sonobuoyDraft.count} 枚</span>
+            </div>
+            <input
+              type="range" min={2} max={36} step={1} value={sonobuoyDraft.count}
+              onChange={(e) => editorStore.setSonobuoyCount(Number(e.target.value))}
+              style={{ width: "100%", accentColor: "#38bdf8" }}
+            />
+          </div>
+          {sonobuoyPlan && (
+            <div style={{ marginTop: 6, fontFamily: "ui-monospace, monospace", fontSize: 14 }}>
+              區域偵測機率 P_FZ <b style={{ color: "#86efac" }}>{(sonobuoyPlan.pFZ * 100).toFixed(0)}%</b>
+              {" · "}{sonobuoyPlan.rows}×{sonobuoyPlan.cols} 格網
+              {" · "}{sonobuoyPlan.lengthNm.toFixed(0)}×{sonobuoyPlan.widthNm.toFixed(0)} nm
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button
+              onClick={() => editorStore.commitSonobuoyField()}
+              disabled={!sonobuoyDraft.cornerA || !sonobuoyDraft.cornerB}
+              style={{
+                ...btnPrimary("#38bdf8"),
+                opacity: (!sonobuoyDraft.cornerA || !sonobuoyDraft.cornerB) ? 0.4 : 1,
+                cursor: (!sonobuoyDraft.cornerA || !sonobuoyDraft.cornerB) ? "not-allowed" : "pointer",
+              }}
+            >
+              ✓ 佈放
+            </button>
+            <button onClick={() => editorStore.cancel()} style={btnSecondary}>✗ 取消</button>
+          </div>
+        </div>
+      )}
 
       {/* Planning banner */}
       {isPlanningThis && (

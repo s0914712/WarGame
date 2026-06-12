@@ -31,6 +31,7 @@ import { editorStore } from "./wargame/editor/editorStore";
 import { attachWargameRangeRings } from "./map/wargameRangeRings";
 import { attachWargameSymbolLayer, SYMBOL_LAYER_ID } from "./map/wargameSymbolLayer";
 import { attachWargameRouteLayer } from "./map/wargameRouteLayer";
+import { attachWargameSonobuoyLayer } from "./map/wargameSonobuoyLayer";
 import { loadWargameSymbols } from "./wargame/symbology/loadSymbols";
 import { useSimLoop } from "./hooks/useSimLoop";
 import { useAiSideLoop } from "./hooks/useAiSideLoop";
@@ -77,6 +78,7 @@ export default function WargameApp() {
       attachWargameRangeRings(map),
       attachWargameRouteLayer(map),
       attachWargameWrecksLayer(map),
+      attachWargameSonobuoyLayer(map),
       attachWargameCombatLayer(map),
     );
   }
@@ -109,6 +111,10 @@ export default function WargameApp() {
           editorStore.appendWaypoint(e.lngLat.lng, e.lngLat.lat);
           return;
         }
+        if (mode === "defineSonobuoyArea") {
+          editorStore.setSonobuoyCorner(e.lngLat.lng, e.lngLat.lat);
+          return;
+        }
         if (mode === "placeUnit") {
           const features = map.queryRenderedFeatures(e.point, { layers: [SYMBOL_LAYER_ID] });
           if (features.length > 0) {
@@ -130,7 +136,7 @@ export default function WargameApp() {
       const updateCursor = () => {
         const canvas = map.getCanvas();
         const mode = editorStore.getMode();
-        canvas.style.cursor = (mode === "planRoute" || mode === "placeUnit") ? "crosshair" : "";
+        canvas.style.cursor = (mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea") ? "crosshair" : "";
       };
       editorStore.subscribe(updateCursor);
       map.on("mouseenter", SYMBOL_LAYER_ID, () => {

@@ -38,8 +38,12 @@ export function step(state: SimulationState, dtTotalSec: number): SimulationStat
 
 /** 單一 tick — 不要直接外部呼叫，永遠透過 step() 進入以確保 sub-tick 切片 */
 export function tick(state: SimulationState, dtSec: number): SimulationState {
-  // 1. 命令套用
-  const { units: unitsAfterCmd, pendingCommands } = applyDueCommands(state);
+  // 1. 命令套用（含聲標佈放）
+  const { units: unitsAfterCmd, pendingCommands, sonobuoys: newBuoys } = applyDueCommands(state);
+  const nextSimSec0 = state.simTimeSec + dtSec;
+  // 聲標：併入新佈放 + 過濾電池到期者
+  const sonobuoys = [...(state.sonobuoys ?? []), ...newBuoys]
+    .filter((b) => nextSimSec0 <= b.deployedAtSimSec + b.lifetimeSec);
 
   // 2. RTB — 戰機彈藥/燃料低 → 覆寫 waypoints 為最近 friendly airbase
   const afterRtb = runRtb({ ...state, units: unitsAfterCmd });
@@ -51,14 +55,14 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
     unitsAfterMove[u.id] = adjustDepth(advanceUnit(u, dtSec), dtSec);
   }
 
-  // 4. 偵測（漸進狀態機 + A5 地形遮蔽/地平線 + E20 反潛聲納；emit detection 事件）
-  const nextSimSec = state.simTimeSec + dtSec;
+  // 4. 偵測（漸進狀態機 + A5 地形遮蔽/地平線 + E20 反潛聲納 + 聲標屏幕；emit detection 事件）
+  const nextSimSec = nextSimSec0;
   const occlusionEnabled = state.scenario.terrainOcclusion !== false;   // 省略 = 啟用
   const acousticModel = state.scenario.acousticModel === true;          // 省略 = 關閉
   const detection = computeDetection(
     unitsAfterMove, state.scenario.sides, dtSec, nextSimSec,
     occlusionEnabled, acousticModel, state.scenario.sonarLayerDepthM,
-    state.scenario.convergenceZoneKm,
+    state.scenario.convergenceZoneKm, sonobuoys,
   );
 
   // 5. 戰鬥 — 把 detection 事件併入本 tick：eventsThisTick 由此重置、eventsAll 先接 detection
@@ -68,6 +72,7 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
       units: detection.units,
       pendingCommands,
       simTimeSec: nextSimSec,
+      sonobuoys,
       eventsThisTick: detection.events,
       eventsAll: [...state.eventsAll, ...detection.events],
     },

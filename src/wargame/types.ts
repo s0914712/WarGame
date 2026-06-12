@@ -232,7 +232,11 @@ export type Command =
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "hold" }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_roe"; roe: RoeMode }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_active_sonar"; on: boolean }
-  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_depth"; depthM: number };
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_depth"; depthM: number }
+  | {
+      id: CommandId; unitId: UnitId; simAtSec: number; kind: "deploy_sonobuoys";
+      cornerA: LngLat; cornerB: LngLat; count: number; mdrKm?: number; lifetimeSec?: number;
+    };
 
 // ── events ───────────────────────────────────────────────
 export type EngagementEventKind =
@@ -398,6 +402,18 @@ export interface Wreck {
   durationSec: number;      // 多久後完全消失
 }
 
+// ── 聲標（sonobuoy，反潛區域搜索屏幕）─────────────────────
+export interface Sonobuoy {
+  id: string;
+  sideId: SideId;
+  position: LngLat;
+  /** 偵測半徑（MDR，km）— 水中目標在此半徑內即被偵測 */
+  mdrKm: number;
+  deployedAtSimSec: number;
+  /** 電池壽命（秒）；deployedAtSimSec + lifetimeSec 後失效消失 */
+  lifetimeSec: number;
+}
+
 // ── simulation state ─────────────────────────────────────
 export interface SimulationState {
   scenario: Scenario;
@@ -409,6 +425,8 @@ export interface SimulationState {
   missiles: Missile[];
   explosions: Explosion[];
   wreckages: Wreck[];
+  /** 已佈放的聲標（反潛屏幕）；無聲標時為空陣列 */
+  sonobuoys: Sonobuoy[];
   /**
    * hold_area 條件計時：condition index → 該方第一次進入區域的 simSec；
    * 不在區域內 → null。達到 forSec 即勝。

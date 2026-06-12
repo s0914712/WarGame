@@ -138,12 +138,18 @@ const NEUTRAL_UNITS: Unit[] = [
 export const ASW_ESCORT_2031: Scenario = {
   id: "asw_escort_2031",
   displayName: "反潛護航 2031",
-  briefing: "高價值補給艦團通過台灣東部深水區，2 艘解放軍潛艦潛伏伏擊。藍方反潛群（巡防艦主動聲納 + P-8 反潛機 + 獵殺潛艦）須在敵潛艦進入魚雷射程前偵獲擊沉。主動聲納偵潛遠但會曝露自身；潛艦安靜潛行難覓。",
+  briefing: "高價值補給艦團通過台灣東部深水區，2 艘解放軍潛艦潛伏伏擊。藍方反潛群（巡防艦主動聲納 + P-8 反潛機 + 獵殺潛艦）須在敵潛艦進入魚雷射程前偵獲擊沉。P-8 開場已佈一道聲標反潛屏幕橫跨敵潛逼近軸線；選 P-8 可再佈放更多屏幕（兩角定框，即時顯示 P_FZ 區域偵測機率）。主動聲納偵潛遠但會曝露自身；潛艦安靜潛行難覓。",
   startSimTimeSec: 0,
   durationSec: 2400,
   sides: SIDES,
   units: [...BLUE_UNITS, ...RED_UNITS, ...NEUTRAL_UNITS],
-  pendingCommands: [],
+  pendingCommands: [
+    // P-8 開場佈一道聲標反潛屏幕，橫跨紅潛逼近船團的軸線（~122.95–123.30, 22.45–22.70）
+    {
+      id: "asw-screen-0", unitId: "BLUE-P8-01", simAtSec: 0, kind: "deploy_sonobuoys",
+      cornerA: [122.95, 22.45], cornerB: [123.30, 22.70], count: 16, mdrKm: 5, lifetimeSec: 2400,
+    },
+  ],
   acousticModel: true,        // 啟用 E20 聲納方程式偵測
   sonarLayerDepthM: 60,       // 溫躍層深度
   convergenceZoneKm: 55,      // 深水會聚區間距（首環 ~55km）— 潛艦可遠距聽到吵雜船團
