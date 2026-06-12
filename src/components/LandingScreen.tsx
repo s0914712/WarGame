@@ -49,6 +49,10 @@ export function LandingScreen({ map }: Props) {
     viewStore.setActiveView(selectedSide);
     flyToScenario(map, entry.scenario);
     uiStore.setLandingOpen(false);
+    // 反潛場景：開戰前先跳出聲學環境設定畫面
+    if (entry.scenario.acousticModel) {
+      uiStore.setAcousticConfigOpen(true);
+    }
     // briefing modal 會自動跳出（因 scenario id 不是 "empty"）
   };
 

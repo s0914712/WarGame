@@ -321,8 +321,32 @@ export interface Scenario {
   /**
    * 會聚區間距（km，E20 深水）。> 0 時於 N×間距 ± 5km 形成偵測環（環內 TL 大降）、
    * 環間為陰影區。典型 ~55km。省略 / 0 = 無 CZ（淺水或不模擬）。
+   * 注意：實際是否成立由 acousticEnv.waterDepthM 是否為深水決定（若有設環境）。
    */
   convergenceZoneKm?: number;
+  /**
+   * 聲學環境（使用者場景開始前可設定）。省略 → 沿用上方 sonarLayerDepthM/CZ 固定值與預設環境噪音。
+   * 有設時：層深取 acousticEnv.layerDepthM（由 BT 導出）、環境噪音由海況、淺水底反射 + CZ 深水閘門。
+   */
+  acousticEnv?: AcousticEnvironment;
+}
+
+/**
+ * 反潛聲學環境（E20+）。由場景開始前的設定畫面填入，套進聲納模型。
+ */
+export interface AcousticEnvironment {
+  /** BT 溫度-深度剖面（溫度°C @ 深度m）— 導出聲速剖面與層深 */
+  btProfile: { depthM: number; tempC: number }[];
+  /** 鹽度（ppt，預設 34） */
+  salinityPpt: number;
+  /** 海況 Beaufort 0..6 → 環境噪音 */
+  seaState: number;
+  /** 底質 → 反射損失（淺水多次觸底） */
+  bottomType: "mud" | "sand" | "rock";
+  /** 水深（m）→ 淺水底反射 + 深水才成立會聚區 */
+  waterDepthM: number;
+  /** 由 BT 導出的 Sonic Layer Depth（m，cache；applyAcousticEnv 時算好） */
+  layerDepthM: number;
 }
 
 // ── 飛彈（in-flight） ────────────────────────────────────

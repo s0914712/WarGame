@@ -7,6 +7,7 @@ type Listener = () => void;
 let demoMode = false;
 let tutorialOpen = false;
 let landingOpen = true;     // 預設首次開頁顯示主選單
+let acousticConfigOpen = false;   // 場景開始前的聲學環境設定畫面
 const listeners = new Set<Listener>();
 
 function notify() { for (const cb of listeners) cb(); }
@@ -31,6 +32,13 @@ export const uiStore = {
   setLandingOpen(v: boolean): void {
     if (v === landingOpen) return;
     landingOpen = v;
+    notify();
+  },
+
+  isAcousticConfigOpen(): boolean { return acousticConfigOpen; },
+  setAcousticConfigOpen(v: boolean): void {
+    if (v === acousticConfigOpen) return;
+    acousticConfigOpen = v;
     notify();
   },
 

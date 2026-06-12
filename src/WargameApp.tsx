@@ -17,6 +17,7 @@ import { DemoModeToggle } from "./components/DemoModeToggle";
 import { TutorialOverlay, launchTutorial } from "./components/TutorialOverlay";
 import { VictoryModal } from "./components/VictoryModal";
 import { ScenarioBriefingModal } from "./components/ScenarioBriefingModal";
+import { AcousticEnvironmentConfigModal } from "./components/AcousticEnvironmentConfigModal";
 import { UICheatSheet } from "./components/UICheatSheet";
 import { LandingScreen } from "./components/LandingScreen";
 import { HelpCircle, Menu } from "lucide-react";
@@ -192,6 +193,7 @@ export default function WargameApp() {
           : <ScenarioBriefingModal />
       )}
       <UICheatSheet open={cheatOpen} onClose={() => setCheatOpen(false)} />
+      <AcousticEnvironmentConfigModal />
       <LandingScreen map={mapRef.current} />
       {/* LLM 面板：桌面 / 行動版共用（行動版由選單抽屜開啟），故移出 !demoMode 分支 */}
       <LLMPanel open={llmOpen} onClose={() => setLlmOpen(false)} />

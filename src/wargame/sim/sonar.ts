@@ -21,7 +21,8 @@ import type { AcousticProfile, Unit } from "../types";
 import { UNIT_CATALOG } from "../catalog/units";
 
 // ── 環境常數 ─────────────────────────────────────────────
-const AMBIENT_NL_DB = 60;            // 環境噪音（海況中等）
+export const DEFAULT_AMBIENT_NL_DB = 60;   // 環境噪音（海況中等，可被聲學環境覆寫）
+const AMBIENT_NL_DB = DEFAULT_AMBIENT_NL_DB;
 const ABSORPTION_DB_PER_KM = 0.4;    // 吸收損失（低頻 ASW 概略值）
 const RECEIVER_SPEED_NOISE = 0.4;    // 接收方每節自噪增量（dB/kn）
 const LAYER_LOSS_DB = 8;             // 跨溫躍層單程額外損失（主動為雙程 → 影響加倍）
@@ -67,13 +68,17 @@ function dbSum(a: number, b: number): number {
   return 10 * Math.log10(10 ** (a / 10) + 10 ** (b / 10));
 }
 
-/** 單程傳播損失（dB）：球面擴散 20log10(r) + 吸收 + 溫躍層跨層損失 − 會聚區增益 */
+/**
+ * 單程傳播損失（dB）：球面擴散 20log10(r) + 吸收 + 溫躍層跨層損失
+ * + 淺水底反射加成（bottomLossDbPerKm·r）− 會聚區增益。
+ */
 export function transmissionLossDb(
-  rangeKm: number, layerCrossing: boolean, czSpacingKm = 0,
+  rangeKm: number, layerCrossing: boolean, czSpacingKm = 0, bottomLossDbPerKm = 0,
 ): number {
   const rM = Math.max(1, rangeKm * 1000);
   let tl = 20 * Math.log10(rM) + ABSORPTION_DB_PER_KM * rangeKm;
   if (layerCrossing) tl += LAYER_LOSS_DB;
+  if (bottomLossDbPerKm > 0) tl += bottomLossDbPerKm * rangeKm;   // 淺水多次觸底
   tl -= convergenceGainDb(rangeKm, czSpacingKm);   // 會聚區聚焦 → 損失降低
   return tl;
 }
@@ -93,9 +98,18 @@ export function effectiveSourceLevelDb(
   return radiated;
 }
 
-function noiseLevelDb(passiveSelfNoiseDb: number, receiverSpeedKnots: number): number {
+function noiseLevelDb(
+  passiveSelfNoiseDb: number, receiverSpeedKnots: number, ambientNlDb = AMBIENT_NL_DB,
+): number {
   const selfNoise = passiveSelfNoiseDb + RECEIVER_SPEED_NOISE * Math.max(0, receiverSpeedKnots);
-  return dbSum(AMBIENT_NL_DB, selfNoise);
+  return dbSum(ambientNlDb, selfNoise);
+}
+
+/** 聲學環境參數（由 scenario.acousticEnv 導出；省略 → 預設） */
+export interface SonarEnv {
+  ambientNlDb?: number;
+  bottomLossDbPerKm?: number;
+  czSpacingKm?: number;
 }
 
 /** 被動聲納 signal excess（dB）。≥ 0 → 聽得到 */
@@ -106,9 +120,11 @@ export function passiveSignalExcessDb(args: {
   passive: NonNullable<AcousticProfile["passive"]>;
   receiverSpeedKnots: number;
   czSpacingKm?: number;
+  ambientNlDb?: number;
+  bottomLossDbPerKm?: number;
 }): number {
-  const tl = transmissionLossDb(args.rangeKm, args.layerCrossing, args.czSpacingKm ?? 0);
-  const nl = noiseLevelDb(args.passive.selfNoiseDb, args.receiverSpeedKnots);
+  const tl = transmissionLossDb(args.rangeKm, args.layerCrossing, args.czSpacingKm ?? 0, args.bottomLossDbPerKm ?? 0);
+  const nl = noiseLevelDb(args.passive.selfNoiseDb, args.receiverSpeedKnots, args.ambientNlDb);
   return args.sourceLevelDb - tl - (nl - args.passive.arrayGainDb) - args.passive.dtDb;
 }
 
@@ -121,9 +137,11 @@ export function activeSignalExcessDb(args: {
   passive: NonNullable<AcousticProfile["passive"]>;
   receiverSpeedKnots: number;
   czSpacingKm?: number;
+  ambientNlDb?: number;
+  bottomLossDbPerKm?: number;
 }): number {
-  const tl = transmissionLossDb(args.rangeKm, args.layerCrossing, args.czSpacingKm ?? 0);
-  const nl = noiseLevelDb(args.passive.selfNoiseDb, args.receiverSpeedKnots);
+  const tl = transmissionLossDb(args.rangeKm, args.layerCrossing, args.czSpacingKm ?? 0, args.bottomLossDbPerKm ?? 0);
+  const nl = noiseLevelDb(args.passive.selfNoiseDb, args.receiverSpeedKnots, args.ambientNlDb);
   return args.pingSourceLevelDb - 2 * tl + args.targetStrengthDb
     - (nl - args.passive.arrayGainDb) - args.passive.dtDb;
 }
@@ -135,11 +153,14 @@ export function activeSignalExcessDb(args: {
  */
 export function sonarDetects(
   sensor: Unit, target: Unit, rangeKm: number, layerDepthM: number, czSpacingKm = 0,
+  env: SonarEnv = {},
 ): boolean {
   const sa = acousticsOf(sensor);
   const ta = acousticsOf(target);
   if (!sa || !ta) return false;
   const layerCrossing = crossesLayer(depthOf(sensor), depthOf(target), layerDepthM);
+  const ambientNlDb = env.ambientNlDb;
+  const bottomLossDbPerKm = env.bottomLossDbPerKm;
 
   // 被動
   if (sa.passive) {
@@ -151,6 +172,8 @@ export function sonarDetects(
       passive: sa.passive,
       receiverSpeedKnots: sensor.position.speedKnots,
       czSpacingKm,
+      ambientNlDb,
+      bottomLossDbPerKm,
     });
     if (se >= 0) return true;
   }
@@ -165,6 +188,8 @@ export function sonarDetects(
       passive: sa.passive,
       receiverSpeedKnots: sensor.position.speedKnots,
       czSpacingKm,
+      ambientNlDb,
+      bottomLossDbPerKm,
     });
     if (se >= 0) return true;
   }

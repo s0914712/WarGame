@@ -22,7 +22,7 @@ import type { DetectionState, EngagementEvent, Side, SideId, Sonobuoy, Unit, Uni
 import { haversineKm } from "./geo";
 import { UNIT_CATALOG } from "../catalog/units";
 import { radarHorizonKm, isTerrainOccluded } from "./los";
-import { sonarDetects, acousticsOf, isPeriscopeDepth, DEFAULT_LAYER_DEPTH_M } from "./sonar";
+import { sonarDetects, acousticsOf, isPeriscopeDepth, DEFAULT_LAYER_DEPTH_M, type SonarEnv } from "./sonar";
 
 /** 平台有效感測高度（公尺）：取座標高度與 catalog 平台高度的大者 + 桅高 */
 function platformAltM(u: Unit): number {
@@ -80,6 +80,7 @@ export function computeDetection(
   sonarLayerDepthM = DEFAULT_LAYER_DEPTH_M,
   sonarConvergenceKm = 0,
   sonobuoys: Sonobuoy[] = [],
+  sonarEnv: SonarEnv = {},
 ): DetectionResult {
   const sideMap = new Map<SideId, Side>(sides.map((s) => [s.id, s]));
   const events: EngagementEvent[] = [];
@@ -162,7 +163,7 @@ export function computeDetection(
               [s.position.lng, s.position.lat],
               [u.position.lng, u.position.lat],
             );
-            if (sonarDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm)) { inRange = true; break; }
+            if (sonarDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm, sonarEnv)) { inRange = true; break; }
           }
         }
       }
