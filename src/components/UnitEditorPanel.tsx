@@ -21,7 +21,7 @@ import { UNIT_CATALOG, CORE_ATTRIBUTE_LABELS } from "../wargame/catalog/units";
 import { wargameClock } from "../wargame/clock";
 import { validatePlan } from "../wargame/sim/validate";
 import { planSonobuoyField } from "../wargame/sim/sonobuoyField";
-import { unitHasTowedArray } from "../wargame/sim/sonar";
+import { unitHasTowedArray, SUB_MAX_DEPTH_M } from "../wargame/sim/sonar";
 
 const ROE_OPTIONS: { value: RoeMode; label: string }[] = [
   { value: "weapons_free", label: "自由接戰 (Free)" },
@@ -36,6 +36,12 @@ const CONTACT_LABEL: Record<string, string> = {
   classified: "已分類（可接戰）",
   tracked: "穩定追蹤",
   own: "己方",
+};
+
+// 接觸定位品質（E21 被動測向）：bearing = 未定位（僅方位）、fixed = 已定位（可射控）
+const CONTACT_QUALITY_LABEL: Record<string, string> = {
+  bearing: "未定位（僅方位）",
+  fixed: "已定位（可接戰）",
 };
 
 const CORE_KEYS: (keyof CoreAttributes)[] = [
@@ -60,10 +66,13 @@ let cached: Snapshot = buildSnapshot();
 function buildSnapshot(): Snapshot {
   const id = scenarioStore.getSelectedUnitId();
   const u = scenarioStore.getSelectedUnit();
+  const pov = viewStore.getActiveSideId();
+  const det = u && pov ? (u.detectedBy[pov] ?? "") : "";
+  const qual = u && pov ? (u.contactQuality?.[pov] ?? "") : "";
   return {
     selectedUnitId: id,
     signature: id && u
-      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}|${u.activeSonar ? 1 : 0}|${Math.round(u.position.altMeters)}|${u.targetDepthM ?? ""}|${u.towedArrayDeployed === false ? 0 : 1}`
+      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}|${u.activeSonar ? 1 : 0}|${Math.round(u.position.altMeters)}|${u.targetDepthM ?? ""}|${u.towedArrayDeployed === false ? 0 : 1}|${det}|${qual}`
       : "",
     editorMode: editorStore.getMode(),
     planningUnitId: editorStore.getPlanningUnitId(),
@@ -147,6 +156,9 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
   const contactState = (activeSide && targetUnit.sideId !== activeSide && (side?.isHostileTo?.length ?? 0) >= 0)
     ? (targetUnit.detectedBy[activeSide] ?? "hidden")
     : "own";
+  const contactQuality = (activeSide && targetUnit.sideId !== activeSide)
+    ? targetUnit.contactQuality?.[activeSide]
+    : undefined;
   const setRoe = (roe: RoeMode) => {
     scenarioStore.enqueueCommand({
       id: `ui-roe-${Date.now()}`,
@@ -400,6 +412,21 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
                     {curDepthM}m {curDepthM <= 25 ? "（潛望鏡·曝露）" : curDepthM > layerM ? "（層下·藏匿）" : "（層上）"}
                   </span>
                 </div>
+                {/* 下潛深度滑桿（即時下令；engine 以固定速率漸變至目標深度） */}
+                <input
+                  type="range"
+                  min={0}
+                  max={SUB_MAX_DEPTH_M}
+                  step={5}
+                  value={Math.round(targetUnit.targetDepthM ?? curDepthM)}
+                  onChange={(e) => setDepth(Number(e.target.value))}
+                  style={{ width: "100%", accentColor: "#38bdf8", cursor: "pointer" }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#64748b", fontFamily: "ui-monospace, monospace", margin: "2px 0 8px" }}>
+                  <span>0m 水面</span>
+                  <span>溫躍層 ~{layerM}m</span>
+                  <span>{SUB_MAX_DEPTH_M}m</span>
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                   {DEPTH_PRESETS.map((p) => (
                     <button
@@ -437,12 +464,23 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
             )}
           </div>
         ) : (
-          <div style={{ fontSize: 16, color: "#94a3b8", display: "flex", justifyContent: "space-between" }}>
-            <span>偵測狀態</span>
-            <span style={{ color: contactState === "tracked" || contactState === "classified" ? "#86efac"
-              : contactState === "unknown" ? "#facc15" : "#64748b", fontWeight: 600 }}>
-              {CONTACT_LABEL[contactState] ?? contactState}
-            </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontSize: 16, color: "#94a3b8", display: "flex", justifyContent: "space-between" }}>
+              <span>偵測狀態</span>
+              <span style={{ color: contactState === "tracked" || contactState === "classified" ? "#86efac"
+                : contactState === "unknown" ? "#facc15" : "#64748b", fontWeight: 600 }}>
+                {CONTACT_LABEL[contactState] ?? contactState}
+              </span>
+            </div>
+            {/* 定位品質（E21 被動測向）：未定位接觸不可開火，須三角交會 / TMA / 主動定位 */}
+            {contactQuality && contactState !== "hidden" && (
+              <div style={{ fontSize: 16, color: "#94a3b8", display: "flex", justifyContent: "space-between" }}>
+                <span>定位品質</span>
+                <span style={{ color: contactQuality === "fixed" ? "#86efac" : "#fca5a5", fontWeight: 600 }}>
+                  {CONTACT_QUALITY_LABEL[contactQuality] ?? contactQuality}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>

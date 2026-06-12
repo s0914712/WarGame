@@ -135,12 +135,18 @@ export default function WargameApp() {
         scenarioStore.setSelectedUnitId(null);
       });
 
-      // 右鍵：RTS 式移動（已選單位）。Shift+右鍵 = 接續排隊航點
+      // 右鍵：RTS 式指令（已選單位）。
+      //   右鍵點到敵方單位 → 下達「接戰」攻擊計畫
+      //   右鍵點空白海面 → 移動（Shift = 接續排隊航點）
       map.on("contextmenu", (e) => {
         if (editorStore.getMode() !== "view") return;   // 規劃 / 放置模式不攔右鍵
         const unitId = scenarioStore.getSelectedUnitId();
         if (!unitId) return;
         e.preventDefault();
+        // 先判斷右鍵是否點在某個單位上
+        const feats = map.queryRenderedFeatures(e.point, { layers: [SYMBOL_LAYER_ID] });
+        const targetId = feats.length > 0 ? (feats[0]?.properties?.unitId as string | undefined) : undefined;
+        if (targetId && editorStore.quickEngage(unitId, targetId)) return;   // 攻擊敵方單位
         const additive = (e.originalEvent as MouseEvent).shiftKey;
         editorStore.quickMove(unitId, e.lngLat.lng, e.lngLat.lat, additive);
       });
