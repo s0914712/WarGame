@@ -17,11 +17,17 @@ import { transmissionLossDb } from "../wargame/sim/sonar";
 
 type BtPoint = { depthM: number; tempC: number };
 
-const BT_PRESETS: { name: string; bt: BtPoint[] }[] = [
-  { name: "夏季強躍層", bt: [{ depthM: 0, tempC: 28 }, { depthM: 25, tempC: 27 }, { depthM: 60, tempC: 16 }, { depthM: 150, tempC: 10 }, { depthM: 300, tempC: 6 }] },
-  { name: "深混合層", bt: [{ depthM: 0, tempC: 20 }, { depthM: 60, tempC: 20 }, { depthM: 120, tempC: 19.5 }, { depthM: 200, tempC: 11 }, { depthM: 400, tempC: 6 }] },
-  { name: "弱躍層", bt: [{ depthM: 0, tempC: 23 }, { depthM: 40, tempC: 22 }, { depthM: 120, tempC: 16 }, { depthM: 300, tempC: 8 }] },
-  { name: "冬季等溫", bt: [{ depthM: 0, tempC: 15 }, { depthM: 100, tempC: 15 }, { depthM: 250, tempC: 13 }, { depthM: 500, tempC: 7 }] },
+// 標準深度（公尺）— 使用者在這些深度輸入溫度（BT bathythermograph）
+const STANDARD_DEPTHS = [10, 50, 100, 200, 400, 800, 1000];
+// 預設初始值（副熱帶夏季）：°C @ 各標準深度
+const DEFAULT_TEMPS: Record<number, number> = { 10: 28, 50: 24, 100: 18, 200: 14, 400: 10, 800: 6, 1000: 5 };
+
+// 預設曲線 → 一鍵填入標準深度溫度表
+const BT_PRESETS: { name: string; temps: Record<number, number> }[] = [
+  { name: "夏季強躍層", temps: { 10: 28, 50: 18, 100: 14, 200: 11, 400: 9, 800: 6, 1000: 5 } },
+  { name: "深混合層", temps: { 10: 20, 50: 20, 100: 19.5, 200: 13, 400: 9, 800: 6, 1000: 5 } },
+  { name: "弱躍層", temps: { 10: 23, 50: 21, 100: 17, 200: 13, 400: 9, 800: 7, 1000: 6 } },
+  { name: "冬季等溫", temps: { 10: 15, 50: 15, 100: 15, 200: 14, 400: 10, 800: 7, 1000: 6 } },
 ];
 
 const BOTTOM_OPTIONS: { v: AcousticEnvironment["bottomType"]; label: string }[] = [
@@ -55,11 +61,13 @@ function isOpen(): boolean { return uiStore.isAcousticConfigOpen(); }
 
 export function AcousticEnvironmentConfigModal() {
   const open = useSyncExternalStore(uiStore.subscribe, isOpen, isOpen);
-  const [presetIdx, setPresetIdx] = useState(0);
-  const [bt, setBt] = useState<BtPoint[]>(BT_PRESETS[0]!.bt);
+  const [temps, setTemps] = useState<Record<number, number>>(DEFAULT_TEMPS);
   const [seaState, setSeaState] = useState(3);
   const [bottomType, setBottomType] = useState<AcousticEnvironment["bottomType"]>("sand");
   const [waterDepthM, setWaterDepthM] = useState(2000);
+
+  // 由標準深度溫度表組成 BT 剖面
+  const bt: BtPoint[] = STANDARD_DEPTHS.map((d) => ({ depthM: d, tempC: temps[d] ?? 15 }));
 
   const derived = useMemo(() => {
     const sld = deriveSonicLayerDepthM(bt, DEFAULT_SALINITY_PPT);
@@ -77,7 +85,7 @@ export function AcousticEnvironmentConfigModal() {
     const tl: { r: number; v: number }[] = [];
     for (let r = 0.5; r <= 80; r += 1.5) tl.push({ r, v: transmissionLossDb(r, true, 0, bottom) });
     return { sld, ambientNl, bottom, fomPassive, r50Passive, r50Active, ssp, tl, maxZ };
-  }, [bt, seaState, bottomType, waterDepthM]);
+  }, [temps, seaState, bottomType, waterDepthM]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open) return null;
 
@@ -125,11 +133,28 @@ export function AcousticEnvironmentConfigModal() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           {/* 左：輸入 */}
           <div>
-            <Label>BT 溫度剖面（預設）</Label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-              {BT_PRESETS.map((p, i) => (
-                <button key={p.name} onClick={() => { setPresetIdx(i); setBt(p.bt); }}
-                  style={chip(i === presetIdx)}>{p.name}</button>
+            <Label>BT 溫度剖面（各深度水溫 °C）</Label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+              {BT_PRESETS.map((p) => (
+                <button key={p.name} onClick={() => setTemps({ ...p.temps })}
+                  style={{ ...chip(false), padding: "4px 8px", fontSize: 12 }}>{p.name}</button>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 12 }}>
+              {STANDARD_DEPTHS.map((d) => (
+                <div key={d} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2 }}>{d}m</div>
+                  <input
+                    type="number" step={0.5} value={temps[d] ?? ""}
+                    onChange={(e) => setTemps({ ...temps, [d]: Number(e.target.value) })}
+                    style={{
+                      width: "100%", boxSizing: "border-box", padding: "4px 2px", fontSize: 13,
+                      textAlign: "center", borderRadius: 4, border: "1px solid rgba(148,163,184,0.35)",
+                      background: "rgba(30,41,59,0.9)", color: "#e2e8f0",
+                      fontFamily: "ui-monospace, monospace",
+                    }}
+                  />
+                </div>
               ))}
             </div>
 
