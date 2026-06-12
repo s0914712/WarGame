@@ -48,6 +48,8 @@ function mkUnit(
     coreOverride?: Partial<Unit["core"]>;
     activeSonar?: boolean;
     hasTowedArray?: boolean;
+    /** 潛艦初始 / 目標下潛深度（公尺，正值）。決定在溫躍層上 or 下 → 影響被偵測機率 */
+    depthM?: number;
   } = {},
 ): Unit {
   const cat = UNIT_CATALOG[kind];
@@ -59,7 +61,7 @@ function mkUnit(
     id, sideId, kind, callsign, displayName,
     position: {
       lng, lat,
-      altMeters: cat.defaultAltitudeM,
+      altMeters: opts.depthM != null ? -opts.depthM : cat.defaultAltitudeM,
       headingDeg: 0, speedKnots: opts.speedKnots ?? 0,
     },
     waypoints: opts.waypoints ?? [],
@@ -70,6 +72,7 @@ function mkUnit(
     ammoCurrent: cat.defaultAmmoMax,
     ...(opts.activeSonar ? { activeSonar: true } : {}),
     ...(opts.hasTowedArray ? { hasTowedArray: true } : {}),
+    ...(opts.depthM != null ? { targetDepthM: opts.depthM } : {}),
     detectedBy: {},
     lastTickSimSec: 0,
   };
@@ -100,9 +103,10 @@ const BLUE_UNITS: Unit[] = [
     waypoints: [[123.05, 22.48], [123.28, 22.72]],
   }),
 
-  // 1 獵殺潛艦（被動潛聽，伴護於船團側翼；重型魚雷 ~18km）
+  // 1 獵殺潛艦（被動潛聽，伴護於船團側翼；重型魚雷 ~18km）— 潛於層下 120m 隱蔽
   mkUnit("BLUE-SS-01", "blue", "submarine", "SS-794", "劍龍級 - 海虎", 122.78, 22.28, {
     speedKnots: 9,
+    depthM: 120,                                 // 溫躍層下，安靜潛聽
     coreOverride: { rangeKm: 18, hpMax: 220 },
     waypoints: [[123.08, 22.55], [123.28, 22.78]],
   }),
@@ -112,37 +116,48 @@ const BLUE_UNITS: Unit[] = [
     speedKnots: 300,
     coreOverride: { detectionRangeKm: 300, hpMax: 100 },
     waypoints: [
-      [123.25, 22.60], [123.35, 22.85], [123.05, 22.55], [122.90, 22.30],
+      [123.25, 22.60], [123.40, 22.85], [123.05, 22.55], [122.90, 22.30],
     ],
+  }),
+
+  // 1 反潛直升機（吊放聲納點偵測）— 由船團前出懸停，換能器入水做主動點偵測（玩家可前推獵殺）
+  mkUnit("BLUE-HELO-01", "blue", "asw_helo", "ASW-701", "S-70C 反潛直升機", 122.92, 22.37, {
+    speedKnots: 0,                               // 懸停 → 吊放聲納作業中（dipping active）
   }),
 ];
 
-// ── 紅方：2 艘潛艦於船團航道上伏擊（安靜潛行，伺機魚雷攻擊補給艦）──
+// ── 紅方：2 艘潛艦於船團航道前方伏擊（與藍方拉開 >15 浬，安靜潛行伺機魚雷攻擊補給艦）──
+// 兩艦刻意設不同深度 + 不同水文層位，示範「潛艦深度 × 水文 → 被偵測機率差異」：
+//   093B 潛於溫躍層下 200m → 與層上水面艦跨層聲傳，TL 額外衰減 → 難偵獲
+//   039C 潛於溫躍層內 40m  → 與水面艦同層，直達聲傳 → 較易被偵獲
+// 兩艦由東北約 32km（>15 浬）外、等距離朝船團創逼近，差別只在「深度 / 層位」。
 const RED_UNITS: Unit[] = [
-  // 093B 核潛艦 — 伏於航道前段
-  mkUnit("RED-SSN-01", "red", "submarine", "093B-21", "093B 攻擊潛艦", 123.20, 22.60, {
+  // 093B 核潛艦 — 層下深潛 200m（與層上水面艦跨層聲傳，+8dB 衰減 → 難偵獲、近距才現蹤）
+  mkUnit("RED-SSN-01", "red", "submarine", "093B-21", "093B 攻擊潛艦（層下 200m）", 123.22, 22.56, {
     speedKnots: 5,                 // 慢速 = 安靜 = 難偵獲
+    depthM: 200,                   // 溫躍層下 → 跨層偵測衰減
     coreOverride: { rangeKm: 15, hpMax: 200 },   // 重型魚雷 ~15km
-    waypoints: [[123.10, 22.52], [123.05, 22.48]],
+    waypoints: [[123.10, 22.48], [123.00, 22.43]],
   }),
-  // 039C 柴電潛艦 — 另一軸線伏擊
-  mkUnit("RED-SS-02", "red", "submarine", "039C-336", "039C 元級", 122.98, 22.42, {
+  // 039C 柴電潛艦 — 層內淺潛 40m（與水面艦同層直達聲傳 → 較遠距即被被動聲納測得方位）
+  mkUnit("RED-SS-02", "red", "submarine", "039C-336", "039C 元級（層內 40m）", 123.18, 22.60, {
     speedKnots: 5,
+    depthM: 40,                    // 溫躍層內 → 與水面艦同層，較易偵獲
     coreOverride: { rangeKm: 14, hpMax: 180 },
-    waypoints: [[123.08, 22.50], [123.12, 22.55]],
+    waypoints: [[123.05, 22.50], [122.95, 22.45]],
   }),
 ];
 
 const NEUTRAL_UNITS: Unit[] = [
-  mkUnit("NEU-SH-01", "neutral", "ship_surface", "MV-LNG", "LNG 運輸船", 123.40, 22.10, {
-    speedKnots: 15, waypoints: [[123.15, 22.45], [122.95, 22.75]],
+  mkUnit("NEU-SH-01", "neutral", "ship_surface", "MV-LNG", "LNG 運輸船", 123.45, 22.05, {
+    speedKnots: 15, waypoints: [[123.15, 22.40], [122.90, 22.72]],
   }),
 ];
 
 export const ASW_ESCORT_2031: Scenario = {
   id: "asw_escort_2031",
   displayName: "反潛護航 2031",
-  briefing: "高價值補給艦團通過台灣東部深水區，2 艘解放軍潛艦潛伏伏擊。藍方反潛群（巡防艦主動聲納 + P-8 反潛機 + 獵殺潛艦）須在敵潛艦進入魚雷射程前偵獲擊沉。P-8 開場已佈一道聲標反潛屏幕橫跨敵潛逼近軸線；選 P-8 可再佈放更多屏幕（兩角定框，即時顯示 P_FZ 區域偵測機率）。主動聲納偵潛遠但會曝露自身；潛艦安靜潛行難覓。",
+  briefing: "高價值補給艦團通過台灣東部深水區，2 艘解放軍潛艦於船團前方 15 浬外潛伏伏擊（093B 層下 200m 難偵獲、039C 層內 40m 較易偵獲 — 深度 × 水文決定被偵測機率）。藍方反潛群（巡防艦主動聲納 + P-8 反潛機聲標 + S-70C 反潛直升機吊放聲納 + 獵殺潛艦）須在敵潛艦進入魚雷射程前偵獲擊沉。被動聲納只得方位（虛線測向射線）→ 須兩感測器三角交會或自身機動 TMA 解算才「定位」可開火。下潛潛艦只能發射魚雷；潛射巡弋飛彈須升潛望鏡深度（亦可用潛望鏡目視 ~7 浬）。主動聲納偵潛遠但會曝露自身；潛艦安靜潛行難覓。",
   startSimTimeSec: 0,
   durationSec: 2400,
   sides: SIDES,
@@ -151,12 +166,32 @@ export const ASW_ESCORT_2031: Scenario = {
     // P-8 開場佈一道聲標反潛屏幕，橫跨紅潛逼近船團的軸線（~122.95–123.30, 22.45–22.70）
     {
       id: "asw-screen-0", unitId: "BLUE-P8-01", simAtSec: 0, kind: "deploy_sonobuoys",
-      cornerA: [122.95, 22.45], cornerB: [123.30, 22.70], count: 16, mdrKm: 5, lifetimeSec: 2400,
+      cornerA: [122.95, 22.42], cornerB: [123.15, 22.60], count: 12, mdrKm: 4, lifetimeSec: 2400,
     },
   ],
   acousticModel: true,        // 啟用 E20 聲納方程式偵測
-  sonarLayerDepthM: 60,       // 溫躍層深度
+  sonarLayerDepthM: 60,       // 溫躍層深度（無 acousticEnv 時的 fallback）
   convergenceZoneKm: 55,      // 深水會聚區間距（首環 ~55km）— 潛艦可遠距聽到吵雜船團
+  // 初始水文環境（BT 溫深剖面）：夏季混合層 ~50m（0–50m 等溫 28°C）+ 強溫躍層下探。
+  // 由此導出聲速剖面 → 層深 50m；深水（4000m）成立會聚區、無淺水底反射。
+  // 潛艦在層上 or 層下 → 跨層聲傳衰減差異 → 被偵測機率差異（見紅方兩艦不同深度）。
+  acousticEnv: {
+    btProfile: [
+      { depthM: 0,    tempC: 28 },
+      { depthM: 25,   tempC: 28 },
+      { depthM: 50,   tempC: 28 },   // 混合層底 → 聲速近表面極大值 → 層深 ~50m
+      { depthM: 75,   tempC: 19 },   // 溫躍層
+      { depthM: 120,  tempC: 12 },
+      { depthM: 250,  tempC: 7 },
+      { depthM: 600,  tempC: 4.5 },
+      { depthM: 1200, tempC: 3.8 },
+    ],
+    salinityPpt: 34.5,
+    seaState: 3,
+    bottomType: "mud",
+    waterDepthM: 4000,          // 深水（菲律賓海）→ 成立會聚區、無淺水混響限制
+    layerDepthM: 50,            // 由上方 BT 剖面導出的 Sonic Layer Depth（cache）
+  },
   camera: {
     center: [123.10, 22.40],
     zoom: 8.2,

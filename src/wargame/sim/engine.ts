@@ -74,7 +74,7 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
   const detection = computeDetection(
     unitsAfterMove, state.scenario.sides, dtSec, nextSimSec,
     occlusionEnabled, acousticModel, effLayerDepthM,
-    effCzKm, sonobuoys, sonarEnv,
+    effCzKm, sonobuoys, sonarEnv, state.tmaTracks ?? {},
   );
 
   // 5. 戰鬥 — 把 detection 事件併入本 tick：eventsThisTick 由此重置、eventsAll 先接 detection
@@ -85,6 +85,8 @@ export function tick(state: SimulationState, dtSec: number): SimulationState {
       pendingCommands,
       simTimeSec: nextSimSec,
       sonobuoys,
+      passiveContacts: detection.passiveContacts,
+      tmaTracks: detection.tmaTracks,
       eventsThisTick: detection.events,
       eventsAll: [...state.eventsAll, ...detection.events],
     },

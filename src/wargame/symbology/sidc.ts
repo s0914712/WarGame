@@ -59,6 +59,9 @@ const TEMPLATES: Record<UnitKind, SidcTemplate> = {
 
   // 空軍基地 — Ground Installation, Airfield Base
   airbase: { dimension: "G", functionId: "IBA---" },
+
+  // 反潛直升機 — Air, Military, Rotary Wing, ASW
+  asw_helo: { dimension: "A", functionId: "MH----" },
 };
 
 export function buildSidc(kind: UnitKind, side: SideId): string {
@@ -73,7 +76,7 @@ const ALL_KINDS: UnitKind[] = [
   "missile_launcher", "drone", "ship_surface",
   "submarine", "fighter", "radar_station",
   "sam_coastal", "mobile_radar", "sam_patriot",
-  "supply_ship", "airbase",
+  "supply_ship", "airbase", "asw_helo",
 ];
 
 const ALL_SIDES: SideId[] = ["blue", "red", "neutral", "us", "japan"];

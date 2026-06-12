@@ -78,6 +78,19 @@ export function isPeriscopeDepth(u: Unit): boolean {
   return depthOf(u) <= PERISCOPE_EXPOSE_MAX_M;
 }
 
+/** 潛望鏡目視偵測距離（公里，B3）— 約 7 浬。潛艦在潛望鏡深度時用潛望鏡目視水面 / 空中目標 */
+export const PERISCOPE_VISUAL_RANGE_KM = 7 * 1.852;   // ≈ 13 km
+
+// ── 吊放聲納（dipping sonar，A4 反潛直升機）─────────────
+/** 反潛直升機懸停（吊放聲納入水）的最大速度（節）；> 此速度視為移動 → 聲納收起無法偵測 */
+export const DIP_HOVER_MAX_KN = 8;
+
+/** 反潛直升機目前是否吊放聲納作業中（懸停 / 低速 → 換能器入水） */
+export function isDippingActive(u: Unit): boolean {
+  if (u.kind !== "asw_helo") return false;
+  return u.position.speedKnots <= DIP_HOVER_MAX_KN;
+}
+
 /** dB 功率相加 */
 function dbSum(a: number, b: number): number {
   return 10 * Math.log10(10 ** (a / 10) + 10 ** (b / 10));
@@ -125,6 +138,13 @@ export interface SonarEnv {
   ambientNlDb?: number;
   bottomLossDbPerKm?: number;
   czSpacingKm?: number;
+  /**
+   * 混響散射強度（dB，A3 主動聲納混響限制）。> 0（淺水 / 海底反射強）時主動聲納改為
+   * 「混響限制（reverberation-limited）」而非「噪音限制」：回波與混響皆隨 ping 源平 + 距離
+   * 同比變化（2·TL 相消）→ 加大 ping 功率或拉近距離都無法改善訊號餘裕，只能靠 TS − Sr。
+   * 省略 / 0 = 深水開闊海域，純噪音限制（保留舊行為）。
+   */
+  reverbScatterDb?: number;
 }
 
 /** 被動聲納 signal excess（dB）。≥ 0 → 聽得到 */
@@ -143,7 +163,13 @@ export function passiveSignalExcessDb(args: {
   return args.sourceLevelDb - tl - (nl - args.passive.arrayGainDb) - args.passive.dtDb;
 }
 
-/** 主動聲納 signal excess（dB）。≥ 0 → 回波偵測成立 */
+/** 主動聲納 signal excess（dB）。≥ 0 → 回波偵測成立。
+ *
+ * 噪音限制：SE_n = SL_ping − 2·TL + TS − (NL − DI) − DT
+ * 混響限制（A3，reverbScatterDb > 0）：回波與混響皆 ∝ SL − 2·TL → 相消，
+ *   SE_r = TS + DI − Sr − DT（與 ping 功率 / 距離無關）。
+ * 實際偵測取兩者較嚴者：SE = min(SE_n, SE_r)。淺水安靜潛艦即使近距、強 ping 也難偵獲。
+ */
 export function activeSignalExcessDb(args: {
   pingSourceLevelDb: number;
   rangeKm: number;
@@ -154,11 +180,16 @@ export function activeSignalExcessDb(args: {
   czSpacingKm?: number;
   ambientNlDb?: number;
   bottomLossDbPerKm?: number;
+  reverbScatterDb?: number;
 }): number {
   const tl = transmissionLossDb(args.rangeKm, args.layerCrossing, args.czSpacingKm ?? 0, args.bottomLossDbPerKm ?? 0);
   const nl = noiseLevelDb(args.passive.selfNoiseDb, args.receiverSpeedKnots, args.ambientNlDb);
-  return args.pingSourceLevelDb - 2 * tl + args.targetStrengthDb
+  const seNoise = args.pingSourceLevelDb - 2 * tl + args.targetStrengthDb
     - (nl - args.passive.arrayGainDb) - args.passive.dtDb;
+  const reverb = args.reverbScatterDb ?? 0;
+  if (reverb <= 0) return seNoise;
+  const seReverb = args.targetStrengthDb + args.passive.arrayGainDb - reverb - args.passive.dtDb;
+  return Math.min(seNoise, seReverb);
 }
 
 /**
@@ -170,29 +201,44 @@ export function sonarDetects(
   sensor: Unit, target: Unit, rangeKm: number, layerDepthM: number, czSpacingKm = 0,
   env: SonarEnv = {},
 ): boolean {
-  // 被動（艦艏 / 側舷 / 拖曳陣列）
   if (sonarPassiveDetects(sensor, target, rangeKm, layerDepthM, czSpacingKm, env)) return true;
+  if (sonarActiveDetects(sensor, target, rangeKm, layerDepthM, czSpacingKm, env)) return true;
+  return false;
+}
 
-  // 主動（拍發 ping）
+/**
+ * 主動聲納偵測（拍發 ping 收回波；含 A3 混響限制 + A4 吊放聲納）。
+ * 給出距離 → 屬「已定位」(fixed) 接觸（不像被動只得方位）。
+ *   - 水面艦 / 潛艦：需 activeSonar 開
+ *   - 反潛直升機：吊放聲納懸停作業中（isDippingActive）即自動主動拍發，
+ *     換能器吊放至溫躍層下 → 不受跨層損失（layerCrossing = false）
+ */
+export function sonarActiveDetects(
+  sensor: Unit, target: Unit, rangeKm: number, layerDepthM: number, czSpacingKm = 0,
+  env: SonarEnv = {},
+): boolean {
   const sa = acousticsOf(sensor);
   const ta = acousticsOf(target);
-  if (sa && ta && sensor.activeSonar && sa.active && sa.passive) {
-    const layerCrossing = crossesLayer(depthOf(sensor), depthOf(target), layerDepthM);
-    const se = activeSignalExcessDb({
-      pingSourceLevelDb: sa.active.sourceLevelDb,
-      rangeKm,
-      layerCrossing,
-      targetStrengthDb: ta.targetStrengthDb,
-      passive: sa.passive,
-      receiverSpeedKnots: sensor.position.speedKnots,
-      czSpacingKm,
-      ambientNlDb: env.ambientNlDb,
-      bottomLossDbPerKm: env.bottomLossDbPerKm,
-    });
-    if (se >= 0) return true;
-  }
+  if (!sa || !ta || !sa.active || !sa.passive) return false;
 
-  return false;
+  const dipping = isDippingActive(sensor);
+  if (!sensor.activeSonar && !dipping) return false;   // 未開主動 ping 且非吊放作業
+
+  // 吊放聲納換能器吊放至層下 → 略過跨層損失（直接探測層下潛艦）
+  const layerCrossing = dipping ? false : crossesLayer(depthOf(sensor), depthOf(target), layerDepthM);
+  const se = activeSignalExcessDb({
+    pingSourceLevelDb: sa.active.sourceLevelDb,
+    rangeKm,
+    layerCrossing,
+    targetStrengthDb: ta.targetStrengthDb,
+    passive: sa.passive,
+    receiverSpeedKnots: sensor.position.speedKnots,
+    czSpacingKm,
+    ambientNlDb: env.ambientNlDb,
+    bottomLossDbPerKm: env.bottomLossDbPerKm,
+    reverbScatterDb: env.reverbScatterDb,
+  });
+  return se >= 0;
 }
 
 /**
@@ -206,6 +252,8 @@ export function sonarPassiveDetects(
   const sa = acousticsOf(sensor);
   const ta = acousticsOf(target);
   if (!sa || !ta) return false;
+  // 反潛直升機：吊放聲納換能器入水（懸停）才能聽音；移動中收起 → 無被動偵測
+  if (sensor.kind === "asw_helo" && !isDippingActive(sensor)) return false;
   const layerCrossing = crossesLayer(depthOf(sensor), depthOf(target), layerDepthM);
   const ambientNlDb = env.ambientNlDb;
   const bottomLossDbPerKm = env.bottomLossDbPerKm;
