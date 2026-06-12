@@ -99,12 +99,14 @@ function spawnOffenseMissile(attacker: Unit, target: Unit, lw: LoadedWeapon, sim
     distanceTravelledKm: 0,
     role: "attack",
     profile,
+    weaponId: lw.mag.weaponId,
     pKill: lw.spec.pKill,
     damageFrac: lw.spec.damageFrac ?? 0.6,
   };
 }
 
 const MISSILE_ARRIVE_THRESHOLD_KM = 1.0;
+const TORPEDO_DECOY_WINDOW_KM = 5;   // 來襲魚雷進入此距離 → 目標放聲學誘標軟殺（一次）
 const EXPLOSION_DURATION_SEC = 6;
 const WRECK_DURATION_SEC = 30;       // 殘骸停留 30 sim-sec
 const AUTO_ENGAGE = true;            // Phase 5 預設自動鎖敵；之後可加 toggle
@@ -208,6 +210,42 @@ export function runCombat(
   const attackById = new Map<string, Missile>();
   for (const m of missiles) {
     if ((m.role ?? "attack") === "attack") attackById.set(m.id, m);
+  }
+
+  // 3a-0. 魚雷聲學反制（Nixie / 潛艦誘標）— 來襲魚雷進入反制窗（一次）→ 目標擲骰軟殺
+  for (const m of missiles) {
+    if (m.weaponId !== "torpedo" || (m.role ?? "attack") !== "attack") continue;
+    if (destroyedThreatIds.has(m.id)) continue;
+    const target = units[m.targetId];
+    if (!target || target.hpCurrent <= 0) continue;
+    const decoy = UNIT_CATALOG[target.kind].acoustics?.torpedoDecoy;
+    if (!decoy) continue;
+    const from: LngLat = [m.position.lng, m.position.lat];
+    const dist = haversineKm(from, m.targetPositionAtFire);
+    const stepKm = knotsToKmPerSec(m.speedKnots) * dtSec;
+    // 只在「本 tick 跨入反制窗」時嘗試一次
+    if (!(dist <= TORPEDO_DECOY_WINDOW_KM && dist + stepKm > TORPEDO_DECOY_WINDOW_KM)) continue;
+    if (target.lastDecoySimSec != null && simSec - target.lastDecoySimSec < decoy.cooldownSec) continue;
+    units = { ...units, [target.id]: { ...target, lastDecoySimSec: simSec } };
+    const rng = makeRng(seedFromStrings(`decoy-${m.id}`, simSec));
+    if (rng() < decoy.pDefeat) {
+      destroyedThreatIds.add(m.id);
+      explosions = [...explosions, {
+        id: `exp-decoy-${m.id}`, position: from, spawnedAtSimSec: simSec,
+        durationSec: EXPLOSION_DURATION_SEC, hit: false,
+      }];
+      events.push({
+        id: `evt-${simSec}-decoy-${m.id}`, simAtSec: simSec, kind: "intercept",
+        attackerId: target.id, position: from,
+        message: `${target.callsign} 釋放聲學誘標 — 魚雷被誘偏`,
+      });
+    } else {
+      events.push({
+        id: `evt-${simSec}-decoyfail-${m.id}`, simAtSec: simSec, kind: "miss",
+        attackerId: target.id, position: from,
+        message: `${target.callsign} 釋放誘標 — 未誘開，魚雷續航`,
+      });
+    }
   }
   for (const mi of missiles) {
     if (mi.role !== "interceptor") continue;

@@ -21,6 +21,7 @@ import { UNIT_CATALOG, CORE_ATTRIBUTE_LABELS } from "../wargame/catalog/units";
 import { wargameClock } from "../wargame/clock";
 import { validatePlan } from "../wargame/sim/validate";
 import { planSonobuoyField } from "../wargame/sim/sonobuoyField";
+import { unitHasTowedArray } from "../wargame/sim/sonar";
 
 const ROE_OPTIONS: { value: RoeMode; label: string }[] = [
   { value: "weapons_free", label: "自由接戰 (Free)" },
@@ -62,7 +63,7 @@ function buildSnapshot(): Snapshot {
   return {
     selectedUnitId: id,
     signature: id && u
-      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}|${u.activeSonar ? 1 : 0}|${Math.round(u.position.altMeters)}|${u.targetDepthM ?? ""}`
+      ? `${id}|${u.core.rangeKm}|${u.core.speedKnots}|${u.core.movementRangeKm}|${u.core.detectionRangeKm}|${u.core.hpMax}|${u.hpCurrent}|${u.waypoints.length}|${u.roe ?? ""}|${u.activeSonar ? 1 : 0}|${Math.round(u.position.altMeters)}|${u.targetDepthM ?? ""}|${u.towedArrayDeployed === false ? 0 : 1}`
       : "",
     editorMode: editorStore.getMode(),
     planningUnitId: editorStore.getPlanningUnitId(),
@@ -168,6 +169,20 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
     });
   };
   // 可控下潛深度（E20）：僅潛艦
+  // 拖曳陣列：裝備者顯示開關
+  const towedEquipped = unitHasTowedArray(targetUnit);
+  const towedOn = targetUnit.towedArrayDeployed !== false;
+  const towedLimit = UNIT_CATALOG[targetUnit.kind].acoustics?.towedArray?.speedLimitKn ?? 0;
+  const towedTooFast = targetUnit.position.speedKnots > towedLimit;
+  const toggleTowed = () => {
+    scenarioStore.enqueueCommand({
+      id: `ui-towed-${Date.now()}`,
+      unitId: targetUnit.id,
+      simAtSec: wargameClock.getSimTime(),
+      kind: "set_towed_array",
+      on: !towedOn,
+    });
+  };
   const isSubmarine = UNIT_CATALOG[targetUnit.kind].domain === "subsurface";
   const curDepthM = Math.round(Math.max(0, -targetUnit.position.altMeters));
   const layerM = scenarioStore.getState().scenario.sonarLayerDepthM ?? 60;
@@ -360,6 +375,21 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
                 title="主動聲納：偵潛距離大增，但會曝露自身位置給敵方被動聲納"
               >
                 主動聲納 {sonarOn ? "● ON（拍發中／已曝露）" : "○ OFF（靜默）"}
+              </button>
+            )}
+            {towedEquipped && (
+              <button
+                onClick={toggleTowed}
+                style={{
+                  marginTop: 8, width: "100%", padding: "8px 10px", fontSize: 16, fontWeight: 600,
+                  borderRadius: 6, cursor: "pointer",
+                  border: towedOn ? "1px solid #34d399" : "1px solid rgba(148,163,184,0.3)",
+                  background: towedOn ? "rgba(52,211,153,0.18)" : "rgba(148,163,184,0.12)",
+                  color: towedOn ? "#6ee7b7" : "#cbd5e1",
+                }}
+                title={`拖曳陣列（被動高增益偵潛）；須 ≤ ${towedLimit}kn 才有效`}
+              >
+                拖曳陣列 {towedOn ? (towedTooFast ? `● ON（超速 >${towedLimit}kn·失效）` : "● ON（聆聽中）") : "○ 收回"}
               </button>
             )}
             {isSubmarine && (

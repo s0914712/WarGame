@@ -87,6 +87,8 @@ function applyOne(unit: Unit, cmd: Command): Unit {
       return { ...unit, activeSonar: cmd.on };
     case "set_depth":
       return { ...unit, targetDepthM: Math.max(0, Math.min(SUB_MAX_DEPTH_M, cmd.depthM)) };
+    case "set_towed_array":
+      return { ...unit, towedArrayDeployed: cmd.on };
     case "deploy_sonobuoys":
       return unit;   // 由 buildSonobuoys 在 applyDueCommands 處理（state 級）
   }

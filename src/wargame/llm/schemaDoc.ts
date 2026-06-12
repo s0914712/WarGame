@@ -70,6 +70,7 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
     { "kind": "set_active_sonar", "unitId": "BLUE-FFG-01", "on": true },
     { "kind": "set_depth", "unitId": "BLUE-SS-01", "depthM": 120 },
     { "kind": "deploy_sonobuoys", "unitId": "BLUE-P8-01", "cornerA": [122.9, 22.4], "cornerB": [123.3, 22.7], "count": 16 },
+    { "kind": "set_towed_array", "unitId": "BLUE-FFG-01", "on": true },
     { "kind": "update_attributes", "unitId": "BLUE-SH-01",
       "core": { "rangeKm": 200, "speedKnots": 28 }
     }
@@ -132,7 +133,10 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
   安靜潛艦水面艦幾乎聽不到。**高速會變吵 → 易被偵獲**，潛艦應慢速潛行。
 - **主動聲納**（\`set_active_sonar on:true\`，拍發 ping）：偵潛距離大增（~十餘 km），
   但 ping 極響，自身位置會被敵方被動聲納在 **>100km** 外聽到 → 高風險高回報。
-- 反潛戰術：用 P-8 反潛機（聲標被動）大範圍掃蕩 + 巡防艦在接觸後開主動聲納精確定位 → 進入魚雷射程擊沉。
+- **拖曳陣列**（\`set_towed_array on:true\`）：少數巡防艦 / 潛艦裝備，高增益被動偵潛（距離數倍），
+  但**須低速（≤ ~18kn 艦 / ~12kn 潛）才有效**，高速自動失效 → 「慢速聆聽」。潛艦被動本就優於水面艦。
+- **魚雷聲學反制**：來襲魚雷接近時，目標**自動**釋放聲學誘標（水面艦 Nixie / 潛艦誘標）軟殺，有機率誘偏（~50–60%）。
+- 反潛戰術：P-8 聲標大範圍掃蕩 + 巡防艦放拖曳陣列低速被動搜索 + 接觸後開主動聲納精確定位 → 進入魚雷射程擊沉。
 - **聲標反潛屏幕（\`deploy_sonobuoys\`）**：反潛機以兩角 cornerA/cornerB 定義搜索框，自動格網佈點，
   每枚聲標在 MDR（~4km）內偵測敵潛。**橫跨敵潛逼近船團的軸線佈一道屏幕**，攔截穿越的潛艦；
   聲標有電池壽命（~1hr）會失效。state.sonobuoys 列出己方已佈聲標。

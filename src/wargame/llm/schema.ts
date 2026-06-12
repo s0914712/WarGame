@@ -72,6 +72,7 @@ export type LlmCommand =
   | LlmSetRoeCommand
   | LlmSetActiveSonarCommand
   | LlmSetDepthCommand
+  | LlmSetTowedArrayCommand
   | LlmDeploySonobuoysCommand
   | LlmUpdateAttributesCommand;
 
@@ -127,6 +128,14 @@ export interface LlmSetDepthCommand {
   kind: "set_depth";
   unitId: string;
   depthM: number;
+  executeAtSimSec?: number;
+}
+
+/** 佈放 / 收回拖曳陣列（TACTAS）。on=true 高增益被動偵潛，但須低速才有效 */
+export interface LlmSetTowedArrayCommand {
+  kind: "set_towed_array";
+  unitId: string;
+  on: boolean;
   executeAtSimSec?: number;
 }
 
