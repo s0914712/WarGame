@@ -13,7 +13,7 @@
  * 純函式，無 RNG → 重播決定性。
  */
 import type { AcousticEnvironment, AcousticProfile } from "../types";
-import { transmissionLossDb, DEFAULT_AMBIENT_NL_DB, type SonarEnv } from "./sonar";
+import { transmissionLossDb, DEFAULT_AMBIENT_NL_DB, DEFAULT_LAYER_DEPTH_M, type SonarEnv } from "./sonar";
 
 export const DEFAULT_SALINITY_PPT = 34;
 const DEEP_WATER_FOR_CZ_M = 1000;     // 水深 ≥ 此值才成立會聚區
@@ -87,6 +87,24 @@ export function deriveSonarEnv(
       ambientNlDb: seaStateToAmbientNlDb(env.seaState),
       bottomLossDbPerKm: bottomLossDbPerKm(env.bottomType, env.waterDepthM),
     },
+  };
+}
+
+/**
+ * 由場景導出有效聲納參數（層深 / 會聚區 / 環境噪音 + 底損）。
+ * 有 acousticEnv 用使用者設定，否則用場景固定值。engine 與渲染層共用，避免邏輯重複。
+ */
+export function effectiveSonarParams(scenario: {
+  acousticEnv?: AcousticEnvironment; sonarLayerDepthM?: number; convergenceZoneKm?: number;
+}): { layerDepthM: number; czSpacingKm: number; sonarEnv: SonarEnv } {
+  if (scenario.acousticEnv) {
+    const d = deriveSonarEnv(scenario.acousticEnv, scenario.convergenceZoneKm);
+    return { layerDepthM: d.layerDepthM, czSpacingKm: d.czSpacingKm, sonarEnv: d.sonarEnv };
+  }
+  return {
+    layerDepthM: scenario.sonarLayerDepthM ?? DEFAULT_LAYER_DEPTH_M,
+    czSpacingKm: scenario.convergenceZoneKm ?? 0,
+    sonarEnv: {},
   };
 }
 

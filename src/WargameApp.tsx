@@ -33,6 +33,7 @@ import { attachWargameRangeRings } from "./map/wargameRangeRings";
 import { attachWargameSymbolLayer, SYMBOL_LAYER_ID } from "./map/wargameSymbolLayer";
 import { attachWargameRouteLayer } from "./map/wargameRouteLayer";
 import { attachWargameSonobuoyLayer } from "./map/wargameSonobuoyLayer";
+import { attachWargameBearingLayer } from "./map/wargameBearingLayer";
 import { loadWargameSymbols } from "./wargame/symbology/loadSymbols";
 import { useSimLoop } from "./hooks/useSimLoop";
 import { useAiSideLoop } from "./hooks/useAiSideLoop";
@@ -80,6 +81,7 @@ export default function WargameApp() {
       attachWargameRouteLayer(map),
       attachWargameWrecksLayer(map),
       attachWargameSonobuoyLayer(map),
+      attachWargameBearingLayer(map),
       attachWargameCombatLayer(map),
     );
   }

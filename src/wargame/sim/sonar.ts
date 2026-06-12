@@ -170,48 +170,14 @@ export function sonarDetects(
   sensor: Unit, target: Unit, rangeKm: number, layerDepthM: number, czSpacingKm = 0,
   env: SonarEnv = {},
 ): boolean {
-  const sa = acousticsOf(sensor);
-  const ta = acousticsOf(target);
-  if (!sa || !ta) return false;
-  const layerCrossing = crossesLayer(depthOf(sensor), depthOf(target), layerDepthM);
-  const ambientNlDb = env.ambientNlDb;
-  const bottomLossDbPerKm = env.bottomLossDbPerKm;
-
-  const srcSL = effectiveSourceLevelDb(ta, target.position.speedKnots, target.activeSonar === true);
-
-  // 被動（艦艏 / 側舷陣列）
-  if (sa.passive) {
-    const se = passiveSignalExcessDb({
-      sourceLevelDb: srcSL,
-      rangeKm,
-      layerCrossing,
-      passive: sa.passive,
-      receiverSpeedKnots: sensor.position.speedKnots,
-      czSpacingKm,
-      ambientNlDb,
-      bottomLossDbPerKm,
-    });
-    if (se >= 0) return true;
-  }
-
-  // 被動（拖曳陣列 TACTAS）— 高增益，需佈放且低速
-  if (towedArrayActive(sensor)) {
-    const ta2 = sa.towedArray!;
-    const se = passiveSignalExcessDb({
-      sourceLevelDb: srcSL,
-      rangeKm,
-      layerCrossing,
-      passive: { arrayGainDb: ta2.arrayGainDb, dtDb: ta2.dtDb, selfNoiseDb: ta2.selfNoiseDb },
-      receiverSpeedKnots: sensor.position.speedKnots,
-      czSpacingKm,
-      ambientNlDb,
-      bottomLossDbPerKm,
-    });
-    if (se >= 0) return true;
-  }
+  // 被動（艦艏 / 側舷 / 拖曳陣列）
+  if (sonarPassiveDetects(sensor, target, rangeKm, layerDepthM, czSpacingKm, env)) return true;
 
   // 主動（拍發 ping）
-  if (sensor.activeSonar && sa.active && sa.passive) {
+  const sa = acousticsOf(sensor);
+  const ta = acousticsOf(target);
+  if (sa && ta && sensor.activeSonar && sa.active && sa.passive) {
+    const layerCrossing = crossesLayer(depthOf(sensor), depthOf(target), layerDepthM);
     const se = activeSignalExcessDb({
       pingSourceLevelDb: sa.active.sourceLevelDb,
       rangeKm,
@@ -220,11 +186,48 @@ export function sonarDetects(
       passive: sa.passive,
       receiverSpeedKnots: sensor.position.speedKnots,
       czSpacingKm,
-      ambientNlDb,
-      bottomLossDbPerKm,
+      ambientNlDb: env.ambientNlDb,
+      bottomLossDbPerKm: env.bottomLossDbPerKm,
     });
     if (se >= 0) return true;
   }
 
+  return false;
+}
+
+/**
+ * 純被動偵測（艦艏/側舷 + 拖曳陣列；不含主動 ping）。
+ * 被動只得「方位」不得距離 → 用於測向三角定位（bearing-only）。
+ */
+export function sonarPassiveDetects(
+  sensor: Unit, target: Unit, rangeKm: number, layerDepthM: number, czSpacingKm = 0,
+  env: SonarEnv = {},
+): boolean {
+  const sa = acousticsOf(sensor);
+  const ta = acousticsOf(target);
+  if (!sa || !ta) return false;
+  const layerCrossing = crossesLayer(depthOf(sensor), depthOf(target), layerDepthM);
+  const ambientNlDb = env.ambientNlDb;
+  const bottomLossDbPerKm = env.bottomLossDbPerKm;
+  const srcSL = effectiveSourceLevelDb(ta, target.position.speedKnots, target.activeSonar === true);
+
+  // 艦艏 / 側舷陣列
+  if (sa.passive) {
+    const se = passiveSignalExcessDb({
+      sourceLevelDb: srcSL, rangeKm, layerCrossing, passive: sa.passive,
+      receiverSpeedKnots: sensor.position.speedKnots, czSpacingKm, ambientNlDb, bottomLossDbPerKm,
+    });
+    if (se >= 0) return true;
+  }
+  // 拖曳陣列 TACTAS（需佈放 + 低速）
+  if (towedArrayActive(sensor)) {
+    const t = sa.towedArray!;
+    const se = passiveSignalExcessDb({
+      sourceLevelDb: srcSL, rangeKm, layerCrossing,
+      passive: { arrayGainDb: t.arrayGainDb, dtDb: t.dtDb, selfNoiseDb: t.selfNoiseDb },
+      receiverSpeedKnots: sensor.position.speedKnots, czSpacingKm, ambientNlDb, bottomLossDbPerKm,
+    });
+    if (se >= 0) return true;
+  }
   return false;
 }
