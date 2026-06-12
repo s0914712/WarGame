@@ -209,6 +209,18 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
       return { index, status: "applied", commandId: id };
     }
 
+    // ── set_towed_array ──
+    case "set_towed_array": {
+      if (typeof cmd.on !== "boolean") {
+        return { index, status: "rejected", reason: "'on' must be a boolean" };
+      }
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_towed_array", on: cmd.on,
+      });
+      return { index, status: "applied", commandId: id };
+    }
+
     // ── set_depth（潛艦）──
     case "set_depth": {
       if (typeof cmd.depthM !== "number" || cmd.depthM < 0) {

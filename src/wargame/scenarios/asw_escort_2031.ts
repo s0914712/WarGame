@@ -47,6 +47,7 @@ function mkUnit(
     stealth?: number;
     coreOverride?: Partial<Unit["core"]>;
     activeSonar?: boolean;
+    hasTowedArray?: boolean;
   } = {},
 ): Unit {
   const cat = UNIT_CATALOG[kind];
@@ -68,6 +69,7 @@ function mkUnit(
     ammoMax: cat.defaultAmmoMax,
     ammoCurrent: cat.defaultAmmoMax,
     ...(opts.activeSonar ? { activeSonar: true } : {}),
+    ...(opts.hasTowedArray ? { hasTowedArray: true } : {}),
     detectedBy: {},
     lastTickSimSec: 0,
   };
@@ -86,12 +88,14 @@ const BLUE_UNITS: Unit[] = [
   mkUnit("BLUE-FFG-01", "blue", "ship_surface", "FFG-1101", "成功級 - 前衛", 122.95, 22.40, {
     speedKnots: 16,
     activeSonar: true,
+    hasTowedArray: true,   // 裝拖曳陣列（低速被動偵潛大增）
     coreOverride: { rangeKm: 22, detectionRangeKm: 200 },   // ASROC 反潛火箭 ~22km
     waypoints: [[123.20, 22.65], [123.35, 22.82]],
   }),
   mkUnit("BLUE-FFG-02", "blue", "ship_surface", "FFG-1103", "成功級 - 側衛", 122.75, 22.18, {
     speedKnots: 16,
     activeSonar: true,
+    hasTowedArray: true,   // 裝拖曳陣列（低速被動偵潛大增）
     coreOverride: { rangeKm: 22, detectionRangeKm: 200 },
     waypoints: [[123.05, 22.48], [123.28, 22.72]],
   }),

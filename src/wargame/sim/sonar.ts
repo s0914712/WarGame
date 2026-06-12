@@ -52,6 +52,21 @@ export function depthOf(u: Unit): number {
   return Math.max(0, -u.position.altMeters);
 }
 
+/** 單位是否裝備拖曳陣列：catalog 有 towedArray 且（潛艦 或 hasTowedArray 旗標） */
+export function unitHasTowedArray(u: Unit): boolean {
+  const cat = UNIT_CATALOG[u.kind];
+  if (!cat.acoustics?.towedArray) return false;
+  return cat.domain === "subsurface" || u.hasTowedArray === true;
+}
+
+/** 拖曳陣列目前是否有效偵測：裝備 + 佈放 + 速度 ≤ speedLimit */
+export function towedArrayActive(u: Unit): boolean {
+  if (!unitHasTowedArray(u)) return false;
+  const ta = UNIT_CATALOG[u.kind].acoustics!.towedArray!;
+  if (u.towedArrayDeployed === false) return false;   // 省略 = 已佈放
+  return u.position.speedKnots <= ta.speedLimitKn;
+}
+
 // ── 可控下潛深度 ─────────────────────────────────────────
 /** 潛艦最大下潛深度（公尺） */
 export const SUB_MAX_DEPTH_M = 500;
@@ -162,14 +177,31 @@ export function sonarDetects(
   const ambientNlDb = env.ambientNlDb;
   const bottomLossDbPerKm = env.bottomLossDbPerKm;
 
-  // 被動
+  const srcSL = effectiveSourceLevelDb(ta, target.position.speedKnots, target.activeSonar === true);
+
+  // 被動（艦艏 / 側舷陣列）
   if (sa.passive) {
-    const srcSL = effectiveSourceLevelDb(ta, target.position.speedKnots, target.activeSonar === true);
     const se = passiveSignalExcessDb({
       sourceLevelDb: srcSL,
       rangeKm,
       layerCrossing,
       passive: sa.passive,
+      receiverSpeedKnots: sensor.position.speedKnots,
+      czSpacingKm,
+      ambientNlDb,
+      bottomLossDbPerKm,
+    });
+    if (se >= 0) return true;
+  }
+
+  // 被動（拖曳陣列 TACTAS）— 高增益，需佈放且低速
+  if (towedArrayActive(sensor)) {
+    const ta2 = sa.towedArray!;
+    const se = passiveSignalExcessDb({
+      sourceLevelDb: srcSL,
+      rangeKm,
+      layerCrossing,
+      passive: { arrayGainDb: ta2.arrayGainDb, dtDb: ta2.dtDb, selfNoiseDb: ta2.selfNoiseDb },
       receiverSpeedKnots: sensor.position.speedKnots,
       czSpacingKm,
       ambientNlDb,

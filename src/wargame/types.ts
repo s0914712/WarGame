@@ -213,6 +213,12 @@ export interface Unit {
   weaponProfile?: MissileProfile;
   /** 主動聲納是否開啟（E20）。開 = 拍發 ping，偵測潛艦距離大增，但自身被動曝露給敵方被動聲納 */
   activeSonar?: boolean;
+  /** 拖曳陣列是否佈放（streamed）；省略 = 已佈放（裝備者預設使用） */
+  towedArrayDeployed?: boolean;
+  /** 水面艦是否裝備拖曳陣列（少數有）；潛艦不需此旗標（catalog 有 towedArray 即用） */
+  hasTowedArray?: boolean;
+  /** 最近一次釋放魚雷反制誘標的 sim sec（冷卻計時） */
+  lastDecoySimSec?: number;
   /** 目標下潛深度（公尺，正值；潛艦用）。引擎以固定速率漸變 altMeters 趨近 −targetDepthM */
   targetDepthM?: number;
   /** 武器彈艙（B6，runtime）。loadScenario 時由 catalog.defaultLoadout 或合成初始化 */
@@ -233,6 +239,7 @@ export type Command =
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_roe"; roe: RoeMode }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_active_sonar"; on: boolean }
   | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_depth"; depthM: number }
+  | { id: CommandId; unitId: UnitId; simAtSec: number; kind: "set_towed_array"; on: boolean }
   | {
       id: CommandId; unitId: UnitId; simAtSec: number; kind: "deploy_sonobuoys";
       cornerA: LngLat; cornerB: LngLat; count: number; mdrKm?: number; lifetimeSec?: number;
@@ -376,6 +383,8 @@ export interface Missile {
   pKill?: number;
   /** 攻擊彈命中傷害比例（target.hpMax）；省略 = 0.6 */
   damageFrac?: number;
+  /** 發射武器 id（B6）；用於辨識魚雷（"torpedo"）以套用聲學反制 */
+  weaponId?: string;
   /** 角色；省略 = "attack"（向後相容） */
   role?: MissileRole;
   /** 飛行剖面（attack 彈用）；省略 = "cruise" */
@@ -400,10 +409,17 @@ export interface AcousticProfile {
   noisePerKnotDb?: number;
   /** 目標強度（dB）— 主動聲納回波用 */
   targetStrengthDb: number;
-  /** 作為被動接收方的能力（沒有 = 不能被動偵測） */
+  /** 作為被動接收方的能力（沒有 = 不能被動偵測）— 艦艏 / 側舷陣列 */
   passive?: { arrayGainDb: number; dtDb: number; selfNoiseDb: number };
+  /**
+   * 拖曳陣列（TACTAS）— 高增益被動感測，需 streamed 且低速才有效（speedLimitKn）。
+   * 水面艦只有 hasTowedArray 旗標者才用；潛艦皆有。
+   */
+  towedArray?: { arrayGainDb: number; dtDb: number; selfNoiseDb: number; speedLimitKn: number };
   /** 作為主動聲納發射方的能力（沒有 = 不能主動拍發） */
   active?: { sourceLevelDb: number };
+  /** 魚雷聲學反制（軟殺來襲魚雷）：水面艦 Nixie / 潛艦誘標 */
+  torpedoDecoy?: { pDefeat: number; cooldownSec: number };
 }
 
 // ── 爆炸特效 ─────────────────────────────────────────────

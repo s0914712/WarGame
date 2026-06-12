@@ -118,7 +118,10 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       noisePerKnotDb: 1.0,
       targetStrengthDb: 25,
       passive: { arrayGainDb: 12, dtDb: 8, selfNoiseDb: 55 },
+      // 拖曳陣列（TACTAS）— 高增益、低速才有效；只有 hasTowedArray 旗標的艦才用
+      towedArray: { arrayGainDb: 22, dtDb: 6, selfNoiseDb: 45, speedLimitKn: 18 },
       active: { sourceLevelDb: 230 },
+      torpedoDecoy: { pDefeat: 0.5, cooldownSec: 30 },   // Nixie SLQ-25
     },
   },
 
@@ -160,6 +163,9 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       noisePerKnotDb: 1.2,             // 高速衝刺會變吵 → 易被偵測
       targetStrengthDb: 12,
       passive: { arrayGainDb: 20, dtDb: 5, selfNoiseDb: 42 },
+      // 潛艦側舷/拖曳陣列 — 被動最優（增益更高、自噪更低、低速）
+      towedArray: { arrayGainDb: 26, dtDb: 4, selfNoiseDb: 38, speedLimitKn: 12 },
+      torpedoDecoy: { pDefeat: 0.6, cooldownSec: 40 },   // 聲學誘標
     },
   },
 
