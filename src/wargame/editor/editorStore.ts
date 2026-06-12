@@ -173,6 +173,34 @@ export const editorStore = {
     notify();
   },
 
+  /**
+   * RTS 式右鍵移動（不必按套用）：
+   *   - additive=false：立即前往該點（取代現有航線）
+   *   - additive=true（Shift）：接續排隊一個航點（類似即時戰略佇列移動）
+   * 靜止單位會自動給個巡航速度。
+   */
+  quickMove(unitId: UnitId, lng: number, lat: number, additive: boolean): void {
+    const state = scenarioStore.getState();
+    const unit = state.units[unitId];
+    if (!unit) return;
+    let base: LngLat[] = [];
+    if (additive) {
+      // 以最近一筆對此單位待套用的 set_waypoints 為基底，否則用單位現有航線（連點才會累積）
+      let pendingWps: LngLat[] | null = null;
+      for (const c of state.pendingCommands) {
+        if (c.unitId === unitId && c.kind === "set_waypoints") pendingWps = c.waypoints;
+      }
+      base = pendingWps ?? unit.waypoints;
+    }
+    const waypoints: LngLat[] = [...base, [lng, lat]];
+    const simAtSec = wargameClock.getSimTime();
+    scenarioStore.enqueueCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_waypoints", waypoints });
+    if (unit.position.speedKnots <= 0) {
+      const cruise = Math.max(1, Math.round(unit.core.speedKnots * 0.6));
+      scenarioStore.enqueueCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_speed", speedKnots: cruise });
+    }
+  },
+
   /** 清掉某個單位「目前已套用」的 waypoint（不是 pending）。 */
   clearUnitWaypoints(unitId: UnitId): void {
     scenarioStore.enqueueCommand({

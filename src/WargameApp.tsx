@@ -126,6 +126,16 @@ export default function WargameApp() {
         scenarioStore.setSelectedUnitId(null);
       });
 
+      // 右鍵：RTS 式移動（已選單位）。Shift+右鍵 = 接續排隊航點
+      map.on("contextmenu", (e) => {
+        if (editorStore.getMode() !== "view") return;   // 規劃 / 放置模式不攔右鍵
+        const unitId = scenarioStore.getSelectedUnitId();
+        if (!unitId) return;
+        e.preventDefault();
+        const additive = (e.originalEvent as MouseEvent).shiftKey;
+        editorStore.quickMove(unitId, e.lngLat.lng, e.lngLat.lat, additive);
+      });
+
       // cursor
       const updateCursor = () => {
         const canvas = map.getCanvas();
