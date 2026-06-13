@@ -197,10 +197,14 @@
 （`Scenario.convergenceZoneKm`）。`Scenario.acousticModel` 啟用，`asw_escort_2031` 場景示範。
 
 ### E21. 被動測向 / TMA / 吊放聲納 / 混響限制 ✅ 已實作
-- **被動接觸維持「未定位」**：被動聲納只得方位（`PassiveContact` 測向射線），位置 `contactQuality="bearing"`
-  → 符號層不顯示精確位置、combat 不可開火。**三角交會**（≥2 感測器、方位張角 ≥25°）或
-  **TMA 機動測距**（單一感測器持續追蹤 ≥60s + 自身機動 ≥30°，Ekelund）→ 升 `"fixed"` 才定位可射控。
-  （`sim/localization.ts` + `detection.ts` 的 ranging/passive 分離）
+- **被動接觸維持「未定位」+ 三級品質**：`contactQuality = bearing | acoustic | visual`（`detection.ts` 把偵測拆成
+  visual / acoustic / passive 三路）：
+  - `bearing`：被動只得方位（`PassiveContact` 測向射線）→ 不顯示位置、不可開火。
+  - `acoustic`：**三角交會須持續 `TRIANGULATE_DWELL_SEC`(~90s)**（≥2 感測器、張角 ≥25°）或 **TMA 機動測距**
+    （接觸 ≥60s + 機動 ≥35° + 機動後再持續 `TMA_SOLUTION_SEC`(~60s) 收斂，避免「一轉向就全現」）
+    或主動/聲標/吊放聲納 → 有位置可射控，但**只畫匿名標記**（不洩漏身份/HP）。
+  - `visual`：潛望鏡目視（~7 浬）或水面/空中雷達 → 位置 + 完整身份。
+  （`sim/localization.ts` + `crossFixTimers` 持續計時）
 - **主動聲納混響限制（reverberation-limited）**：淺水 / 海底反射強 → `SonarEnv.reverbScatterDb` > 0，
   主動 SE = min(噪音限制, TS+DI−Sr−DT)；回波與混響同隨 SL/距離變化相消 → 拍強 ping 也無益。
 - **反潛直升機吊放聲納（dipping sonar）**：新 `asw_helo` 單位種類，懸停（`isDippingActive`）時換能器入水

@@ -19,11 +19,19 @@ export const KM_PER_NM = 1.852;
 /** TMA 解算最低持續接觸秒數 */
 export const TMA_MIN_HOLD_SEC = 60;
 /** TMA 解算最低累計航向機動量（度）— 沒機動就沒基線，單一定速航段測不出距離 */
-export const TMA_MIN_MANEUVER_DEG = 30;
+export const TMA_MIN_MANEUVER_DEG = 35;
+/**
+ * 達機動門檻後，仍須「持續追蹤」這麼久解才收斂（秒）。
+ * 關鍵：避免「久候的方位 + 一瞬轉向」就立刻解出 → 移動即全現的 bug。
+ * 真實 TMA 需在機動後的新航段上持續觀測方位率才能收斂。
+ */
+export const TMA_SOLUTION_SEC = 60;
 
 // ── 三角交會門檻 ─────────────────────────────────────────
 /** 兩條方位線交會所需最小張角（度）— 太小 = 近平行 = 距離誤差爆炸 */
 export const TRIANGULATE_MIN_SPREAD_DEG = 25;
+/** 三角交會幾何須「持續」多久才確認定位（秒）— 避免一瞬交會就定位（1–2 分鐘） */
+export const TRIANGULATE_DWELL_SEC = 90;
 
 /** 角度差（−180..180 的絕對值） */
 export function angleDiffDeg(a: number, b: number): number {
@@ -50,16 +58,23 @@ export function advanceTmaTrack(
   prev: TmaTrack | undefined, headingDeg: number, dtSec: number,
 ): TmaTrack {
   const last = prev?.lastHeadingDeg ?? headingDeg;
-  const dManeuver = angleDiffDeg(headingDeg, last);
+  const maneuverDeg = (prev?.maneuverDeg ?? 0) + angleDiffDeg(headingDeg, last);
+  // 達到機動門檻後才開始累計「解算收斂時間」；機動不足則歸零
+  const solutionSec = maneuverDeg >= TMA_MIN_MANEUVER_DEG
+    ? (prev?.solutionSec ?? 0) + dtSec
+    : 0;
   return {
     holdSec: (prev?.holdSec ?? 0) + dtSec,
     lastHeadingDeg: headingDeg,
-    maneuverDeg: (prev?.maneuverDeg ?? 0) + dManeuver,
+    maneuverDeg,
+    solutionSec,
   };
 }
 
-/** TMA 是否已解算出距離（持續追蹤夠久 + 自身機動足夠） */
+/** TMA 是否已解算出距離（接觸夠久 + 自身機動足夠 + 機動後再持續追蹤收斂） */
 export function tmaSolved(t: TmaTrack | undefined): boolean {
   if (!t) return false;
-  return t.holdSec >= TMA_MIN_HOLD_SEC && t.maneuverDeg >= TMA_MIN_MANEUVER_DEG;
+  return t.holdSec >= TMA_MIN_HOLD_SEC
+    && t.maneuverDeg >= TMA_MIN_MANEUVER_DEG
+    && t.solutionSec >= TMA_SOLUTION_SEC;
 }

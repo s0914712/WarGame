@@ -155,12 +155,14 @@ export interface Position {
 export type DetectionState = "hidden" | "unknown" | "classified" | "tracked";
 
 /**
- * 接觸定位品質（E21 被動測向 / TMA）。獨立於 DetectionState（識別等級）：
- *   - "bearing" ：僅得方位、不得距離（單一被動聲納）→ 位置「未定位」，不顯示精確座標、不可開火
- *   - "fixed"   ：位置已知（雷達 / 主動聲納 / 聲標點偵測 / 潛望鏡目視 / 雙感測三角交會 / TMA 機動測距解算）
- * 省略 = 視為 "fixed"（無聲學模型時雷達直接給距離，保留舊行為）。
+ * 接觸定位 / 識別品質（E21 被動測向 / TMA）。獨立於 DetectionState（接觸計時等級）：
+ *   - "bearing"  ：僅得方位、不得距離（單一被動聲納）→ 位置「未定位」，只畫測向射線、不可開火
+ *   - "acoustic" ：聲學定位（雙感測三角交會持續夠久 / TMA 機動測距 / 主動聲納 / 聲標 / 吊放聲納）
+ *                  → 有位置可射控，但**僅匿名標記**（不洩漏身份 / HP）—— 聲納給得了「在哪」給不了「是誰」
+ *   - "visual"   ：目視 / 雷達識別（潛望鏡深度目視、或水面/空中雷達）→ 位置 + 完整身份
+ * 省略 = 視為 "visual"（無聲學模型時雷達直接給距離 + 識別，保留舊行為）。
  */
-export type ContactQuality = "bearing" | "fixed";
+export type ContactQuality = "bearing" | "acoustic" | "visual";
 
 /**
  * TMA（Target Motion Analysis）機動測距追蹤（per 感測器 × 目標）。
@@ -171,8 +173,10 @@ export interface TmaTrack {
   holdSec: number;
   /** 上一 tick 感測器航向（算航向變化用） */
   lastHeadingDeg: number;
-  /** 接觸期間累計航向變化量（度）— 達門檻 + holdSec 足夠 → 解算成立 */
+  /** 接觸期間累計航向變化量（度）— 達門檻才開始累計解算時間 */
   maneuverDeg: number;
+  /** 達機動門檻後「持續追蹤」累計秒數（避免一轉向就立刻解出 → 須再持續一段時間才收斂） */
+  solutionSec: number;
 }
 
 /**
@@ -518,6 +522,12 @@ export interface SimulationState {
    * 跨 tick 累積感測器機動量；省略 = 空。replay JSON 可省略（detection 會初始化）。
    */
   tmaTracks?: Record<UnitId, Record<UnitId, TmaTrack>>;
+  /**
+   * 三角交會持續計時（E21）：observerSideId → (targetId → 累計秒數)。
+   * 兩條以上方位線交會幾何成立時累加，幾何破壞即歸零；達門檻才升 acoustic（持續 1–2 分）。
+   * engine 內部狀態，省略 = 空。
+   */
+  crossFixTimers?: Partial<Record<SideId, Record<UnitId, number>>>;
   /**
    * hold_area 條件計時：condition index → 該方第一次進入區域的 simSec；
    * 不在區域內 → null。達到 forSec 即勝。

@@ -38,10 +38,16 @@ const CONTACT_LABEL: Record<string, string> = {
   own: "己方",
 };
 
-// 接觸定位品質（E21 被動測向）：bearing = 未定位（僅方位）、fixed = 已定位（可射控）
+// 接觸定位 / 識別品質（E21）
 const CONTACT_QUALITY_LABEL: Record<string, string> = {
   bearing: "未定位（僅方位）",
-  fixed: "已定位（可接戰）",
+  acoustic: "聲學定位（匿名·可射控）",
+  visual: "目視識別（完整）",
+};
+const CONTACT_QUALITY_COLOR: Record<string, string> = {
+  bearing: "#fca5a5",
+  acoustic: "#fcd34d",
+  visual: "#86efac",
 };
 
 const CORE_KEYS: (keyof CoreAttributes)[] = [
@@ -476,7 +482,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
             {contactQuality && contactState !== "hidden" && (
               <div style={{ fontSize: 16, color: "#94a3b8", display: "flex", justifyContent: "space-between" }}>
                 <span>定位品質</span>
-                <span style={{ color: contactQuality === "fixed" ? "#86efac" : "#fca5a5", fontWeight: 600 }}>
+                <span style={{ color: CONTACT_QUALITY_COLOR[contactQuality] ?? "#fca5a5", fontWeight: 600 }}>
                   {CONTACT_QUALITY_LABEL[contactQuality] ?? contactQuality}
                 </span>
               </div>
