@@ -41,6 +41,9 @@ let selectedUnitId: UnitId | null = null;
 //   關閉 → 敵方淡化 15% 顯示（除錯 / 教學模式）
 let fogOfWar = true;
 
+// 多人 guest 指令攔截器（把本地指令改送主機）；null = 單機 / host 正常入列
+let commandInterceptor: ((cmd: Command) => boolean) | null = null;
+
 const listeners = new Set<Listener>();
 
 function notify() {
@@ -141,10 +144,21 @@ export const scenarioStore = {
   /**
    * 排隊指令（編輯器使用）。
    * 下一個 engine tick 會檢查 simAtSec ≤ simTimeSec → 套用 → 從佇列移除。
+   *
+   * 多人 guest：若已註冊 commandInterceptor 且其回傳 true，表示指令已改送主機，本地不入列。
    */
   enqueueCommand(cmd: Command): void {
+    if (commandInterceptor && commandInterceptor(cmd)) return;
     state = { ...state, pendingCommands: [...state.pendingCommands, cmd] };
     notify();
+  },
+
+  /**
+   * 註冊 / 取消指令攔截器（多人 guest 用：把指令改送主機而非本地入列）。
+   * 回傳 true = 已處理（不本地入列）；null = 取消攔截（host / 單機正常入列）。
+   */
+  setCommandInterceptor(fn: ((cmd: Command) => boolean) | null): void {
+    commandInterceptor = fn;
   },
 
   /** Plan Mode：放置新單位（立即插入 state，不走指令佇列） */

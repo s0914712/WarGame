@@ -40,6 +40,9 @@ import { useAiSideLoop } from "./hooks/useAiSideLoop";
 import { DEFAULT_STYLE_ID, getStyleById } from "./wargame/mapStyles";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { WargameMobileLayout } from "./components/wargame/WargameMobileLayout";
+import { MultiplayerBadge } from "./components/wargame/MultiplayerBadge";
+import { netStore } from "./wargame/net/netStore";
+import { setGuestFirstStateHook } from "./wargame/net/sync";
 
 /**
  * 兵推模式頂層 app。
@@ -61,11 +64,23 @@ export default function WargameApp() {
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [cheatOpen, setCheatOpen] = useState(false);
   const demoMode = useSyncExternalStore(uiStore.subscribe, isDemo, isDemo);
+  const netActive = useSyncExternalStore(netStore.subscribe, () => netStore.isActive(), () => netStore.isActive());
   const { isMobile, isLandscape } = useIsMobile();
 
   useSimLoop();
   useAiSideLoop();
   useCameraFollow(mapRef.current);
+
+  // 多人 guest：收到主機第一份狀態時，flyTo 該場景相機
+  useEffect(() => {
+    setGuestFirstStateHook((state) => {
+      const m = mapRef.current;
+      if (!m) return;
+      const c = state.scenario.camera;
+      m.flyTo({ center: c.center, zoom: c.zoom, pitch: c.pitch, bearing: c.bearing, duration: 1500 });
+    });
+    return () => setGuestFirstStateHook(null);
+  }, []);
 
   function mountAllLayers(map: mapboxgl.Map) {
     // 清掉先前的（safety — 不該有，但保險）
@@ -212,6 +227,7 @@ export default function WargameApp() {
       )}
       <UICheatSheet open={cheatOpen} onClose={() => setCheatOpen(false)} />
       <AcousticEnvironmentConfigModal />
+      <MultiplayerBadge />
       <LandingScreen map={mapRef.current} />
       {/* LLM 面板：桌面 / 行動版共用（行動版由選單抽屜開啟），故移出 !demoMode 分支 */}
       <LLMPanel open={llmOpen} onClose={() => setLlmOpen(false)} />
@@ -233,7 +249,8 @@ export default function WargameApp() {
           <WargameClockHUD />
           <MapStyleSwitcher selectedId={styleId} onChange={setStyleId} />
           <ScenarioPicker map={mapRef.current} />
-          <PovSwitcher />
+          {/* 多人對戰時 POV 鎖定本端陣營，隱藏視角切換 */}
+          {!netActive && <PovSwitcher />}
           <UnitPalette />
           <UnitEditorPanel />
           <EngagementLog />

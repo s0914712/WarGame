@@ -48,6 +48,17 @@ function makeCmdId(): string {
   return `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * 是否可指揮該單位：spectator（activeSide=null）= god mode 可指揮全部；
+ * 否則只能指揮目前視角陣營的單位（單人選邊 / 多人對戰皆受此約束）。
+ */
+function canControlUnit(unitId: UnitId): boolean {
+  const activeSide = viewStore.getActiveSideId();
+  if (!activeSide) return true;
+  const u = scenarioStore.getState().units[unitId];
+  return !!u && u.sideId === activeSide;
+}
+
 export const editorStore = {
   getMode(): EditorMode {
     return mode;
@@ -123,7 +134,13 @@ export const editorStore = {
     return unit;
   },
 
+  /** UI 用：是否可指揮此單位（隱藏 / 停用按鈕） */
+  canControl(unitId: UnitId): boolean {
+    return canControlUnit(unitId);
+  },
+
   startPlanRoute(unitId: UnitId): void {
+    if (!canControlUnit(unitId)) return;            // 只能規劃己方單位航線
     if (mode === "planRoute" && planningUnitId === unitId) return;
     mode = "planRoute";
     planningUnitId = unitId;
@@ -249,6 +266,7 @@ export const editorStore = {
    * 靜止單位會自動給個巡航速度。
    */
   quickMove(unitId: UnitId, lng: number, lat: number, additive: boolean): void {
+    if (!canControlUnit(unitId)) return;            // 只能指揮己方單位
     const state = scenarioStore.getState();
     const unit = state.units[unitId];
     if (!unit) return;
@@ -304,6 +322,7 @@ export const editorStore = {
 
   /** 清掉某個單位「目前已套用」的 waypoint（不是 pending）。 */
   clearUnitWaypoints(unitId: UnitId): void {
+    if (!canControlUnit(unitId)) return;
     scenarioStore.enqueueCommand({
       id: makeCmdId(),
       unitId,

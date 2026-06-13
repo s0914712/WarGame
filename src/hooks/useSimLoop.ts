@@ -14,6 +14,7 @@ import { wargameClock } from "../wargame/clock";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { step } from "../wargame/sim/engine";
 import { replayPlayer } from "../wargame/replay/player";
+import { netStore } from "../wargame/net/netStore";
 
 export function useSimLoop() {
   useEffect(() => {
@@ -25,8 +26,9 @@ export function useSimLoop() {
       const dt = now - lastSimTime;
       lastSimTime = now;
 
-      // Replay 模式時跳過 engine.tick，state 完全由 replayPlayer 控制
-      if (dt > 0 && !replayPlayer.isActive()) {
+      // Replay 模式 / 多人 guest 時跳過 engine.tick：
+      //   replay → 由 replayPlayer 控制；guest → 由主機廣播 setState 控制
+      if (dt > 0 && !replayPlayer.isActive() && !netStore.isGuest()) {
         const cur = scenarioStore.getState();
         const next = step(cur, dt);
         if (next !== cur) scenarioStore.setState(next);

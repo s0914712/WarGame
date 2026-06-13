@@ -11,7 +11,7 @@ import type { Map as MapboxMap } from "mapbox-gl";
 import { useIsMobile } from "../hooks/useIsMobile";
 import {
   Swords, ClipboardList, GraduationCap, ChevronRight, Globe,
-  ArrowLeft, Play,
+  ArrowLeft, Play, Users, Wifi,
 } from "lucide-react";
 import { uiStore } from "../wargame/uiStore";
 import { scenarioStore } from "../wargame/scenarioStore";
@@ -22,21 +22,29 @@ import { SCENARIO_REGISTRY } from "../wargame/scenarios/registry";
 import { EMPTY_SCENARIO } from "../wargame/scenarios/empty";
 import { SIDE_COLORS } from "../wargame/symbology/sideColors";
 import { launchTutorial } from "./TutorialOverlay";
+import { hostStart, guestStart, makeRoomCode, HOST_SIDE, GUEST_SIDE } from "../wargame/net/sync";
+import { transportAvailable } from "../wargame/net/transport";
+import { netStore } from "../wargame/net/netStore";
 
 interface Props {
   map: MapboxMap | null;
 }
 
-type Pane = "main" | "campaign";
+type Pane = "main" | "campaign" | "online";
 
 function isOpen() { return uiStore.isLandingOpen(); }
 
 export function LandingScreen({ map }: Props) {
   const open = useSyncExternalStore(uiStore.subscribe, isOpen, isOpen);
   const { isMobile } = useIsMobile();
-  const [pane, setPane] = useState<Pane>("main");
+  const urlRoom = new URLSearchParams(window.location.search).get("room");
+  const [pane, setPane] = useState<Pane>(urlRoom ? "online" : "main");
   const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null);
   const [selectedSide, setSelectedSide] = useState<ActiveView>("blue");
+  // 線上對戰
+  const [olRole, setOlRole] = useState<"host" | "guest">(urlRoom ? "guest" : "host");
+  const [olCode, setOlCode] = useState<string>(urlRoom ?? "");
+  const [olScenarioId, setOlScenarioId] = useState<string | null>(null);
 
   if (!open) return null;
 
@@ -64,6 +72,25 @@ export function LandingScreen({ map }: Props) {
     uiStore.setLandingOpen(false);
     // 進放置模式（會自動暫停 clock）
     setTimeout(() => editorStore.enterPlaceMode(), 50);
+  };
+
+  // ── 線上對戰：建立房間（主機＝藍） ──
+  const startOnlineHost = () => {
+    const entry = SCENARIO_REGISTRY.find((e) => e.scenario.id === olScenarioId);
+    if (!entry) return;
+    const code = makeRoomCode();
+    setOlCode(code);
+    if (!hostStart(code, entry.scenario.id)) return;   // 失敗 → netStore.error 顯示
+    flyToScenario(map, entry.scenario);
+    uiStore.setLandingOpen(false);
+  };
+
+  // ── 線上對戰：加入房間（客戶端＝紅） ──
+  const startOnlineGuest = () => {
+    const code = olCode.trim().toUpperCase();
+    if (!code) return;
+    if (!guestStart(code)) return;
+    uiStore.setLandingOpen(false);   // 等主機廣播狀態（會自動 flyTo）
   };
 
   // ── 看教學 ──
@@ -131,8 +158,20 @@ export function LandingScreen({ map }: Props) {
             <MainPane
               isMobile={isMobile}
               onCampaign={() => setPane("campaign")}
+              onOnline={() => setPane("online")}
               onPlanMode={startPlanMode}
               onTutorial={startTutorial}
+            />
+          )}
+          {pane === "online" && (
+            <OnlinePane
+              isMobile={isMobile}
+              role={olRole} setRole={setOlRole}
+              code={olCode} setCode={setOlCode}
+              scenarioId={olScenarioId} setScenarioId={setOlScenarioId}
+              onBack={() => setPane("main")}
+              onHost={startOnlineHost}
+              onGuest={startOnlineGuest}
             />
           )}
           {pane === "campaign" && (
@@ -153,8 +192,8 @@ export function LandingScreen({ map }: Props) {
 }
 
 // ── 主選單 ──
-function MainPane({ isMobile, onCampaign, onPlanMode, onTutorial }: {
-  isMobile: boolean; onCampaign: () => void; onPlanMode: () => void; onTutorial: () => void;
+function MainPane({ isMobile, onCampaign, onOnline, onPlanMode, onTutorial }: {
+  isMobile: boolean; onCampaign: () => void; onOnline: () => void; onPlanMode: () => void; onTutorial: () => void;
 }) {
   const iconSize = isMobile ? 28 : 56;
   return (
@@ -165,10 +204,18 @@ function MainPane({ isMobile, onCampaign, onPlanMode, onTutorial }: {
       <BigChoice
         isMobile={isMobile}
         icon={<Swords size={iconSize} color="#fbbf24" />}
-        title="戰役模式"
-        desc="挑選 5 個預設場景之一，選擇扮演的陣營（藍方 ROC / 紅方 PLA / 全局觀察），進入推演。"
+        title="戰役模式（單人）"
+        desc="挑選預設場景，選擇扮演的陣營（藍方 ROC / 紅方 PLA / 全局觀察），對戰 scripted / LLM。"
         accent="#fbbf24"
         onClick={onCampaign}
+      />
+      <BigChoice
+        isMobile={isMobile}
+        icon={<Users size={iconSize} color="#34d399" />}
+        title="線上對戰（2 人）"
+        desc="藍 vs 紅 各自一台裝置連線。建立房間（主機＝藍）或輸入房號加入（＝紅）。"
+        accent="#34d399"
+        onClick={onOnline}
       />
       <BigChoice
         isMobile={isMobile}
@@ -386,6 +433,130 @@ function CampaignPane({
             }}
           >
             <Play size={16} fill="currentColor" /> 進入戰役
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── 線上對戰大廳 ──
+function OnlinePane({
+  isMobile, role, setRole, code, setCode, scenarioId, setScenarioId, onBack, onHost, onGuest,
+}: {
+  isMobile: boolean;
+  role: "host" | "guest"; setRole: (r: "host" | "guest") => void;
+  code: string; setCode: (c: string) => void;
+  scenarioId: string | null; setScenarioId: (id: string) => void;
+  onBack: () => void; onHost: () => void; onGuest: () => void;
+}) {
+  const available = transportAvailable();
+  const error = netStore.getState().error;
+  const blue = SIDE_COLORS[HOST_SIDE].primary;
+  const red = SIDE_COLORS[GUEST_SIDE].primary;
+
+  return (
+    <div>
+      <button onClick={onBack} className="wg-btn" style={{
+        background: "transparent", border: "none", color: "#94a3b8", fontSize: 16,
+        cursor: "pointer", display: "flex", alignItems: "center", gap: 4, marginBottom: 14,
+      }}>
+        <ArrowLeft size={14} /> 回主選單
+      </button>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, color: "#34d399", letterSpacing: 1, fontWeight: 600, marginBottom: 12 }}>
+        <Wifi size={16} /> 線上 2 人對戰 · host-authoritative
+      </div>
+
+      {!available && (
+        <div style={{ padding: "10px 14px", marginBottom: 14, borderRadius: 8, fontSize: 14,
+          background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5" }}>
+          ⚠ 尚未設定 Supabase（VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY），無法連線對戰。
+        </div>
+      )}
+      {error && (
+        <div style={{ padding: "10px 14px", marginBottom: 14, borderRadius: 8, fontSize: 14,
+          background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5" }}>
+          {error}
+        </div>
+      )}
+
+      {/* 角色切換 */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <button onClick={() => setRole("host")} className="wg-btn" style={{
+          flex: 1, padding: "12px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
+          fontSize: isMobile ? 14 : 17, fontWeight: role === "host" ? 700 : 500,
+          background: role === "host" ? blue : "rgba(30,41,59,0.5)",
+          border: `1px solid ${role === "host" ? blue : "rgba(148,163,184,0.3)"}`,
+          color: role === "host" ? "#fff" : "#cbd5e1",
+        }}>建立房間（主機＝藍方）</button>
+        <button onClick={() => setRole("guest")} className="wg-btn" style={{
+          flex: 1, padding: "12px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
+          fontSize: isMobile ? 14 : 17, fontWeight: role === "guest" ? 700 : 500,
+          background: role === "guest" ? red : "rgba(30,41,59,0.5)",
+          border: `1px solid ${role === "guest" ? red : "rgba(148,163,184,0.3)"}`,
+          color: role === "guest" ? "#fff" : "#cbd5e1",
+        }}>加入房間（＝紅方）</button>
+      </div>
+
+      {role === "host" ? (
+        <>
+          <div style={{ fontSize: 15, color: "#60a5fa", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+            選擇場景（建立房間後把房號給對手）
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+            {SCENARIO_REGISTRY.map((entry) => {
+              const active = entry.scenario.id === scenarioId;
+              return (
+                <button key={entry.scenario.id} onClick={() => setScenarioId(entry.scenario.id)} className="wg-btn" style={{
+                  padding: "10px 14px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                  background: active ? "rgba(59,130,246,0.2)" : "rgba(30,41,59,0.5)",
+                  border: `1px solid ${active ? "#3b82f6" : "rgba(148,163,184,0.2)"}`, color: "#e2e8f0",
+                }}>
+                  <div style={{ fontSize: isMobile ? 15 : 18, fontWeight: 600, color: active ? "#60a5fa" : "#e2e8f0" }}>
+                    {entry.scenario.displayName}
+                  </div>
+                  <div style={{ fontSize: 14, color: "#94a3b8", marginTop: 2 }}>{entry.shortDescription}</div>
+                </button>
+              );
+            })}
+          </div>
+          <button onClick={onHost} disabled={!available || !scenarioId} className="wg-btn" style={{
+            width: "100%", padding: isMobile ? "12px 20px" : "14px 24px", borderRadius: 8,
+            fontSize: isMobile ? 16 : 20, fontWeight: 700, cursor: (!available || !scenarioId) ? "not-allowed" : "pointer",
+            fontFamily: "inherit", border: "none", color: "#fff",
+            background: (!available || !scenarioId) ? "#475569" : "#10b981",
+            opacity: (!available || !scenarioId) ? 0.5 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <Play size={16} fill="currentColor" /> 建立房間並進入
+          </button>
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 15, color: "#60a5fa", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+            輸入房號
+          </div>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="例如 K7Q23"
+            maxLength={8}
+            style={{
+              width: "100%", padding: "12px 14px", marginBottom: 18, borderRadius: 8,
+              fontSize: 22, letterSpacing: 4, textAlign: "center", fontFamily: "ui-monospace, monospace",
+              background: "rgba(30,41,59,0.9)", color: "#e2e8f0", border: "1px solid rgba(148,163,184,0.3)",
+            }}
+          />
+          <button onClick={onGuest} disabled={!available || !code.trim()} className="wg-btn" style={{
+            width: "100%", padding: isMobile ? "12px 20px" : "14px 24px", borderRadius: 8,
+            fontSize: isMobile ? 16 : 20, fontWeight: 700, cursor: (!available || !code.trim()) ? "not-allowed" : "pointer",
+            fontFamily: "inherit", border: "none", color: "#fff",
+            background: (!available || !code.trim()) ? "#475569" : "#ef4444",
+            opacity: (!available || !code.trim()) ? 0.5 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <Play size={16} fill="currentColor" /> 加入房間
           </button>
         </>
       )}

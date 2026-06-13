@@ -3,6 +3,7 @@ import { Play, Pause, Eye, EyeOff } from "lucide-react";
 import { useWargameClock } from "../hooks/useWargameClock";
 import { SIM_RATE_PRESETS } from "../wargame/clock";
 import { scenarioStore } from "../wargame/scenarioStore";
+import { netStore } from "../wargame/net/netStore";
 
 /**
  * 左上 T+ 顯示 + 播放 / 暫停 / 速率切換。
@@ -16,8 +17,15 @@ function getFowSnapshot(): boolean {
 export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {}) {
   const { tPlus, rate, isPaused, toggle, setRate } = useWargameClock();
   const fogOfWar = useSyncExternalStore(scenarioStore.subscribe, getFowSnapshot, getFowSnapshot);
+  // 多人 guest：時鐘由主機控制，本端只讀；顯示主機的播放/暫停狀態
+  const isGuest = useSyncExternalStore(netStore.subscribe, () => netStore.isGuest(), () => netStore.isGuest());
+  const hostPaused = useSyncExternalStore(netStore.subscribe, () => netStore.getState().hostPaused, () => netStore.getState().hostPaused);
+  const displayPaused = isGuest ? hostPaused : isPaused;
+  const doToggle = () => { if (!isGuest) toggle(); };
+  const doSetRate = (r: number) => { if (!isGuest) setRate(r); };
 
   useEffect(() => {
+    if (isGuest) return;   // guest 不接受本地鍵盤時鐘控制
     const onKey = (e: KeyboardEvent) => {
       if (e.target && (e.target as HTMLElement).tagName === "INPUT") return;
       if (e.code === "Space") {
@@ -34,7 +42,7 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggle, setRate]);
+  }, [toggle, setRate, isGuest]);
 
   return (
     <div
@@ -65,21 +73,23 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
       }}
     >
       <button
-        onClick={toggle}
-        title={isPaused ? "繼續（Space）" : "暫停（Space）"}
+        onClick={doToggle}
+        disabled={isGuest}
+        title={isGuest ? "時鐘由主機控制" : (displayPaused ? "繼續（Space）" : "暫停（Space）")}
         className="wg-btn"
         style={{
           width: isMobile ? 36 : 42,
           height: isMobile ? 36 : 42,
           borderRadius: 6,
           border: "1px solid rgba(148, 163, 184, 0.4)",
-          background: isPaused ? "#3B82F6" : "rgba(30, 41, 59, 0.6)",
+          background: displayPaused ? "#3B82F6" : "rgba(30, 41, 59, 0.6)",
           color: "#fff",
-          cursor: "pointer",
+          cursor: isGuest ? "not-allowed" : "pointer",
+          opacity: isGuest ? 0.5 : 1,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}
       >
-        {isPaused
+        {displayPaused
           ? <Play size={isMobile ? 16 : 18} fill="currentColor" />
           : <Pause size={isMobile ? 16 : 18} fill="currentColor" />
         }
@@ -93,7 +103,8 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         {SIM_RATE_PRESETS.map((r) => (
           <button
             key={r}
-            onClick={() => setRate(r)}
+            onClick={() => doSetRate(r)}
+            disabled={isGuest}
             className="wg-btn"
             style={{
               padding: isMobile ? "3px 7px" : "6px 12px",
@@ -103,7 +114,8 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
               color: r === rate ? "#fff" : "#cbd5e1",
               fontSize: isMobile ? 13 : 19,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: isGuest ? "not-allowed" : "pointer",
+              opacity: isGuest ? 0.5 : 1,
               fontFamily: "inherit",
             }}
           >
@@ -112,7 +124,7 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         ))}
       </div>
 
-      {isPaused && !isMobile && (
+      {displayPaused && !isMobile && (
         <span
           className="wg-blink"
           style={{
@@ -130,7 +142,8 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         </span>
       )}
 
-      {/* 戰爭迷霧切換 */}
+      {/* 戰爭迷霧切換（多人 guest 隱藏：須維持嚴格 FoW） */}
+      {!isGuest && (
       <button
         onClick={() => scenarioStore.setFogOfWar(!fogOfWar)}
         title={fogOfWar ? "FoW 開：敵方未偵測 = 不顯示" : "FoW 關：敵方淡化顯示（除錯）"}
@@ -152,6 +165,7 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         {fogOfWar ? <EyeOff size={14} /> : <Eye size={14} />}
         FoW
       </button>
+      )}
     </div>
   );
 }
