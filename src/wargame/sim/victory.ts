@@ -105,6 +105,37 @@ function evaluate(
       return null;
     }
 
+    case "unit_reaches_area": {
+      const u = units[cond.unitId];
+      if (!u || u.hpCurrent <= 0) return null;   // 被擊毀 → 由 destroy_unit 條件判
+      const d = haversineKm([u.position.lng, u.position.lat], cond.centerLngLat);
+      if (d <= cond.radiusKm) {
+        return {
+          winner: cond.sideId,
+          reason: `${cond.unitId} 已安全抵達目標區域`,
+        };
+      }
+      return null;
+    }
+
+    case "eliminate_kind": {
+      // 場景原本就沒有該種類 → 不觸發（避免無中生有立刻判勝）
+      const everHad = scenario.units.some(
+        (u) => u.sideId === cond.targetSideId && u.kind === cond.unitKind,
+      );
+      if (!everHad) return null;
+      const anyAlive = Object.values(units).some(
+        (u) => u.sideId === cond.targetSideId && u.kind === cond.unitKind && u.hpCurrent > 0,
+      );
+      if (!anyAlive) {
+        return {
+          winner: cond.sideId,
+          reason: `${cond.targetSideId} 方 ${cond.unitKind} 已全數被擊毀`,
+        };
+      }
+      return null;
+    }
+
     case "hold_area": {
       const insideOwn = Object.values(units).some((u) => {
         if (u.sideId !== cond.sideId) return false;

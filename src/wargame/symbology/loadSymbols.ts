@@ -37,6 +37,9 @@ function makeColorMode(side: SideId) {
   }
 }
 
+/** 通用「未識別接觸」符號（黃色 quatrefoil）— 用於被動測向 / 聲學定位的匿名標記（不洩漏種類） */
+export const CONTACT_UNKNOWN_ICON = "wg-contact-unknown";
+
 export function loadWargameSymbols(map: MapboxMap): void {
   for (const variant of ALL_SIDC_VARIANTS) {
     if (map.hasImage(variant.iconName)) continue;
@@ -46,6 +49,16 @@ export function loadWargameSymbols(map: MapboxMap): void {
     if (!ctx) continue;
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     map.addImage(variant.iconName, imgData, { pixelRatio: PIXEL_RATIO });
+  }
+
+  // 通用未識別接觸符號（affiliation = Unknown，dimension = unknown）
+  if (!map.hasImage(CONTACT_UNKNOWN_ICON)) {
+    const canvas = renderSidcCanvas("SUZP-----------", "neutral");
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) {
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      map.addImage(CONTACT_UNKNOWN_ICON, imgData, { pixelRatio: PIXEL_RATIO });
+    }
   }
 }
 

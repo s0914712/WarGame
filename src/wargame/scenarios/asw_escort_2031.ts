@@ -78,95 +78,96 @@ function mkUnit(
   };
 }
 
-// ── 藍方：補給船團 + 反潛護航群（緊湊伏擊區，由西南向東北航渡）──
-// 全部單位落在 ~40km 戰術盒內，40 分鐘內必然接觸。
+// ── 蘇澳港（補給艦目的地）──
+const SUAO_PORT: [number, number] = [121.90, 24.60];
+
+// ── 藍方：補給船團 + 反潛護航群（由東部外海深水區向西北穿越危險海域 → 蘇澳港）──
 const BLUE_UNITS: Unit[] = [
-  // 高價值目標：補給艦（極吵、無聲納、需被保護）
-  mkUnit("BLUE-AOE-01", "blue", "supply_ship", "AOE-532", "磐石號油彈補給艦", 122.80, 22.25, {
-    speedKnots: 14,
-    waypoints: [[123.10, 22.55], [123.35, 22.80]],
+  // 高價值目標：補給艦（極吵、無聲納、需被保護）— 須穿越潛伏區抵達蘇澳港
+  mkUnit("BLUE-AOE-01", "blue", "supply_ship", "AOE-532", "磐石號油彈補給艦", 122.30, 24.36, {
+    speedKnots: 16,
+    waypoints: [[122.05, 24.48], [121.93, 24.58], SUAO_PORT],
   }),
 
   // 2 巡防艦護航（主動聲納拍發 ON — 偵潛主力，但會曝露自身）
-  mkUnit("BLUE-FFG-01", "blue", "ship_surface", "FFG-1101", "成功級 - 前衛", 122.95, 22.40, {
+  mkUnit("BLUE-FFG-01", "blue", "ship_surface", "FFG-1101", "成功級 - 前衛", 122.34, 24.40, {
     speedKnots: 16,
     activeSonar: true,
     hasTowedArray: true,   // 裝拖曳陣列（低速被動偵潛大增）
     coreOverride: { rangeKm: 22, detectionRangeKm: 200 },   // ASROC 反潛火箭 ~22km
-    waypoints: [[123.20, 22.65], [123.35, 22.82]],
+    waypoints: [[122.08, 24.50], [121.95, 24.58]],
   }),
-  mkUnit("BLUE-FFG-02", "blue", "ship_surface", "FFG-1103", "成功級 - 側衛", 122.75, 22.18, {
+  mkUnit("BLUE-FFG-02", "blue", "ship_surface", "FFG-1103", "成功級 - 側衛", 122.36, 24.30, {
     speedKnots: 16,
     activeSonar: true,
     hasTowedArray: true,   // 裝拖曳陣列（低速被動偵潛大增）
     coreOverride: { rangeKm: 22, detectionRangeKm: 200 },
-    waypoints: [[123.05, 22.48], [123.28, 22.72]],
+    waypoints: [[122.12, 24.44], [121.98, 24.55]],
   }),
 
   // 1 獵殺潛艦（被動潛聽，伴護於船團側翼；重型魚雷 ~18km）— 潛於層下 120m 隱蔽
-  mkUnit("BLUE-SS-01", "blue", "submarine", "SS-794", "劍龍級 - 海虎", 122.78, 22.28, {
+  mkUnit("BLUE-SS-01", "blue", "submarine", "SS-794", "劍龍級 - 海虎", 122.32, 24.33, {
     speedKnots: 9,
     depthM: 120,                                 // 溫躍層下，安靜潛聽
     coreOverride: { rangeKm: 18, hpMax: 220 },
-    waypoints: [[123.08, 22.55], [123.28, 22.78]],
+    waypoints: [[122.05, 24.47], [121.95, 24.56]],
   }),
 
   // 1 P-8 反潛機（聲標被動偵潛 — 大範圍掃蕩）
-  mkUnit("BLUE-P8-01", "blue", "drone", "VP-ROC", "P-8A 反潛機", 122.90, 22.30, {
+  mkUnit("BLUE-P8-01", "blue", "drone", "VP-ROC", "P-8A 反潛機", 122.30, 24.40, {
     speedKnots: 300,
     coreOverride: { detectionRangeKm: 300, hpMax: 100 },
     waypoints: [
-      [123.25, 22.60], [123.40, 22.85], [123.05, 22.55], [122.90, 22.30],
+      [122.00, 24.52], [121.95, 24.40], [122.20, 24.30], [122.30, 24.40],
     ],
   }),
 
   // 1 反潛直升機（吊放聲納點偵測）— 由船團前出懸停，換能器入水做主動點偵測（玩家可前推獵殺）
-  mkUnit("BLUE-HELO-01", "blue", "asw_helo", "ASW-701", "S-70C 反潛直升機", 122.92, 22.37, {
+  mkUnit("BLUE-HELO-01", "blue", "asw_helo", "ASW-701", "S-70C 反潛直升機", 122.30, 24.34, {
     speedKnots: 0,                               // 懸停 → 吊放聲納作業中（dipping active）
   }),
 ];
 
-// ── 紅方：2 艘潛艦於船團航道前方伏擊（與藍方拉開 >15 浬，安靜潛行伺機魚雷攻擊補給艦）──
+// ── 紅方：2 艘潛艦於蘇澳港航道上潛伏（與藍方拉開 >15 浬，安靜潛行伺機魚雷攻擊補給艦）──
 // 兩艦刻意設不同深度 + 不同水文層位，示範「潛艦深度 × 水文 → 被偵測機率差異」：
 //   093B 潛於溫躍層下 200m → 與層上水面艦跨層聲傳，TL 額外衰減 → 難偵獲
 //   039C 潛於溫躍層內 40m  → 與水面艦同層，直達聲傳 → 較易被偵獲
-// 兩艦由東北約 32km（>15 浬）外、等距離朝船團創逼近，差別只在「深度 / 層位」。
 const RED_UNITS: Unit[] = [
   // 093B 核潛艦 — 層下深潛 200m（與層上水面艦跨層聲傳，+8dB 衰減 → 難偵獲、近距才現蹤）
-  mkUnit("RED-SSN-01", "red", "submarine", "093B-21", "093B 攻擊潛艦（層下 200m）", 123.22, 22.56, {
+  mkUnit("RED-SSN-01", "red", "submarine", "093B-21", "093B 攻擊潛艦（層下 200m）", 121.98, 24.52, {
     speedKnots: 5,                 // 慢速 = 安靜 = 難偵獲
     depthM: 200,                   // 溫躍層下 → 跨層偵測衰減
     coreOverride: { rangeKm: 15, hpMax: 200 },   // 重型魚雷 ~15km
-    waypoints: [[123.10, 22.48], [123.00, 22.43]],
+    waypoints: [[122.10, 24.46], [122.20, 24.42]],
   }),
   // 039C 柴電潛艦 — 層內淺潛 40m（與水面艦同層直達聲傳 → 較遠距即被被動聲納測得方位）
-  mkUnit("RED-SS-02", "red", "submarine", "039C-336", "039C 元級（層內 40m）", 123.18, 22.60, {
+  mkUnit("RED-SS-02", "red", "submarine", "039C-336", "039C 元級（層內 40m）", 122.02, 24.46, {
     speedKnots: 5,
     depthM: 40,                    // 溫躍層內 → 與水面艦同層，較易偵獲
     coreOverride: { rangeKm: 14, hpMax: 180 },
-    waypoints: [[123.05, 22.50], [122.95, 22.45]],
+    waypoints: [[122.12, 24.42], [122.20, 24.39]],
   }),
 ];
 
 const NEUTRAL_UNITS: Unit[] = [
-  mkUnit("NEU-SH-01", "neutral", "ship_surface", "MV-LNG", "LNG 運輸船", 123.45, 22.05, {
-    speedKnots: 15, waypoints: [[123.15, 22.40], [122.90, 22.72]],
+  mkUnit("NEU-SH-01", "neutral", "ship_surface", "MV-LNG", "LNG 運輸船", 122.50, 24.18, {
+    speedKnots: 15, waypoints: [[122.20, 24.42], [121.95, 24.62]],
   }),
 ];
 
 export const ASW_ESCORT_2031: Scenario = {
   id: "asw_escort_2031",
   displayName: "反潛護航 2031",
-  briefing: "高價值補給艦團通過台灣東部深水區，2 艘解放軍潛艦於船團前方 15 浬外潛伏伏擊（093B 層下 200m 難偵獲、039C 層內 40m 較易偵獲 — 深度 × 水文決定被偵測機率）。藍方反潛群（巡防艦主動聲納 + P-8 反潛機聲標 + S-70C 反潛直升機吊放聲納 + 獵殺潛艦）須在敵潛艦進入魚雷射程前偵獲擊沉。被動聲納只得方位（虛線測向射線）→ 須兩感測器三角交會或自身機動 TMA 解算才「定位」可開火。下潛潛艦只能發射魚雷；潛射巡弋飛彈須升潛望鏡深度（亦可用潛望鏡目視 ~7 浬）。主動聲納偵潛遠但會曝露自身；潛艦安靜潛行難覓。",
+  briefing: "磐石號補給艦（AOE-532）須由台灣東部深水區穿越危險海域、安全抵達蘇澳港。2 艘解放軍潛艦於蘇澳航道上潛伏（093B 層下 200m 難偵獲、039C 層內 40m 較易偵獲 — 深度 × 水文決定被偵測機率），伺機以魚雷伏擊補給艦。藍方反潛群（巡防艦主動聲納 + P-8 聲標 + S-70C 吊放聲納 + 獵殺潛艦）須護衛補給艦突破封鎖。被動聲納只得方位（虛線測向射線），須兩感測器三角交會（持續 ~90 秒）或自身機動 TMA 解算才「定位」、且僅得匿名標記，完整識別須升潛望鏡深度目視（~7 浬）。下潛潛艦只能發射魚雷；潛射巡弋飛彈須升潛望鏡深度。【勝負】藍方：補給艦抵達蘇澳港；紅方：擊沉補給艦，或擊沉兩艘護衛艦。",
   startSimTimeSec: 0,
-  durationSec: 2400,
+  durationSec: 6000,
   sides: SIDES,
   units: [...BLUE_UNITS, ...RED_UNITS, ...NEUTRAL_UNITS],
   pendingCommands: [
-    // P-8 開場佈一道聲標反潛屏幕，橫跨紅潛逼近船團的軸線（~122.95–123.30, 22.45–22.70）
+    // P-8 開場佈一道聲標反潛屏幕，橫跨紅潛潛伏的蘇澳航道（介於船團與潛伏區之間）
     {
       id: "asw-screen-0", unitId: "BLUE-P8-01", simAtSec: 0, kind: "deploy_sonobuoys",
-      cornerA: [122.95, 22.42], cornerB: [123.15, 22.60], count: 12, mdrKm: 4, lifetimeSec: 2400,
+      cornerA: [122.12, 24.40], cornerB: [122.30, 24.52], count: 12, mdrKm: 4, lifetimeSec: 6000,
     },
   ],
   acousticModel: true,        // 啟用 E20 聲納方程式偵測
@@ -193,32 +194,35 @@ export const ASW_ESCORT_2031: Scenario = {
     layerDepthM: 50,            // 由上方 BT 剖面導出的 Sonic Layer Depth（cache）
   },
   camera: {
-    center: [123.10, 22.40],
-    zoom: 8.2,
+    center: [122.15, 24.42],
+    zoom: 8.4,
     pitch: 35,
-    bearing: 20,
+    bearing: 315,
   },
   victoryConditions: [
-    // 補給艦存活到時限 = 藍方護航成功
+    // 藍方勝：補給艦穿越危險海域、抵達蘇澳港
     {
-      kind: "preserve_unit",
+      kind: "unit_reaches_area",
       unitId: "BLUE-AOE-01",
       sideId: "blue",
-      label: "護航成功 — 補給艦安全抵達",
+      centerLngLat: SUAO_PORT,
+      radiusKm: 9,
+      label: "護航成功 — 補給艦安全進蘇澳港",
     },
-    // 擊沉補給艦 = 紅方勝
+    // 紅方勝：擊沉補給艦
     {
       kind: "destroy_unit",
       unitId: "BLUE-AOE-01",
       sideId: "red",
       label: "伏擊成功 — 擊沉補給艦",
     },
-    // 殲滅紅方潛艦 = 藍方勝
+    // 紅方勝：擊沉兩艘護衛艦（FFG 全滅 → 船團失去屏障）
     {
-      kind: "eliminate_side",
-      targetSideId: "red",
-      sideId: "blue",
-      label: "反潛成功 — 擊沉所有敵潛艦",
+      kind: "eliminate_kind",
+      targetSideId: "blue",
+      unitKind: "ship_surface",
+      sideId: "red",
+      label: "屏障瓦解 — 護衛艦全滅",
     },
     { kind: "time_limit", label: "時限結束比殘存戰力" },
   ],

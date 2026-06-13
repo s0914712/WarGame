@@ -268,10 +268,12 @@ function Section({ icon, title, children }: {
 function formatCondition(c: VictoryCondition, _scenario: unknown): string {
   if (c.label) return c.label;
   switch (c.kind) {
-    case "preserve_unit":   return `${c.sideId} 方守住 ${c.unitId}`;
-    case "destroy_unit":    return `${c.sideId} 方擊毀 ${c.unitId}`;
-    case "eliminate_side":  return `${c.sideId} 方殲滅 ${c.targetSideId} 全部兵力`;
-    case "hold_area":       return `${c.sideId} 方控制目標區 ${c.forSec} 秒`;
-    case "time_limit":      return "時限結束 → 殘存戰力高者勝（差距 < 20% 為平手）";
+    case "preserve_unit":     return `${c.sideId} 方守住 ${c.unitId}`;
+    case "destroy_unit":      return `${c.sideId} 方擊毀 ${c.unitId}`;
+    case "eliminate_side":    return `${c.sideId} 方殲滅 ${c.targetSideId} 全部兵力`;
+    case "eliminate_kind":    return `${c.sideId} 方殲滅 ${c.targetSideId} 全部 ${c.unitKind}`;
+    case "hold_area":         return `${c.sideId} 方控制目標區 ${c.forSec} 秒`;
+    case "unit_reaches_area": return `${c.sideId} 方 ${c.unitId} 抵達目標區域`;
+    case "time_limit":        return "時限結束 → 殘存戰力高者勝（差距 < 20% 為平手）";
   }
 }

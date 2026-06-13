@@ -341,6 +341,10 @@ export type VictoryCondition =
   | { kind: "destroy_unit"; unitId: UnitId; sideId: SideId; label?: string }
   /** sideId 方勝：targetSideId 所有單位全滅 */
   | { kind: "eliminate_side"; targetSideId: SideId; sideId: SideId; label?: string }
+  /** sideId 方勝：unitId 抵達指定區域（center + 半徑內）—— 如護航目標安全進港 */
+  | { kind: "unit_reaches_area"; unitId: UnitId; sideId: SideId; centerLngLat: LngLat; radiusKm: number; label?: string }
+  /** sideId 方勝：targetSideId 方某一「單位種類」全數被擊毀（如全部護衛艦沉沒） */
+  | { kind: "eliminate_kind"; targetSideId: SideId; unitKind: UnitKind; sideId: SideId; label?: string }
   /** sideId 方勝：自己至少 1 個單位連續在區域內 forSec 秒 */
   | { kind: "hold_area"; centerLngLat: LngLat; radiusKm: number; sideId: SideId; forSec: number; label?: string }
   /** 時限到時：誰存活單位多、誰勝（中性條件，每場景建議加一條當 fallback） */

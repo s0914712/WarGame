@@ -13,6 +13,7 @@ import type { Map as MapboxMap } from "mapbox-gl";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { viewStore } from "../wargame/viewStore";
 import { iconNameOf } from "../wargame/symbology/sidc";
+import { CONTACT_UNKNOWN_ICON } from "../wargame/symbology/loadSymbols";
 
 const SOURCE_ID = "wargame-units-src";
 export const SYMBOL_LAYER_ID = "wargame-units-symbol";
@@ -76,7 +77,7 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
     // 未定位（僅方位）→ 不洩漏精確位置，跳過圖示渲染
     if (bearingOnly) continue;
 
-    // 匿名接觸 = 漸進偵測未識別 OR 聲學定位（只有 mark、沒身份）
+    // 匿名接觸 = 漸進偵測未識別 OR 聲學定位（只有 mark、沒身份、不洩漏種類）
     const anonymous = unknownDet || acousticMark;
     const anonLabel = acousticMark ? "聲納接觸" : "未識別接觸";
     const hpFrac = u.hpCurrent / u.core.hpMax;
@@ -84,7 +85,8 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
       type: "Feature",
       properties: {
         unitId: u.id,
-        icon: iconNameOf(u.kind, u.sideId),
+        // 匿名接觸用通用「未識別」符號（黃 quatrefoil），不暴露真實種類 / 陣營圖示
+        icon: anonymous ? CONTACT_UNKNOWN_ICON : iconNameOf(u.kind, u.sideId),
         // 匿名接觸：不洩漏真實 callsign / HP
         callsign: anonymous ? anonLabel : u.callsign,
         selected: u.id === selectedId,
