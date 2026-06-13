@@ -30,7 +30,8 @@ import {
   PERISCOPE_VISUAL_RANGE_KM, DEFAULT_LAYER_DEPTH_M, type SonarEnv,
 } from "./sonar";
 import {
-  advanceTmaTrack, tmaSolved, bearingSpreadDeg, TRIANGULATE_MIN_SPREAD_DEG,
+  advanceTmaTrack, tmaSolved, bearingSpreadDeg,
+  TRIANGULATE_MIN_SPREAD_DEG, TRIANGULATE_DWELL_SEC,
 } from "./localization";
 
 /** 平台有效感測高度（公尺）：取座標高度與 catalog 平台高度的大者 + 桅高 */
@@ -81,6 +82,8 @@ export interface DetectionResult {
   passiveContacts: PassiveContact[];
   /** TMA 機動測距追蹤（E21）：sensorId → (targetId → TmaTrack) */
   tmaTracks: Record<UnitId, Record<UnitId, TmaTrack>>;
+  /** 三角交會持續計時（E21）：observerSideId → (targetId → 累計秒數) */
+  crossFixTimers: Partial<Record<SideId, Record<UnitId, number>>>;
 }
 
 export function computeDetection(
@@ -95,11 +98,13 @@ export function computeDetection(
   sonobuoys: Sonobuoy[] = [],
   sonarEnv: SonarEnv = {},
   prevTmaTracks: Record<UnitId, Record<UnitId, TmaTrack>> = {},
+  prevCrossFix: Partial<Record<SideId, Record<UnitId, number>>> = {},
 ): DetectionResult {
   const sideMap = new Map<SideId, Side>(sides.map((s) => [s.id, s]));
   const events: EngagementEvent[] = [];
   const passiveContacts: PassiveContact[] = [];
   const tmaTracks: Record<UnitId, Record<UnitId, TmaTrack>> = {};
+  const crossFixTimers: Partial<Record<SideId, Record<UnitId, number>>> = {};
 
   // 1. 收集每個 sideId 下有偵測能力（detectionRange > 0）的 sensor units
   const sensorsBySide = new Map<SideId, Unit[]>();
@@ -144,9 +149,13 @@ export function computeDetection(
         || (myOwnSide?.isHostileTo.includes(observerSideId) ?? false);
       if (!isHostileToObserver) continue;
 
-      // 分離「測距偵測」(rangingHit → 位置已知 fixed) 與「被動測向」(passiveHolds → 只得方位)
+      // 分三類偵測：
+      //   visualHit  → 目視 / 雷達（位置 + 身份 → "visual"）
+      //   acousticFix→ 主動 / 吊放 / 聲標（位置但無身份 → "acoustic" 匿名標記）
+      //   passiveHolds → 被動測向（只得方位 → "bearing"；交會夠久 / TMA 才升 "acoustic"）
       const sensors = sensorsBySide.get(observerSideId);
-      let rangingHit = false;
+      let visualHit = false;
+      let acousticFix = false;
       const passiveHolds: { sensor: Unit; bearingDeg: number }[] = [];
 
       if (sensors && sensors.length > 0) {
@@ -167,25 +176,25 @@ export function computeDetection(
                   if (d > radarHorizonKm(sAlt, uAlt)) blocked = true;        // 超出雷達地平線
                   else if (isTerrainOccluded(sPos, sAlt, uPos, uAlt)) blocked = true;  // 山脈遮蔽
                 }
-                if (!blocked) rangingHit = true;
+                if (!blocked) visualHit = true;                              // 雷達 → 識別
               }
             }
           }
 
-          // ── 潛望鏡目視（B3）──（潛艦在潛望鏡深度，目視 ~7浬內的水面 / 空中目標 → 給距離 fixed）
+          // ── 潛望鏡目視（B3）──（潛艦在潛望鏡深度，目視 ~7浬內的水面 / 空中目標 → 識別）
           if (acousticModel && sDomain === "subsurface" && isPeriscopeDepth(s)
               && uDomain !== "subsurface") {
-            if (haversineKm(sPos, uPos) <= PERISCOPE_VISUAL_RANGE_KM) rangingHit = true;
+            if (haversineKm(sPos, uPos) <= PERISCOPE_VISUAL_RANGE_KM) visualHit = true;
           }
 
           // ── 聲納路徑（E20）──（水中目標 + sensor 具聲學特性）
           if (acousticModel && targetInWater && acousticsOf(s)) {
             const d = haversineKm(sPos, uPos);
-            // 主動 / 吊放聲納 → 給距離 → fixed
+            // 主動 / 吊放聲納 → 給距離但無身份 → acoustic 標記
             if (sonarActiveDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm, sonarEnv)) {
-              rangingHit = true;
+              acousticFix = true;
             }
-            // 被動聲納 → 只得方位 → bearing-only（待三角交會 / TMA 才升 fixed）
+            // 被動聲納 → 只得方位 → bearing（待三角交會 / TMA 才升 acoustic）
             if (sonarPassiveDetects(s, u, d, sonarLayerDepthM, sonarConvergenceKm, sonarEnv)) {
               passiveHolds.push({ sensor: s, bearingDeg: bearingDeg(sPos, uPos) });
             }
@@ -193,17 +202,17 @@ export function computeDetection(
         }
       }
 
-      // ── 聲標屏幕路徑 ──（水中目標 + 觀察方有聲標在 MDR 內 → 點偵測給位置 → fixed）
-      if (targetInWater && !rangingHit) {
+      // ── 聲標屏幕路徑 ──（水中目標 + 觀察方有聲標在 MDR 內 → 點偵測給位置 → acoustic）
+      if (targetInWater && !acousticFix) {
         const buoys = buoysBySide.get(observerSideId);
         if (buoys) {
           for (const b of buoys) {
-            if (haversineKm(b.position, uPos) <= b.mdrKm) { rangingHit = true; break; }
+            if (haversineKm(b.position, uPos) <= b.mdrKm) { acousticFix = true; break; }
           }
         }
       }
 
-      const inRange = rangingHit || passiveHolds.length > 0;
+      const inRange = visualHit || acousticFix || passiveHolds.length > 0;
 
       const prevState: DetectionState = u.detectedBy[observerSideId] ?? "hidden";
       const prev: Timer = u.detectionTimers?.[observerSideId] ?? { inSec: 0, outSec: 0 };
@@ -245,20 +254,35 @@ export function computeDetection(
         bucket[u.id] = adv;
       }
 
-      // ── 定位品質：測距 → fixed；否則雙感測三角交會 / 單感測 TMA 解算 → fixed；皆無 → bearing ──
+      // ── 三角交會持續計時：交會幾何成立才累加，破壞即歸零（須持續 TRIANGULATE_DWELL_SEC）──
+      const spread = bearingSpreadDeg(passiveHolds.map((h) => h.bearingDeg));
+      const crossGeomNow = passiveHolds.length >= 2 && spread >= TRIANGULATE_MIN_SPREAD_DEG;
+      const prevCf = prevCrossFix[observerSideId]?.[u.id] ?? 0;
+      const cfSec = crossGeomNow ? prevCf + dtSec : 0;
+      if (cfSec > 0) {
+        let bucket = crossFixTimers[observerSideId];
+        if (!bucket) { bucket = {}; crossFixTimers[observerSideId] = bucket; }
+        bucket[u.id] = cfSec;
+      }
+
+      // ── 定位 / 識別品質 ──
+      //   visual   ：目視 / 雷達（位置 + 身份）
+      //   acoustic ：主動/聲標/吊放，或被動三角交會持續夠久 / TMA 解算（位置但匿名）
+      //   bearing  ：只得方位（未定位）
       let quality: ContactQuality | undefined;
       if (inRange) {
-        if (rangingHit) {
-          quality = "fixed";
+        if (visualHit) {
+          quality = "visual";
+        } else if (acousticFix) {
+          quality = "acoustic";
         } else {
-          const spread = bearingSpreadDeg(passiveHolds.map((h) => h.bearingDeg));
-          const triangulated = passiveHolds.length >= 2 && spread >= TRIANGULATE_MIN_SPREAD_DEG;
+          const triangulated = crossGeomNow && cfSec >= TRIANGULATE_DWELL_SEC;
           const solved = passiveHolds.some((h) => tmaSolved(tmaTracks[h.sensor.id]?.[u.id]));
-          quality = triangulated || solved ? "fixed" : "bearing";
+          quality = triangulated || solved ? "acoustic" : "bearing";
         }
       } else if (newState !== "hidden") {
-        // 記憶接觸（失聯衰減中）：沿用上一 tick 定位品質，bearing 接觸不會在失聯時突現位置
-        quality = u.contactQuality?.[observerSideId] ?? "fixed";
+        // 記憶接觸（失聯衰減中）：沿用上一 tick 品質，bearing 接觸不會在失聯時突現位置
+        quality = u.contactQuality?.[observerSideId] ?? "visual";
       }
       if (quality) {
         contactQuality[observerSideId] = quality;
@@ -291,7 +315,7 @@ export function computeDetection(
     }
   }
 
-  return { units: next, events, passiveContacts, tmaTracks };
+  return { units: next, events, passiveContacts, tmaTracks, crossFixTimers };
 }
 
 /** 只在「發現 / 完成分類 / 鎖定 / 失去接觸」這幾個有意義的門檻發事件，避免洗版 */

@@ -56,15 +56,19 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
   const features: GeoJSON.Feature<GeoJSON.Point, FeatureProps>[] = [];
   for (const u of Object.values(units)) {
     let visible = 1;
-    let unknownContact = 0;
     let bearingOnly = false;
+    let acousticMark = false;
+    let unknownDet = false;
     if (activeSide && hostileToActive.includes(u.sideId)) {
       const det = u.detectedBy[activeSide];
       visible = det && det !== "hidden" ? 1 : 0;
       // 漸進偵測：unknown 階段只看到匿名接觸，尚未識別身份 / HP
-      if (det === "unknown") unknownContact = 1;
+      if (det === "unknown") unknownDet = true;
+      const q = u.contactQuality?.[activeSide];
       // 被動測向「未定位」接觸：位置未知 → 不畫單位圖示（改由測向射線呈現），等三角交會 / TMA 才定位
-      if (visible === 1 && u.contactQuality?.[activeSide] === "bearing") bearingOnly = true;
+      if (visible === 1 && q === "bearing") bearingOnly = true;
+      // 聲學定位接觸：有位置但無身份 → 只畫匿名標記（不洩漏 callsign / HP）；身份須潛望鏡目視
+      if (visible === 1 && q === "acoustic") acousticMark = true;
     }
     // Spectator (activeSide == null) → everything visible 100%
     // FoW 嚴格 + 非 spectator + 未偵測 → skip 渲染
@@ -72,20 +76,23 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
     // 未定位（僅方位）→ 不洩漏精確位置，跳過圖示渲染
     if (bearingOnly) continue;
 
+    // 匿名接觸 = 漸進偵測未識別 OR 聲學定位（只有 mark、沒身份）
+    const anonymous = unknownDet || acousticMark;
+    const anonLabel = acousticMark ? "聲納接觸" : "未識別接觸";
     const hpFrac = u.hpCurrent / u.core.hpMax;
     features.push({
       type: "Feature",
       properties: {
         unitId: u.id,
         icon: iconNameOf(u.kind, u.sideId),
-        // unknown 接觸：不洩漏真實 callsign / HP
-        callsign: unknownContact ? "未識別接觸" : u.callsign,
+        // 匿名接觸：不洩漏真實 callsign / HP
+        callsign: anonymous ? anonLabel : u.callsign,
         selected: u.id === selectedId,
         visible,
-        unknownContact,
-        hpBar: unknownContact ? "" : hpBarText(hpFrac),
+        unknownContact: anonymous ? 1 : 0,
+        hpBar: anonymous ? "" : hpBarText(hpFrac),
         hpColor: hpColorOf(hpFrac),
-        hpText: unknownContact ? "" : `${u.hpCurrent}/${u.core.hpMax}`,
+        hpText: anonymous ? "" : `${u.hpCurrent}/${u.core.hpMax}`,
       },
       geometry: { type: "Point", coordinates: [u.position.lng, u.position.lat] },
     });
