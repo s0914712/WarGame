@@ -43,3 +43,8 @@ public/bus/pingtungcounty_bus_routes.json
 .claude/.cache/
 .claude/scheduled_tasks.lock
 __pycache__/
+
+# 不屬於本 repo 的大型外部資料夾（誤放工作目錄）
+# 注意：必須用根錨點 /；Windows core.ignorecase=true 下裸 WarGame/ 會誤殺 src/wargame/
+/StarCraft-master/
+/WarGame/
