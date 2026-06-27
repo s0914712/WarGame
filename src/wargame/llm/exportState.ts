@@ -24,6 +24,8 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
   const playerSide = state.scenario.sides.find((s) => s.id === povSide);
   const hostileToPov = playerSide?.isHostileTo ?? [];
 
+  const sideMap = new Map(state.scenario.sides.map((s) => [s.id, s]));
+
   const units: LlmUnitView[] = Object.values(state.units).map((u) => {
     const cat = UNIT_CATALOG[u.kind];
     let detectedByPlayer: LlmUnitView["detectedByPlayer"] = "own";
@@ -59,11 +61,24 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
       core: { ...u.core },
       waypoints: u.waypoints.map(([lng, lat]) => [round6(lng), round6(lat)] as [number, number]),
       detectedByPlayer,
+      // 己方單位才回報 ROE（有效值：unit 覆寫 > side 預設 > weapons_free）
+      ...(u.sideId === povSide
+        ? {
+            roe: u.roe ?? sideMap.get(u.sideId)?.roe ?? "weapons_free",
+            ...(UNIT_CATALOG[u.kind].acoustics?.active ? { activeSonar: u.activeSonar === true } : {}),
+            ...(cat.domain === "subsurface" ? { depthM: Math.round(Math.max(0, -u.position.altMeters)) } : {}),
+          }
+        : {}),
       constraints: {
         forbidDomains: cat.constraints.forbidDomains,
       },
     };
   });
+
+  // 己方聲標屏幕
+  const ownBuoys = (state.sonobuoys ?? [])
+    .filter((b) => b.sideId === povSide)
+    .map((b) => ({ lng: round6(b.position[0]), lat: round6(b.position[1]), mdrKm: b.mdrKm, side: b.sideId }));
 
   return {
     version: STATE_VERSION,
@@ -84,6 +99,7 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
       hostileTo: s.isHostileTo,
     })),
     units,
+    ...(ownBuoys.length > 0 ? { sonobuoys: ownBuoys } : {}),
   };
 }
 

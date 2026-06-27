@@ -49,6 +49,7 @@ function mkUnit(
     stealth?: number;
     coreOverride?: Partial<Unit["core"]>;
     supplyOverride?: Unit["supplyOverride"];   // CVN 多用途載台用
+    weaponProfile?: Unit["weaponProfile"];     // B7：DF-26 設 "ballistic"
   } = {},
 ): Unit {
   const cat = UNIT_CATALOG[kind];
@@ -70,6 +71,7 @@ function mkUnit(
     ammoMax: cat.defaultAmmoMax,
     ammoCurrent: cat.defaultAmmoMax,
     ...(opts.supplyOverride ? { supplyOverride: opts.supplyOverride } : {}),
+    ...(opts.weaponProfile ? { weaponProfile: opts.weaponProfile } : {}),
     detectedBy: {},
     lastTickSimSec: 0,
   };
@@ -238,9 +240,11 @@ const RED_UNITS: Unit[] = [
   // 2 DF-26 ASBM 反艦彈道飛彈車（部署於東南沿海，模擬大射程）
   mkUnit("RED-DF26-01", "red", "missile_launcher", "DF-26-01", "東風 26 (ASBM)", 117.50, 24.00, {
     coreOverride: { rangeKm: 4000, hpMax: 60 },   // ASBM 大射程
+    weaponProfile: "ballistic",                   // B7：彈道剖面，只有愛國者攔得到
   }),
   mkUnit("RED-DF26-02", "red", "missile_launcher", "DF-26-02", "東風 26 (ASBM)", 117.30, 23.50, {
     coreOverride: { rangeKm: 4000, hpMax: 60 },
+    weaponProfile: "ballistic",
   }),
 
   // 1 紅方雷達

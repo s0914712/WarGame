@@ -14,6 +14,8 @@
 import type { Command, CoreAttributes, Scenario, SimulationState, Unit, UnitId } from "./types";
 // 用 scenarios/empty 的版本（含 sides 配置）— Plan Mode 入口需要
 import { EMPTY_SCENARIO } from "./scenarios/empty";
+import { UNIT_CATALOG } from "./catalog/units";
+import { initUnitWeapons } from "./catalog/weapons";
 
 type Listener = () => void;
 
@@ -27,6 +29,7 @@ let state: SimulationState = {
   missiles: [],
   explosions: [],
   wreckages: [],
+  sonobuoys: [],
   holdProgress: {},
   outcome: null,
 };
@@ -60,7 +63,9 @@ export const scenarioStore = {
 
   loadScenario(scenario: Scenario): void {
     const units: Record<UnitId, Unit> = {};
-    for (const u of scenario.units) units[u.id] = u;
+    for (const u of scenario.units) {
+      units[u.id] = initUnitWeapons(u, UNIT_CATALOG[u.kind].defaultLoadout);
+    }
     state = {
       scenario,
       simTimeSec: scenario.startSimTimeSec,
@@ -71,6 +76,7 @@ export const scenarioStore = {
       missiles: [],
       explosions: [],
       wreckages: [],
+      sonobuoys: [],
       holdProgress: {},
       outcome: null,
     };
@@ -120,6 +126,12 @@ export const scenarioStore = {
     notify();
   },
 
+  /** 套用使用者設定的聲學環境（場景開始前設定畫面）→ 寫入 scenario.acousticEnv */
+  applyAcousticEnv(env: import("./types").AcousticEnvironment): void {
+    state = { ...state, scenario: { ...state.scenario, acousticEnv: env } };
+    notify();
+  },
+
   /** Phase 3 內部 tick 呼叫；其他地方不要直接寫 */
   setState(next: SimulationState): void {
     state = next;
@@ -137,7 +149,8 @@ export const scenarioStore = {
 
   /** Plan Mode：放置新單位（立即插入 state，不走指令佇列） */
   addUnit(unit: Unit): void {
-    state = { ...state, units: { ...state.units, [unit.id]: unit } };
+    const u = initUnitWeapons(unit, UNIT_CATALOG[unit.kind].defaultLoadout);
+    state = { ...state, units: { ...state.units, [u.id]: u } };
     notify();
   },
 

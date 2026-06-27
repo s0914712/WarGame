@@ -15,7 +15,10 @@ import { scenarioStore } from "../scenarioStore";
 import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
 import { validatePlan } from "../sim/validate";
-import type { Command, CoreAttributes, SideId } from "../types";
+import { SUB_MAX_DEPTH_M } from "../sim/sonar";
+import type { Command, CoreAttributes, RoeMode, SideId } from "../types";
+
+const VALID_ROE: RoeMode[] = ["weapons_free", "weapons_tight", "defensive_only", "weapons_hold"];
 import {
   COMMANDS_VERSION,
   RESULT_VERSION,
@@ -176,6 +179,85 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
     case "hold": {
       const id = makeCmdId();
       scenarioStore.enqueueCommand({ id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "hold" });
+      return { index, status: "applied", commandId: id };
+    }
+
+    // ── set_roe ──
+    case "set_roe": {
+      if (!VALID_ROE.includes(cmd.roe)) {
+        return {
+          index, status: "rejected",
+          reason: `'roe' must be one of ${VALID_ROE.join(" | ")}; got "${cmd.roe}"`,
+        };
+      }
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_roe", roe: cmd.roe,
+      });
+      return { index, status: "applied", commandId: id };
+    }
+
+    // ── set_active_sonar ──
+    case "set_active_sonar": {
+      if (typeof cmd.on !== "boolean") {
+        return { index, status: "rejected", reason: "'on' must be a boolean" };
+      }
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_active_sonar", on: cmd.on,
+      });
+      return { index, status: "applied", commandId: id };
+    }
+
+    // ── set_towed_array ──
+    case "set_towed_array": {
+      if (typeof cmd.on !== "boolean") {
+        return { index, status: "rejected", reason: "'on' must be a boolean" };
+      }
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_towed_array", on: cmd.on,
+      });
+      return { index, status: "applied", commandId: id };
+    }
+
+    // ── set_depth（潛艦）──
+    case "set_depth": {
+      if (typeof cmd.depthM !== "number" || cmd.depthM < 0) {
+        return { index, status: "rejected", reason: "'depthM' must be a non-negative number" };
+      }
+      if (UNIT_CATALOG[unit.kind].domain !== "subsurface") {
+        return { index, status: "rejected", reason: `Unit "${cmd.unitId}" is not a submarine` };
+      }
+      const clamped = clamp(cmd.depthM, 0, SUB_MAX_DEPTH_M);
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_depth", depthM: clamped,
+      });
+      const warnings = clamped !== cmd.depthM
+        ? [`depthM clamped ${cmd.depthM} → ${clamped} (allowed 0–${SUB_MAX_DEPTH_M})`]
+        : undefined;
+      return warnings ? { index, status: "applied", commandId: id, warnings } : { index, status: "applied", commandId: id };
+    }
+
+    // ── deploy_sonobuoys（反潛機佈放聲標屏幕）──
+    case "deploy_sonobuoys": {
+      const okCorner = (c: unknown): c is [number, number] =>
+        Array.isArray(c) && c.length === 2 && typeof c[0] === "number" && typeof c[1] === "number";
+      if (!okCorner(cmd.cornerA) || !okCorner(cmd.cornerB)) {
+        return { index, status: "rejected", reason: "'cornerA'/'cornerB' must be [lng, lat]" };
+      }
+      if (typeof cmd.count !== "number" || cmd.count < 1) {
+        return { index, status: "rejected", reason: "'count' must be a positive number" };
+      }
+      const id = makeCmdId();
+      scenarioStore.enqueueCommand({
+        id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "deploy_sonobuoys",
+        cornerA: cmd.cornerA, cornerB: cmd.cornerB,
+        count: Math.min(64, Math.round(cmd.count)),
+        ...(typeof cmd.mdrKm === "number" ? { mdrKm: cmd.mdrKm } : {}),
+        ...(typeof cmd.lifetimeSec === "number" ? { lifetimeSec: cmd.lifetimeSec } : {}),
+      });
       return { index, status: "applied", commandId: id };
     }
 

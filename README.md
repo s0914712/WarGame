@@ -8,7 +8,7 @@
 
 | URL | 模式 | 說明 |
 |---|---|---|
-| `/` | **兵棋** | 11 種單位、6 場景、戰鬥模擬、LLM 介接、自由 Plan Mode |
+| `/` | **兵棋** | 11 種單位、8 場景、戰鬥模擬、LLM 介接、自由 Plan Mode |
 | `/?mode=civilian` | 民用視覺化 | 原 Mini Taiwan Pulse — 23 圖層即時資料 |
 
 兵棋完整文件：[`WARGAME.md`](./WARGAME.md) · 專業兵棋 gap analysis：[`docs/wargame_professional_gaps.md`](./docs/wargame_professional_gaps.md)
@@ -17,6 +17,56 @@
 
 ![兵棋畫面 1 — 戰場全覽](public/screenshots/Game1.png)
 ![兵棋畫面 2 — 戰況實作](public/screenshots/Game2.png)
+
+## 兵推場景介紹
+
+兵棋模式把同一張 Mapbox 台海底圖變成可推演的戰場：可暫停的即時制（1×–60× 加速）、11 種單位、
+NATO APP-6 軍事符號、戰爭迷霧 + 漸進偵測、自動接戰 + 飛彈飛行 + 分層防空、航線規劃編輯器、
+以及把整個戰場態勢吐成 JSON 給 LLM 操控的介接層。所有模擬都是純函式 + 決定性 RNG（可重播、可 headless 跑）。
+
+### 核心模擬機制
+
+- **漸進偵測狀態機**：`hidden → unknown → classified → tracked`。「看到光點 ≠ 知道是誰 ≠ 可以打」，
+  ROE 通常要求 ≥ classified 才能開火。
+- **ROE 交戰規則**：自由 / 限制 / 僅防禦 / 停火（per-side 預設可被 per-unit 覆寫）。
+- **多武器掛載 + 飛行剖面**：sea-skim / cruise / ballistic，搭配 **分層防空攔截**（CIWS → 艦載 SAM → 愛國者反彈道）。
+- **地形遮蔽 + 雷達地平線**：山脈擋低空視線、海平面 horizon 限制掠海突防偵測。
+- **反潛聲學模型（聲納方程式）**：主動 / 被動聲納、溫躍層跨層損失、深水會聚區、拖曳陣列、聲標反潛屏幕。
+- **反潛資訊戰（最新 E21）**：
+  - 被動聲納只得**方位**（測向虛線）→ 接觸維持「**未定位**」、不顯示精確位置、不可開火；
+    須**雙感測三角交會**或單艦**TMA 機動測距（Ekelund）**才升「已定位」可射控。
+  - 主動聲納在淺水 / 強海底反射下轉為 **混響限制（reverberation-limited）**——拍更強的 ping 也偵不到安靜潛艦。
+  - **反潛直升機吊放聲納（dipping sonar）**：懸停時換能器入水做主動點偵測（吊放至溫躍層下）。
+  - **潛艦深度 × 水文（BT 溫深剖面）→ 偵測機率差異**：層內淺潛易偵獲、層下深潛跨層衰減難偵獲。
+  - **下潛只能發射魚雷**；潛射巡弋飛彈（Club / Harpoon）須升至**潛望鏡深度**才能發射，
+    潛望鏡深度亦可目視 ~7 浬。
+
+### 8 個內建場景
+
+| 場景（id） | 規模 / 時長 | 戰術重點 |
+|---|---|---|
+| 台海中線對峙 `strait_2030` | ~35 單位 · 60 min | 全要素對峙的基礎場景（ROC vs PLA） |
+| 金門近距防衛 `kinmen_2027` | ~15 單位 · 30 min | 近距、快速接戰，反應時間極短 |
+| 東沙空襲 `pratas_air_raid` | 純空戰 · 30 min | BVR 空對空 + 點防禦 SAM |
+| 航母戰鬥群護台 `csg_defense_2032` | 聯合 · 60 min | 美軍 CSG 協防，含 DF-26 反艦彈道飛彈（ASBM）威脅 |
+| 巴士海峽封鎖 `bashi_blockade_2030` | 水下對抗 · 40 min | 潛艦封鎖線、水下對抗 |
+| 彈藥 / 補給示範 `ammo_test_2030` | 3 波 12 來襲 · 30 min | 彈藥消耗 + RAS 海上補給 + 愛國者攔截 |
+| 三線登陸 H-Hour `invasion_h_hour_2030` | ~70 單位 · 90 min | 高難度全要素：兩棲登陸 + 彈道飛彈壓制 |
+| **反潛護航 2031** `asw_escort_2031` | 反潛群 vs 2 潛艦 · 40 min | 聲納方程式 + E21 測向/TMA/吊放聲納/混響/深度水文對抗 |
+
+### 聚焦：反潛護航 2031（聲學對抗深度示範）
+
+高價值補給艦團通過台灣東部深水區，2 艘解放軍潛艦於船團前方 15 浬外潛伏伏擊——一艘**層內淺潛 40m**（同層直達聲傳、較易偵獲）、
+一艘**層下深潛 200m**（跨層 +8dB 衰減、難偵獲）。藍方反潛群（巡防艦主動聲納 + 拖曳陣列 + P-8 聲標屏幕 +
+S-70C 反潛直升機吊放聲納 + 獵殺潛艦）須在敵潛艦進入魚雷射程前，靠**三角交會 / TMA / 主動定位**把「未定位」的測向接觸變成可開火的火控解。
+場景開始前的 **BT 溫深剖面 + 海況 + 底質 + 水深** 會導出層深、會聚區、環境噪音與混響強度，直接左右各單位的偵測距離。
+
+### 自由 Plan Mode
+
+按 `📋 Plan Mode` 可在地圖上自由放置 11 種單位（藍 / 紅 / 中立）自建場景，編輯屬性、規劃航線，並一鍵 **Export JSON**。
+操作：左鍵選單位、右鍵移動（Shift 接續排隊航點）、**右鍵點敵方單位 = 下達接戰攻擊計畫**。
+
+兵棋完整架構與模組地圖：[`WARGAME.md`](./WARGAME.md)。
 
 ## MCP Server — 讓 Claude / 任何 MCP client 操作戰場
 
@@ -41,7 +91,7 @@ Claude Code 在專案根目錄會自動讀 `.mcp.json`；第一次跑 `/mcp` 會
 
 | Tool | 功能 |
 |---|---|
-| `list_scenarios` | 列 7 個內建場景 + tags |
+| `list_scenarios` | 列 8 個內建場景 + tags |
 | `load_scenario` | 載入 + 重置，回傳 briefing / 勝利條件 |
 | `step` | 推進 N 秒 sim time，回傳這段時間內發生的 events |
 | `get_state` | LLM-friendly state；支援 `brief` / `onlySides` / `limit` / `bySideSummary` 把 90-unit 場景從 ~50KB 壓到 ~3KB |
@@ -95,7 +145,9 @@ Claude Code 在專案根目錄會自動讀 `.mcp.json`；第一次跑 `/mcp` 會
 
 ---
 
-## 原 Mini Taiwan Pulse（civilian）
+## 原 Mini Taiwan Pulse（civilian）— 民用視覺化基礎
+
+> 本專案的起點。`?mode=civilian` 進入；下方保留核心介紹，細部參數 / 架構 / 部署收進可展開區塊。
 
 用開放資料，感受台灣的脈動。
 
@@ -208,6 +260,9 @@ Claude Code 在專案根目錄會自動讀 `.mcp.json`；第一次跑 `/mcp` 會
 - 車站面板含 Pillar 光柱開關 + Height 光柱高度調整
 - 運具按鈕顯示活躍數量（航班數、船舶數、列車數、公車數）
 - 收合狀態以彩色小點顯示各圖層啟用狀態
+
+<details>
+<summary><b>完整即時參數調整 — 各圖層 slider 對照表（展開）</b></summary>
 
 ### 即時參數調整
 
@@ -335,6 +390,8 @@ Claude Code 在專案根目錄會自動讀 `.mcp.json`；第一次跑 `/mcp` 會
 - 動畫：binary search 找兩個 bracketing frames，vertex lerp 平滑過渡
 - 時間同步：直接使用 timeline unix timestamp，與航班/船舶/列車完全同步
 
+</details>
+
 ### 載入畫面（LoadingScreen）
 
 首頁載入時同步等待 4 項資料完成，並以獨立進度列顯示各項狀態：
@@ -384,6 +441,9 @@ Claude Code 在專案根目錄會自動讀 `.mcp.json`；第一次跑 `/mcp` 會
 | Shader | GLSL | 光軌漸層材質 |
 | 雲端 | AWS S3 | 資料增量同步 |
 | 容器 | Docker + Nginx | 生產部署 |
+
+<details>
+<summary><b>完整架構與專案結構 — Overlay/Data Registry · Supabase pre-aggregate · Three.js CustomLayer · 目錄樹（展開）</b></summary>
 
 ## 架構
 
@@ -576,6 +636,8 @@ mini-taiwan-pulse/
 └── nginx.conf
 ```
 
+</details>
+
 ## 資料準備
 
 所有資料皆來自開放資料源，透過腳本擷取與轉換：
@@ -766,6 +828,9 @@ sh /usr/local/bin/pull-deploy-assets.sh
 | 村里人口指標 | [社會經濟統計地理資訊網 (SEGIS)](https://segis.moi.gov.tw/)，114 年 6 月 |
 | 地圖底圖 | [Mapbox](https://www.mapbox.com/) |
 
+<details>
+<summary><b>H3 統計圖層開發注意事項（pitfalls，展開）</b></summary>
+
 ## H3 統計圖層開發注意事項
 
 新增 H3 六角格統計圖層時，以下是已踩過的 pitfall，務必避免重蹈覆轍：
@@ -805,6 +870,8 @@ if (!map.getSource("h3-pop-count-src")) return;
 ### 5. 共用資料、分開 Source
 
 兩個圖層（人口數 + 人口指標）共用同一份 JSON 但使用**獨立的 Mapbox source + layer**，才能各自控制 visibility、opacity、metric。不要試圖讓兩個圖層共享同一個 source — 會造成 GeoJSON 互相覆蓋。
+
+</details>
 
 ## License
 

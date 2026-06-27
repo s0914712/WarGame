@@ -8,6 +8,7 @@ let demoMode = false;
 let tutorialOpen = false;
 let landingOpen = true;     // 預設首次開頁顯示主選單
 let suppressBriefingOnce = false;   // 紀錄片直入時，抑制下一次場景 briefing 自動跳出
+let acousticConfigOpen = false;   // 場景開始前的聲學環境設定畫面
 const listeners = new Set<Listener>();
 
 function notify() { for (const cb of listeners) cb(); }
@@ -42,6 +43,13 @@ export const uiStore = {
     if (!suppressBriefingOnce) return false;
     suppressBriefingOnce = false;
     return true;
+  },
+
+  isAcousticConfigOpen(): boolean { return acousticConfigOpen; },
+  setAcousticConfigOpen(v: boolean): void {
+    if (v === acousticConfigOpen) return;
+    acousticConfigOpen = v;
+    notify();
   },
 
   subscribe(cb: Listener): () => void {

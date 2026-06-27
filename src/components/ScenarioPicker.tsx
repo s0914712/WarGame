@@ -16,13 +16,15 @@ import { t, useLang } from "../wargame/i18n/lang";
 
 interface Props {
   map: MapboxMap | null;
+  isMobile?: boolean;
+  embedded?: boolean;
 }
 
 function getScenarioName(): string {
   return scenarioStore.getState().scenario.displayName;
 }
 
-export function ScenarioPicker({ map }: Props) {
+export function ScenarioPicker({ map, isMobile = false, embedded = false }: Props) {
   useSyncExternalStore(scenarioStore.subscribe, getScenarioName, getScenarioName);
   const lang = useLang();
   const [open, setOpen] = useState(false);
@@ -61,7 +63,10 @@ export function ScenarioPicker({ map }: Props) {
   return (
     <div
       ref={ref}
-      style={{
+      style={embedded ? {
+        position: "relative",
+        width: "100%",
+      } : {
         position: "absolute",
         top: 16,
         right: 16,
@@ -82,6 +87,7 @@ export function ScenarioPicker({ map }: Props) {
           fontSize: 17,
           cursor: "pointer",
           display: "flex", alignItems: "center", gap: 8,
+          width: embedded ? "100%" : undefined,
         }}
       >
         <Swords size={14} color="#fbbf24" />
@@ -95,7 +101,9 @@ export function ScenarioPicker({ map }: Props) {
           className="wg-fade-in"
           style={{
             marginTop: 6,
-            width: 320,
+            width: isMobile ? "min(320px, 80vw)" : 320,
+            maxHeight: isMobile ? "60vh" : undefined,
+            overflowY: isMobile ? "auto" : undefined,
             background: "rgba(15, 23, 42, 0.98)",
             backdropFilter: "blur(8px)",
             border: "1px solid rgba(148, 163, 184, 0.3)",

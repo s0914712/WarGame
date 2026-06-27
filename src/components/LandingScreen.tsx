@@ -8,6 +8,7 @@
  */
 import { useState, useSyncExternalStore } from "react";
 import type { Map as MapboxMap } from "mapbox-gl";
+import { useIsMobile } from "../hooks/useIsMobile";
 import {
   Swords, ClipboardList, GraduationCap, ChevronRight, Globe,
   ArrowLeft, Play, Clapperboard,
@@ -35,6 +36,7 @@ function isOpen() { return uiStore.isLandingOpen(); }
 export function LandingScreen({ map }: Props) {
   const open = useSyncExternalStore(uiStore.subscribe, isOpen, isOpen);
   const lang = useLang();
+  const { isMobile } = useIsMobile();
   const [pane, setPane] = useState<Pane>("main");
   const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null);
   const [selectedSide, setSelectedSide] = useState<ActiveView>("blue");
@@ -50,6 +52,10 @@ export function LandingScreen({ map }: Props) {
     viewStore.setActiveView(selectedSide);
     flyToScenario(map, entry.scenario);
     uiStore.setLandingOpen(false);
+    // 反潛場景：開戰前先跳出聲學環境設定畫面
+    if (entry.scenario.acousticModel) {
+      uiStore.setAcousticConfigOpen(true);
+    }
     // briefing modal 會自動跳出（因 scenario id 不是 "empty"）
   };
 
@@ -98,7 +104,17 @@ export function LandingScreen({ map }: Props) {
     >
       <div
         className="wg-fade-in"
-        style={{
+        style={isMobile ? {
+          width: "100vw",
+          height: "100dvh",
+          background: "rgba(15, 23, 42, 0.96)",
+          borderRadius: 0,
+          padding: 0,
+          overflow: "hidden",
+          display: "flex", flexDirection: "column",
+          paddingTop: "env(safe-area-inset-top, 0px)",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        } : {
           width: "min(1280px, 88vw)",
           minWidth: "min(75vw, 1280px)",
           height: "min(820px, 86vh)",
@@ -114,28 +130,29 @@ export function LandingScreen({ map }: Props) {
       >
         {/* Header */}
         <div style={{
-          padding: "40px 48px 28px",
+          padding: isMobile ? "18px 18px 14px" : "40px 48px 28px",
           background: "linear-gradient(135deg, rgba(59, 130, 246, 0.18), transparent)",
           borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
           position: "relative",
         }}>
-          {/* 右上角語言選擇 — 開頭即可選 */}
-          <LangPicker />
-          <div style={{ fontSize: 17, color: "#60a5fa", letterSpacing: 3, fontWeight: 600 }}>
+          {/* 右上角語言選擇 — 開頭即可選（行動版縮小） */}
+          {!isMobile && <LangPicker />}
+          <div style={{ fontSize: isMobile ? 12 : 17, color: "#60a5fa", letterSpacing: isMobile ? 2 : 3, fontWeight: 600 }}>
             WARGAME PLATFORM
           </div>
-          <div style={{ fontSize: 42, fontWeight: 800, marginTop: 8, letterSpacing: 1 }}>
+          <div style={{ fontSize: isMobile ? 24 : 42, fontWeight: 800, marginTop: isMobile ? 4 : 8, letterSpacing: 1 }}>
             {lang === "en" ? "Taiwan Wargame Platform" : "台灣兵棋推演平台"}
           </div>
-          <div style={{ fontSize: 20, color: "#94a3b8", marginTop: 8 }}>
+          <div style={{ fontSize: isMobile ? 13 : 20, color: "#94a3b8", marginTop: isMobile ? 4 : 8 }}>
             Mini Taiwan Pulse · Wargame Edition
           </div>
         </div>
 
         {/* Body */}
-        <div style={{ padding: "32px 48px", overflowY: "auto", flex: 1 }}>
+        <div style={{ padding: isMobile ? "16px 16px" : "32px 48px", overflowY: "auto", flex: 1 }}>
           {pane === "main" && (
             <MainPane
+              isMobile={isMobile}
               onCampaign={() => setPane("campaign")}
               onPlanMode={startPlanMode}
               onTutorial={startTutorial}
@@ -144,6 +161,7 @@ export function LandingScreen({ map }: Props) {
           )}
           {pane === "campaign" && (
             <CampaignPane
+              isMobile={isMobile}
               selectedScenarioId={selectedScenarioId}
               setSelectedScenarioId={setSelectedScenarioId}
               selectedSide={selectedSide}
@@ -159,18 +177,20 @@ export function LandingScreen({ map }: Props) {
 }
 
 // ── 主選單 ──
-function MainPane({ onCampaign, onPlanMode, onTutorial, onDocumentary }: {
-  onCampaign: () => void; onPlanMode: () => void; onTutorial: () => void;
+function MainPane({ isMobile, onCampaign, onPlanMode, onTutorial, onDocumentary }: {
+  isMobile: boolean; onCampaign: () => void; onPlanMode: () => void; onTutorial: () => void;
   onDocumentary: () => void;
 }) {
   const lang = useLang();
+  const iconSize = isMobile ? 28 : 56;
   return (
     <div style={{
-      display: "flex", flexDirection: "column", gap: 16,
+      display: "flex", flexDirection: "column", gap: isMobile ? 12 : 16,
       paddingBottom: 8,
     }}>
       <BigChoice
-        icon={<Clapperboard size={56} color="#d97757" />}
+        isMobile={isMobile}
+        icon={<Clapperboard size={iconSize} color="#d97757" />}
         title={lang === "en" ? "War History Documentary · 823 Bombardment" : "戰史紀錄片 · 823 砲戰"}
         desc={lang === "en"
           ? "One click into the 1958 Kinmen bombardment: auto cinematic camera + bilingual narration over the real battle, 1958-era flags. Press Space to pause, drag to look around."
@@ -179,7 +199,8 @@ function MainPane({ onCampaign, onPlanMode, onTutorial, onDocumentary }: {
         onClick={onDocumentary}
       />
       <BigChoice
-        icon={<Swords size={56} color="#fbbf24" />}
+        isMobile={isMobile}
+        icon={<Swords size={iconSize} color="#fbbf24" />}
         title={lang === "en" ? "Scenario Mode" : "戰役模式"}
         desc={lang === "en"
           ? "Pick one of the preset scenarios, choose your side (Blue ROC / Red PLA / Spectator), enter the sim."
@@ -188,7 +209,8 @@ function MainPane({ onCampaign, onPlanMode, onTutorial, onDocumentary }: {
         onClick={onCampaign}
       />
       <BigChoice
-        icon={<ClipboardList size={56} color="#fb923c" />}
+        isMobile={isMobile}
+        icon={<ClipboardList size={iconSize} color="#fb923c" />}
         title={lang === "en" ? "Plan Mode (free build)" : "Plan Mode（自由建立）"}
         desc={lang === "en"
           ? "Start from an empty battlefield. Place 9 unit kinds, edit attributes, route waypoints, export as JSON scenario."
@@ -197,7 +219,8 @@ function MainPane({ onCampaign, onPlanMode, onTutorial, onDocumentary }: {
         onClick={onPlanMode}
       />
       <BigChoice
-        icon={<GraduationCap size={56} color="#60a5fa" />}
+        isMobile={isMobile}
+        icon={<GraduationCap size={iconSize} color="#60a5fa" />}
         title={lang === "en" ? "Tutorial" : "介紹 / 教學"}
         desc={lang === "en"
           ? "8-step walkthrough covering all UI: clock / engagement / Plan Mode / LLM bridge etc."
@@ -244,19 +267,19 @@ function LangPicker() {
   );
 }
 
-function BigChoice({ icon, title, desc, accent, onClick }: {
-  icon: React.ReactNode; title: string; desc: string; accent: string; onClick: () => void;
+function BigChoice({ isMobile, icon, title, desc, accent, onClick }: {
+  isMobile: boolean; icon: React.ReactNode; title: string; desc: string; accent: string; onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
       className="wg-btn"
       style={{
-        display: "flex", alignItems: "center", gap: 24,
-        padding: "20px 30px",
+        display: "flex", alignItems: "center", gap: isMobile ? 12 : 28,
+        padding: isMobile ? "14px 14px" : "28px 32px",
         background: "rgba(30, 41, 59, 0.6)",
         border: `1px solid ${accent}40`,
-        borderLeft: `6px solid ${accent}`,
+        borderLeft: `${isMobile ? 4 : 6}px solid ${accent}`,
         borderRadius: 10,
         color: "#e2e8f0",
         cursor: "pointer",
@@ -266,25 +289,27 @@ function BigChoice({ icon, title, desc, accent, onClick }: {
       }}
     >
       <div style={{ flexShrink: 0 }}>{icon}</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 36, fontWeight: 700, color: accent, marginBottom: 8 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: isMobile ? 16 : 36, fontWeight: 700, color: accent, marginBottom: isMobile ? 3 : 8 }}>
           {title}
         </div>
-        <div style={{ fontSize: 20, color: "#cbd5e1", lineHeight: 1.7 }}>
+        <div style={{ fontSize: isMobile ? 12 : 20, color: "#cbd5e1", lineHeight: isMobile ? 1.5 : 1.7 }}>
           {desc}
         </div>
       </div>
-      <ChevronRight size={28} color="#64748b" style={{ flexShrink: 0 }} />
+      <ChevronRight size={isMobile ? 18 : 28} color="#64748b" style={{ flexShrink: 0 }} />
     </button>
   );
 }
 
 // ── 戰役選單 ──
 function CampaignPane({
+  isMobile,
   selectedScenarioId, setSelectedScenarioId,
   selectedSide, setSelectedSide,
   onBack, onStart,
 }: {
+  isMobile: boolean;
   selectedScenarioId: string | null;
   setSelectedScenarioId: (id: string) => void;
   selectedSide: ActiveView;
@@ -338,7 +363,7 @@ function CampaignPane({
               }}
             >
               <div style={{
-                fontSize: 19, fontWeight: 600,
+                fontSize: isMobile ? 15 : 19, fontWeight: 600,
                 color: active ? "#60a5fa" : "#e2e8f0",
                 display: "flex", alignItems: "center", gap: 8,
               }}>
@@ -387,7 +412,7 @@ function CampaignPane({
                     color: active ? "#fff" : "#cbd5e1",
                     cursor: "pointer",
                     fontFamily: "inherit",
-                    fontSize: 17, fontWeight: active ? 700 : 500,
+                    fontSize: isMobile ? 14 : 17, fontWeight: active ? 700 : 500,
                     display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
                   }}
                 >
@@ -412,7 +437,7 @@ function CampaignPane({
                 color: selectedSide === "spectator" ? "#fff" : "#cbd5e1",
                 cursor: "pointer",
                 fontFamily: "inherit",
-                fontSize: 17, fontWeight: selectedSide === "spectator" ? 700 : 500,
+                fontSize: isMobile ? 14 : 17, fontWeight: selectedSide === "spectator" ? 700 : 500,
                 display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
               }}
             >
@@ -426,12 +451,12 @@ function CampaignPane({
             className="wg-btn"
             style={{
               width: "100%",
-              padding: "14px 24px",
+              padding: isMobile ? "12px 20px" : "14px 24px",
               background: "#3b82f6",
               color: "#fff",
               border: "none",
               borderRadius: 8,
-              fontSize: 20, fontWeight: 700,
+              fontSize: isMobile ? 16 : 20, fontWeight: 700,
               cursor: "pointer",
               fontFamily: "inherit",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,

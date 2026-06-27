@@ -37,6 +37,7 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 3600,
     },
     defaultAmmoMax: 4,                // 雄三 TEL 4 發
+    defaultLoadout: [{ weaponId: "asm", ammoMax: 4 }],   // 反艦飛彈（DF-26 由 weaponProfile 改彈道）
   },
 
   drone: {
@@ -65,6 +66,17 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       requireRoundTrip: true,
     },
     defaultAmmoMax: 2,                // UAV 通常掛 1–2 彈
+    // 對地/海小型攻擊彈 + 輕型反潛魚雷（反潛機投放）
+    defaultLoadout: [
+      { weaponId: "asm", ammoMax: 2, rangeKm: "core" },
+      { weaponId: "torpedo", ammoMax: 2, rangeKm: 15 },
+    ],
+    // 反潛機 / 反潛直升機投放聲標（sonobuoy）被動聽音；空中載台本身水下不發聲
+    acoustics: {
+      sourceLevelDb: 80,
+      targetStrengthDb: 0,
+      passive: { arrayGainDb: 16, dtDb: 6, selfNoiseDb: 38 },
+    },
   },
 
   ship_surface: {
@@ -93,6 +105,24 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 14400,
     },
     defaultAmmoMax: 16,               // Aegis VLS 取捷 / Harpoon 4 + ASROC + SAM
+    // 多武器：SAM（防空+攔截）+ CIWS（點防禦）+ 反艦飛彈（core 射程）+ ASW 魚雷
+    defaultLoadout: [
+      { weaponId: "sam_ship", ammoMax: 8 },
+      { weaponId: "ciws", ammoMax: 200 },
+      { weaponId: "asm", ammoMax: 8, rangeKm: "core" },
+      { weaponId: "torpedo", ammoMax: 4, rangeKm: 18 },
+    ],
+    // 反潛聲學：水面艦吵（易被潛艦聽到）、艦艏被動聲納普通、可拍發主動聲納
+    acoustics: {
+      sourceLevelDb: 150,
+      noisePerKnotDb: 1.0,
+      targetStrengthDb: 25,
+      passive: { arrayGainDb: 12, dtDb: 8, selfNoiseDb: 55 },
+      // 拖曳陣列（TACTAS）— 高增益、低速才有效；只有 hasTowedArray 旗標的艦才用
+      towedArray: { arrayGainDb: 22, dtDb: 6, selfNoiseDb: 45, speedLimitKn: 18 },
+      active: { sourceLevelDb: 230 },
+      torpedoDecoy: { pDefeat: 0.5, cooldownSec: 30 },   // Nixie SLQ-25
+    },
   },
 
   submarine: {
@@ -122,6 +152,21 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 43200,  // 12 hr 巡邏
     },
     defaultAmmoMax: 8,                // Mk-48 重型魚雷 8 + Harpoon
+    // 多武器：重型魚雷（core 射程，反艦+反潛）+ 潛射反艦飛彈
+    defaultLoadout: [
+      { weaponId: "torpedo", ammoMax: 6, rangeKm: "core" },
+      { weaponId: "asm", ammoMax: 2, rangeKm: 120 },
+    ],
+    // 反潛聲學：潛艦安靜（低聲源級）、被動聲納佳（高陣列增益、低門檻）；預設不拍主動（保持隱蔽）
+    acoustics: {
+      sourceLevelDb: 132,
+      noisePerKnotDb: 1.2,             // 高速衝刺會變吵 → 易被偵測
+      targetStrengthDb: 12,
+      passive: { arrayGainDb: 20, dtDb: 5, selfNoiseDb: 42 },
+      // 潛艦側舷/拖曳陣列 — 被動最優（增益更高、自噪更低、低速）
+      towedArray: { arrayGainDb: 26, dtDb: 4, selfNoiseDb: 38, speedLimitKn: 12 },
+      torpedoDecoy: { pDefeat: 0.6, cooldownSec: 40 },   // 聲學誘標
+    },
   },
 
   fighter: {
@@ -153,6 +198,11 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       requireRoundTrip: true,
     },
     defaultAmmoMax: 6,                // 4 AAM + 2 AGM 典型掛載
+    // 多武器：空對空飛彈（core 射程）+ 小型反艦彈
+    defaultLoadout: [
+      { weaponId: "aam", ammoMax: 4, rangeKm: "core" },
+      { weaponId: "asm", ammoMax: 2, rangeKm: 60 },
+    ],
   },
 
   radar_station: {
@@ -210,6 +260,8 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 7200,
     },
     defaultAmmoMax: 8,                // SAM 攔截彈
+    // 中程 SAM：天弓 II / 海弓 III — 打飛機（core 射程）兼攔巡弋彈 / 掠海彈
+    defaultLoadout: [{ weaponId: "sam_coast", ammoMax: 8, rangeKm: "core" }],
   },
 
   mobile_radar: {
@@ -267,6 +319,8 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       defaultPlanTimeLimitSec: 10800,
     },
     defaultAmmoMax: 16,               // PAC-3 4 launcher × 4 missiles
+    // 長程 / 反彈道 SAM：PAC-3 / 天弓 III — 打飛機（core 射程）兼攔彈道 / 高空巡弋
+    defaultLoadout: [{ weaponId: "sam_patriot", ammoMax: 16, rangeKm: "core" }],
   },
 
   supply_ship: {
@@ -298,6 +352,12 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     supplyRangeKm: 6,                 // RAS 並航 6 km 內可補
     supplyFuelKmPerSec: 8,            // 每秒回 8 km 燃料
     supplyAmmoPerSec: 0.15,           // 每秒回 0.15 發（~6.7 秒 / 發）
+    // 反潛聲學：補給艦極吵、無聲納（潛艦的肥羊目標）
+    acoustics: {
+      sourceLevelDb: 152,
+      noisePerKnotDb: 1.0,
+      targetStrengthDb: 28,
+    },
   },
 
   airbase: {
@@ -330,6 +390,44 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     supplyRangeKm: 30,                // 場內 + 進場航線 30 km
     supplyFuelKmPerSec: 25,           // 地勤快速加油
     supplyAmmoPerSec: 0.5,            // 每 2 秒一發
+  },
+
+  asw_helo: {
+    kind: "asw_helo",
+    displayName: "反潛直升機",
+    domain: "air",
+    defaultAltitudeM: 30,             // 懸停吊放聲納時低空，換能器入水
+    iconShape: "triangle_inverted",
+    // S-70C / MH-60R 反潛直升機：吊放聲納（dipping sonar）點偵測 + 輕型魚雷（Mk-46/54 ~10km）
+    // 巡航 ~140 kn；自帶小型水面搜索雷達；真正的反潛感測是吊放聲納（懸停才作業）
+    defaultCore: {
+      rangeKm: 12,
+      speedKnots: 140,
+      movementRangeKm: 700,
+      detectionRangeKm: 40,           // 小型水面搜索雷達（水下靠吊放聲納，另計）
+      hpMax: 30,
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 40,    step: 2,   unit: "km" },
+      speedKnots:       { min: 0,   max: 160,   step: 5,   unit: "kn" },
+      movementRangeKm:  { min: 100, max: 1500,  step: 50,  unit: "km" },
+      detectionRangeKm: { min: 0,   max: 150,   step: 10,  unit: "km" },
+      hpMax:            { min: 20,  max: 120,   step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 7200,   // 2 hr 任務窗
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 2,                // 2 枚輕型反潛魚雷
+    defaultLoadout: [{ weaponId: "torpedo", ammoMax: 2, rangeKm: 12 }],
+    // 吊放聲納（dipping sonar）：懸停時換能器入水做主動點偵測 + 被動聽音（isDippingActive 控制）。
+    // 換能器吊放至溫躍層下 → 不受跨層損失。helo 在空中，本身非聲納目標（targetStrength 不參與）。
+    acoustics: {
+      sourceLevelDb: 70,
+      targetStrengthDb: 0,
+      passive: { arrayGainDb: 18, dtDb: 5, selfNoiseDb: 40 },
+      active: { sourceLevelDb: 212 },
+    },
   },
 };
 
@@ -364,4 +462,5 @@ export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
   sam_patriot: "Patriot SAM",
   supply_ship: "Supply Ship",
   airbase: "Airbase",
+  asw_helo: "ASW Helicopter",
 };

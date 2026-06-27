@@ -33,6 +33,7 @@ function roleOf(kind: UnitKind): Role {
     case "drone":            return "striker";
     case "fighter":          return "striker";
     case "submarine":        return "stalker";
+    case "asw_helo":         return "escort";   // 反潛直升機：隨護航幕活動、勤務上獵潛
     case "ship_surface":     return "escort";   // 多數水面艦走 escort；速度高的可推進
     case "sam_coastal":      return "defender";
     case "sam_patriot":      return "defender";

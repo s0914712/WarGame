@@ -8,7 +8,7 @@ import { uiStore } from "../wargame/uiStore";
 
 function getDemo(): boolean { return uiStore.isDemoMode(); }
 
-export function DemoModeToggle() {
+export function DemoModeToggle({ isMobile = false }: { isMobile?: boolean } = {}) {
   const demo = useSyncExternalStore(uiStore.subscribe, getDemo, getDemo);
 
   // Esc 退出 demo 模式
@@ -33,10 +33,10 @@ export function DemoModeToggle() {
         className="wg-btn"
         style={{
           position: "absolute",
-          bottom: 16,
+          bottom: `calc(env(safe-area-inset-bottom, 0px) + 16px)`,
           left: 16,
           zIndex: 30,
-          width: 36, height: 36,
+          width: isMobile ? 44 : 36, height: isMobile ? 44 : 36,
           borderRadius: 6,
           background: "rgba(15, 23, 42, 0.5)",
           color: "#94a3b8",
@@ -49,6 +49,9 @@ export function DemoModeToggle() {
       </button>
     );
   }
+
+  // 行動版非 demo 時：入口改由選單抽屜提供，這裡不渲染浮動按鈕
+  if (isMobile) return null;
 
   // 進入鈕（小，左下角）
   return (

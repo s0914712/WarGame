@@ -228,5 +228,6 @@ function domainOf(kind: Unit["kind"]): Domain {
     case "sam_patriot": return "land";
     case "supply_ship": return "sea";
     case "airbase": return "land";
+    case "asw_helo": return "air";
   }
 }

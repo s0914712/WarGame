@@ -13,17 +13,26 @@
  */
 import type { LngLat, SideId, Unit, UnitId, UnitKind } from "../types";
 import { scenarioStore } from "../scenarioStore";
+import { viewStore } from "../viewStore";
 import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
+import { DEFAULT_MDR_KM } from "../sim/sonobuoyField";
 
 type Listener = () => void;
 
-export type EditorMode = "view" | "planRoute" | "placeUnit";
+export type EditorMode = "view" | "planRoute" | "placeUnit" | "defineSonobuoyArea";
 
 let mode: EditorMode = "view";
 let planningUnitId: UnitId | null = null;
 let pendingWaypoints: LngLat[] = [];
 let wasRunningBeforePlan = false;
+
+// 聲標反潛屏幕 draft（defineSonobuoyArea 模式）
+let sonobuoyUnitId: UnitId | null = null;
+let sonobuoyCornerA: LngLat | null = null;
+let sonobuoyCornerB: LngLat | null = null;
+let sonobuoyCount = 12;
+let sonobuoyMdrKm = DEFAULT_MDR_KM;
 
 // Plan Mode：當前選中要放置的單位種類 + 陣營
 let placingKind: UnitKind = "ship_surface";
@@ -161,16 +170,136 @@ export const editorStore = {
     this.exitPlanMode();
   },
 
+  // ── 聲標反潛屏幕（兩角定框）──────────────────────────────
+  getSonobuoyDraft() {
+    return {
+      unitId: sonobuoyUnitId,
+      cornerA: sonobuoyCornerA,
+      cornerB: sonobuoyCornerB,
+      count: sonobuoyCount,
+      mdrKm: sonobuoyMdrKm,
+    };
+  },
+
+  startSonobuoyArea(unitId: UnitId): void {
+    mode = "defineSonobuoyArea";
+    sonobuoyUnitId = unitId;
+    sonobuoyCornerA = null;
+    sonobuoyCornerB = null;
+    wasRunningBeforePlan = !wargameClock.isPaused();
+    wargameClock.pause();
+    notify();
+  },
+
+  /** 點地圖：第 1 點存 A、第 2 點存 B；已滿兩角則重設為新 A */
+  setSonobuoyCorner(lng: number, lat: number): void {
+    if (mode !== "defineSonobuoyArea") return;
+    if (!sonobuoyCornerA || sonobuoyCornerB) {
+      sonobuoyCornerA = [lng, lat];
+      sonobuoyCornerB = null;
+    } else {
+      sonobuoyCornerB = [lng, lat];
+    }
+    notify();
+  },
+
+  setSonobuoyCount(n: number): void {
+    const v = Math.max(1, Math.min(64, Math.round(n)));
+    if (v === sonobuoyCount) return;
+    sonobuoyCount = v;
+    notify();
+  },
+
+  commitSonobuoyField(): void {
+    if (mode !== "defineSonobuoyArea" || !sonobuoyUnitId) return;
+    if (sonobuoyCornerA && sonobuoyCornerB) {
+      scenarioStore.enqueueCommand({
+        id: makeCmdId(),
+        unitId: sonobuoyUnitId,
+        simAtSec: wargameClock.getSimTime(),
+        kind: "deploy_sonobuoys",
+        cornerA: sonobuoyCornerA,
+        cornerB: sonobuoyCornerB,
+        count: sonobuoyCount,
+        mdrKm: sonobuoyMdrKm,
+      });
+    }
+    this.exitPlanMode();
+  },
+
   /** 內部：退出規劃模式並（可選）恢復原本的播放狀態 */
   exitPlanMode(): void {
     mode = "view";
     planningUnitId = null;
     pendingWaypoints = [];
+    sonobuoyUnitId = null;
+    sonobuoyCornerA = null;
+    sonobuoyCornerB = null;
     if (wasRunningBeforePlan) {
       wargameClock.resume();
       wasRunningBeforePlan = false;
     }
     notify();
+  },
+
+  /**
+   * RTS 式右鍵移動（不必按套用）：
+   *   - additive=false：立即前往該點（取代現有航線）
+   *   - additive=true（Shift）：接續排隊一個航點（類似即時戰略佇列移動）
+   * 靜止單位會自動給個巡航速度。
+   */
+  quickMove(unitId: UnitId, lng: number, lat: number, additive: boolean): void {
+    const state = scenarioStore.getState();
+    const unit = state.units[unitId];
+    if (!unit) return;
+    let base: LngLat[] = [];
+    if (additive) {
+      // 以最近一筆對此單位待套用的 set_waypoints 為基底，否則用單位現有航線（連點才會累積）
+      let pendingWps: LngLat[] | null = null;
+      for (const c of state.pendingCommands) {
+        if (c.unitId === unitId && c.kind === "set_waypoints") pendingWps = c.waypoints;
+      }
+      base = pendingWps ?? unit.waypoints;
+    }
+    const waypoints: LngLat[] = [...base, [lng, lat]];
+    const simAtSec = wargameClock.getSimTime();
+    scenarioStore.enqueueCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_waypoints", waypoints });
+    if (unit.position.speedKnots <= 0) {
+      const cruise = Math.max(1, Math.round(unit.core.speedKnots * 0.6));
+      scenarioStore.enqueueCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_speed", speedKnots: cruise });
+    }
+  },
+
+  /**
+   * RTS 式右鍵攻擊：右鍵點到敵方單位 → 對選中的己方單位下達「接戰」攻擊計畫。
+   * 回傳 true = 已下達攻擊命令（呼叫端就不要再當成移動處理）；false = 非有效敵方目標。
+   * 注意：未定位（bearing）/ 未進入射程的目標仍可下令，combat 會在定位 + 進射程後自動開火。
+   */
+  quickEngage(attackerId: UnitId, targetId: UnitId): boolean {
+    if (attackerId === targetId) return false;
+    const state = scenarioStore.getState();
+    const attacker = state.units[attackerId];
+    const target = state.units[targetId];
+    if (!attacker || !target) return false;
+    if (attacker.hpCurrent <= 0 || target.hpCurrent <= 0) return false;
+    // 只能命令己方單位（spectator 視角不限）
+    const activeSide = viewStore.getActiveSideId();
+    if (activeSide && attacker.sideId !== activeSide) return false;
+    // 目標必須與攻方敵對
+    const sides = state.scenario.sides;
+    const atkSide = sides.find((s) => s.id === attacker.sideId);
+    const tgtSide = sides.find((s) => s.id === target.sideId);
+    const hostile = (atkSide?.isHostileTo.includes(target.sideId) ?? false)
+      || (tgtSide?.isHostileTo.includes(attacker.sideId) ?? false);
+    if (!hostile) return false;
+    scenarioStore.enqueueCommand({
+      id: makeCmdId(),
+      unitId: attackerId,
+      simAtSec: wargameClock.getSimTime(),
+      kind: "engage",
+      targetUnitId: targetId,
+    });
+    return true;
   },
 
   /** 清掉某個單位「目前已套用」的 waypoint（不是 pending）。 */

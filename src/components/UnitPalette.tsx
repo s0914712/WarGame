@@ -8,7 +8,7 @@
  * - [💾 Export]：當前場景下載為 JSON
  */
 import { useSyncExternalStore } from "react";
-import { ClipboardList, Rocket, Plane, Ship, Anchor, PlaneTakeoff, Radio, Download, X, Shield, ShieldCheck, Radar, Truck, Building2 } from "lucide-react";
+import { ClipboardList, Rocket, Plane, Ship, Anchor, PlaneTakeoff, Radio, Download, X, Shield, ShieldCheck, Radar, Truck, Building2, Wind } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { editorStore } from "../wargame/editor/editorStore";
 import { scenarioStore } from "../wargame/scenarioStore";
@@ -68,9 +68,10 @@ const KIND_OPTIONS: { kind: UnitKind; Icon: LucideIcon }[] = [
   { kind: "sam_patriot",      Icon: ShieldCheck },
   { kind: "supply_ship",      Icon: Truck },
   { kind: "airbase",          Icon: Building2 },
+  { kind: "asw_helo",         Icon: Wind },
 ];
 
-export function UnitPalette() {
+export function UnitPalette({ embedded = false }: { embedded?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const s = getSnapshot();
   const isPlanning = s.mode === "placeUnit";
@@ -87,7 +88,7 @@ export function UnitPalette() {
     URL.revokeObjectURL(url);
   };
 
-  if (!isPlanning) {
+  if (!embedded && !isPlanning) {
     // 摺疊狀態：只顯示一顆「進 Plan Mode」按鈕
     return (
       <div style={containerCollapsed}>
@@ -99,8 +100,9 @@ export function UnitPalette() {
   }
 
   return (
-    <div style={containerExpanded}>
-      {/* 標題 + Exit */}
+    <div style={embedded ? embeddedRoot : containerExpanded}>
+      {/* 標題 + Exit（embedded 時 tab 自身即入口，免標題列） */}
+      {!embedded && (
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
         padding: "10px 14px",
@@ -114,8 +116,9 @@ export function UnitPalette() {
           <X size={11} /> 退出
         </button>
       </div>
+      )}
 
-      <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ padding: embedded ? "4px 0 12px" : 12, display: "flex", flexDirection: "column", gap: 12 }}>
         {/* 陣營選擇 */}
         <div>
           <div style={labelStyle}>陣營</div>
@@ -205,6 +208,12 @@ export function UnitPalette() {
     </div>
   );
 }
+
+const embeddedRoot: React.CSSProperties = {
+  width: "100%",
+  color: "#e2e8f0",
+  fontFamily: "ui-sans-serif, system-ui, sans-serif",
+};
 
 const containerCollapsed: React.CSSProperties = {
   position: "absolute",

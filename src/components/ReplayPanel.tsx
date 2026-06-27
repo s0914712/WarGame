@@ -60,7 +60,7 @@ function subscribe(cb: () => void): () => void {
   return () => { u1(); u2(); window.clearInterval(t); };
 }
 
-export function ReplayPanel() {
+export function ReplayPanel({ embedded = false }: { embedded?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   useLang();
   const s = getSnapshot();
@@ -77,7 +77,16 @@ export function ReplayPanel() {
 
   return (
     <div
-      style={{
+      style={embedded ? {
+        display: "flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 8,
+        fontSize: 16,
+        color: "#e2e8f0",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        width: "100%",
+      } : {
         position: "absolute",
         bottom: 72,                 // 自成一列（replay 展開會變寬，往左長）
         right: 16,

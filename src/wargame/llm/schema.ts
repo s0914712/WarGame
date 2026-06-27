@@ -8,7 +8,7 @@
  *
  * 版本欄位是契約核心：未來改 schema 時可以同時支援多版本，舊 LLM prompt 不會壞。
  */
-import type { CoreAttributes, SideId, UnitKind } from "../types";
+import type { CoreAttributes, RoeMode, SideId, UnitKind } from "../types";
 import type { RouteIssue } from "../sim/validate";
 
 export const STATE_VERSION = "wargame-state-v1";
@@ -32,6 +32,8 @@ export interface LlmStateExport {
     hostileTo: SideId[];
   }>;
   units: LlmUnitView[];
+  /** 己方已佈放的聲標屏幕（反潛）；無則省略 */
+  sonobuoys?: Array<{ lng: number; lat: number; mdrKm: number; side: SideId }>;
 }
 
 export interface LlmUnitView {
@@ -48,8 +50,14 @@ export interface LlmUnitView {
   fuel: { remainingKm: number; maxKm: number };
   core: CoreAttributes;
   waypoints: [number, number][];
-  /** 玩家方（藍）對該單位的偵測狀態，hostile 才有意義 */
+  /** POV 方對該單位的偵測狀態，hostile 才有意義。≥ classified 才可開火 */
   detectedByPlayer: "hidden" | "unknown" | "classified" | "tracked" | "own";
+  /** 己方單位（own）的當前 ROE；敵方省略 */
+  roe?: RoeMode;
+  /** 己方單位（own）主動聲納是否拍發中（E20）；非聲納單位省略 */
+  activeSonar?: boolean;
+  /** 己方潛艦（own）當前深度（公尺，正值）；非潛艦省略 */
+  depthM?: number;
   constraints: {
     forbidDomains?: ("land" | "air" | "sea" | "subsurface")[];
   };
@@ -61,6 +69,11 @@ export type LlmCommand =
   | LlmSetSpeedCommand
   | LlmEngageCommand
   | LlmHoldCommand
+  | LlmSetRoeCommand
+  | LlmSetActiveSonarCommand
+  | LlmSetDepthCommand
+  | LlmSetTowedArrayCommand
+  | LlmDeploySonobuoysCommand
   | LlmUpdateAttributesCommand;
 
 export interface LlmSetWaypointsCommand {
@@ -91,6 +104,53 @@ export interface LlmEngageCommand {
 export interface LlmHoldCommand {
   kind: "hold";
   unitId: string;
+  executeAtSimSec?: number;
+}
+
+/** 設定單位交戰規則（ROE）。weapons_hold = 不主動接戰；weapons_free = 自由接戰 */
+export interface LlmSetRoeCommand {
+  kind: "set_roe";
+  unitId: string;
+  roe: RoeMode;
+  executeAtSimSec?: number;
+}
+
+/** 開 / 關主動聲納（反潛）。on=true 拍發 ping → 偵潛距離大增，但自身被敵方被動聲納遠距偵知 */
+export interface LlmSetActiveSonarCommand {
+  kind: "set_active_sonar";
+  unitId: string;
+  on: boolean;
+  executeAtSimSec?: number;
+}
+
+/** 設定潛艦下潛深度（公尺，正值 0–500）。層下藏匿、潛望鏡深度（≤25m）暴露於雷達 */
+export interface LlmSetDepthCommand {
+  kind: "set_depth";
+  unitId: string;
+  depthM: number;
+  executeAtSimSec?: number;
+}
+
+/** 佈放 / 收回拖曳陣列（TACTAS）。on=true 高增益被動偵潛，但須低速才有效 */
+export interface LlmSetTowedArrayCommand {
+  kind: "set_towed_array";
+  unitId: string;
+  on: boolean;
+  executeAtSimSec?: number;
+}
+
+/**
+ * 反潛機佈放聲標反潛屏幕：兩角定義搜索框，自動格網佈點。
+ * 每枚聲標在 mdrKm 內偵測敵潛。cornerA/B 為 [lng, lat]。
+ */
+export interface LlmDeploySonobuoysCommand {
+  kind: "deploy_sonobuoys";
+  unitId: string;
+  cornerA: [number, number];
+  cornerB: [number, number];
+  count: number;
+  mdrKm?: number;
+  lifetimeSec?: number;
   executeAtSimSec?: number;
 }
 

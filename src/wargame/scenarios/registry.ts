@@ -13,6 +13,7 @@ import { AMMO_TEST_2030 } from "./ammo_test_2030";
 import { INVASION_H_HOUR_2030 } from "./invasion_h_hour_2030";
 import { IRAN_HORMUZ_2030 } from "./iran_hormuz_2030";
 import { KINMEN_823_1958 } from "./kinmen_823_1958";
+import { ASW_ESCORT_2031 } from "./asw_escort_2031";
 
 export interface ScenarioEntry {
   scenario: Scenario;
@@ -67,6 +68,11 @@ export const SCENARIO_REGISTRY: ScenarioEntry[] = [
     scenario: KINMEN_823_1958,
     shortDescription: "823 砲戰運補突圍 · 廈門/圍頭岸砲 vs 金門 · 九二海戰 + 中海/臺生衝料羅灣 · 史實場景 · 40 分鐘",
     tags: ["歷史", "1958", "ROC", "PLA", "運補", "岸砲", "九二海戰"],
+  },
+  {
+    scenario: ASW_ESCORT_2031,
+    shortDescription: "反潛護航 · 主動/被動聲納方程式 · 40 分鐘",
+    tags: ["反潛", "ASW", "聲納", "ROC", "PLA", "潛艦"],
   },
 ];
 

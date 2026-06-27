@@ -45,6 +45,7 @@ function mkUnit(
     stealth?: number;
     coreOverride?: Partial<Unit["core"]>;
     supplyOverride?: Unit["supplyOverride"];
+    weaponProfile?: Unit["weaponProfile"];   // B7：DF-26/DF-17 設 "ballistic"
   } = {},
 ): Unit {
   const cat = UNIT_CATALOG[kind];
@@ -62,6 +63,7 @@ function mkUnit(
     ammoMax: cat.defaultAmmoMax,
     ammoCurrent: cat.defaultAmmoMax,
     ...(opts.supplyOverride ? { supplyOverride: opts.supplyOverride } : {}),
+    ...(opts.weaponProfile ? { weaponProfile: opts.weaponProfile } : {}),
     detectedBy: {},
     lastTickSimSec: 0,
   };
@@ -388,30 +390,30 @@ const RED_UNITS: Unit[] = [
   // ══════════ 彈道飛彈打擊 ══════════
   // 4 DF-26 ASBM（針對美軍 + 戰略目標，超大射程）
   mkUnit("RED-DF26-01", "red", "missile_launcher", "DF-26-01", "東風 26 - 福建北", 118.20, 26.30, {
-    coreOverride: { rangeKm: 4000, hpMax: 60 },
+    coreOverride: { rangeKm: 4000, hpMax: 60 }, weaponProfile: "ballistic",
   }),
   mkUnit("RED-DF26-02", "red", "missile_launcher", "DF-26-02", "東風 26 - 福建中", 117.80, 25.50, {
-    coreOverride: { rangeKm: 4000, hpMax: 60 },
+    coreOverride: { rangeKm: 4000, hpMax: 60 }, weaponProfile: "ballistic",
   }),
   mkUnit("RED-DF26-03", "red", "missile_launcher", "DF-26-03", "東風 26 - 廣東北", 117.00, 24.50, {
-    coreOverride: { rangeKm: 4000, hpMax: 60 },
+    coreOverride: { rangeKm: 4000, hpMax: 60 }, weaponProfile: "ballistic",
   }),
   mkUnit("RED-DF26-04", "red", "missile_launcher", "DF-26-04", "東風 26 - 廣東南", 116.50, 23.80, {
-    coreOverride: { rangeKm: 4000, hpMax: 60 },
+    coreOverride: { rangeKm: 4000, hpMax: 60 }, weaponProfile: "ballistic",
   }),
 
   // 4 DF-17 高超音速（壓制機場 / 雷達）
   mkUnit("RED-DF17-01", "red", "missile_launcher", "DF-17-01", "東風 17 - A", 117.50, 25.00, {
-    coreOverride: { rangeKm: 1800, hpMax: 50 },
+    coreOverride: { rangeKm: 1800, hpMax: 50 }, weaponProfile: "ballistic",
   }),
   mkUnit("RED-DF17-02", "red", "missile_launcher", "DF-17-02", "東風 17 - B", 117.50, 24.00, {
-    coreOverride: { rangeKm: 1800, hpMax: 50 },
+    coreOverride: { rangeKm: 1800, hpMax: 50 }, weaponProfile: "ballistic",
   }),
   mkUnit("RED-DF17-03", "red", "missile_launcher", "DF-17-03", "東風 17 - C", 117.20, 23.50, {
-    coreOverride: { rangeKm: 1800, hpMax: 50 },
+    coreOverride: { rangeKm: 1800, hpMax: 50 }, weaponProfile: "ballistic",
   }),
   mkUnit("RED-DF17-04", "red", "missile_launcher", "DF-17-04", "東風 17 - D", 117.00, 23.00, {
-    coreOverride: { rangeKm: 1800, hpMax: 50 },
+    coreOverride: { rangeKm: 1800, hpMax: 50 }, weaponProfile: "ballistic",
   }),
 ];
 

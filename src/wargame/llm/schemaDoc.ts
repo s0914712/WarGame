@@ -46,6 +46,7 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
       },
       "waypoints": [[121.4, 25.3], [121.0, 25.2]],
       "detectedByPlayer": "own",       // own | tracked | classified | unknown | hidden
+      "roe": "weapons_free",           // 僅己方單位有：交戰規則（見下）
       "constraints": { "forbidDomains": ["land"] }  // 不可進入的域
     }
   ]
@@ -65,6 +66,11 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
     { "kind": "set_speed", "unitId": "BLUE-SH-01", "speedKnots": 25 },
     { "kind": "engage", "unitId": "BLUE-SH-01", "targetUnitId": "RED-SH-01" },
     { "kind": "hold", "unitId": "BLUE-SH-01" },
+    { "kind": "set_roe", "unitId": "BLUE-SH-01", "roe": "weapons_tight" },
+    { "kind": "set_active_sonar", "unitId": "BLUE-FFG-01", "on": true },
+    { "kind": "set_depth", "unitId": "BLUE-SS-01", "depthM": 120 },
+    { "kind": "deploy_sonobuoys", "unitId": "BLUE-P8-01", "cornerA": [122.9, 22.4], "cornerB": [123.3, 22.7], "count": 16 },
+    { "kind": "set_towed_array", "unitId": "BLUE-FFG-01", "on": true },
     { "kind": "update_attributes", "unitId": "BLUE-SH-01",
       "core": { "rangeKm": 200, "speedKnots": 28 }
     }
@@ -93,7 +99,54 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
    - \`drone\` 海陸皆可
 2. **燃料**：所有 waypoint 累計距離應 ≤ \`fuel.remainingKm\`，否則只 warning（單位會中途停下）
 3. **速率 / 屬性**：超過 catalog 範圍會被 clamp 並回 warning
-4. **engage 目標**：必須是已偵測到的敵方（detectedByPlayer !== "hidden"），否則 engine 可能拒絕
+4. **接戰需先「分類」**：偵測是漸進的 — 接觸後先 \`unknown\`（看到光點但不知是誰），
+   約 20s 後升 \`classified\`（可開火），再 20s 升 \`tracked\`（穩定追蹤）。失去接觸會反向降級。
+   **必須 detectedByPlayer ≥ classified 才能開火**（unknown 階段 engage 會被 engine 拒絕）。
+
+## 交戰規則 ROE（set_roe）
+| roe | 行為 |
+|---|---|
+| \`weapons_free\` | 主動接戰射程內任何已分類（≥ classified）敵方（預設）|
+| \`weapons_tight\` | 只接戰已 \`tracked\`（完成正面識別）的敵方 |
+| \`defensive_only\` | 只反擊「正對我方發射飛彈」的敵方 |
+| \`weapons_hold\` | 不主動接戰；只打你用 \`engage\` 明確指定的目標 |
+
+戰術用途：佈防階段可下 \`weapons_hold\` 避免過早暴露 / 誤擊；接敵時切 \`weapons_free\`。
+
+## 分層防空（自動）
+艦艇 / SAM 車會**自動**對來襲飛彈發射攔截彈（你不需下令）：愛國者（長程）→ 中程 SAM
+→ 艦載點防禦逐層接戰，每發攔截有機率失敗。**單發攻擊常被攔下** — 想突破密集防空網
+應「飽和攻擊」：對同一目標**集中多單位、多枚飛彈**同時來襲，耗盡其攔截彈與火力通道。
+攔截彈與攻擊共用單位彈艙（ammo），持續接戰會耗盡，需靠補給艦 / 機場再裝填。
+**彈道飛彈（DF-26 等）只有愛國者 / 長程 SAM 攔得到** — 一般艦載防空與中程 SAM 無效。
+
+## 地形與偵測（A5）
+- **山脈遮蔽**：中央山脈會擋低空雷達視線 — 把單位藏到本島背面可規避對岸雷達；
+  反之高空載台（戰機 / 無人機）視線越過山脈不受阻。
+- **雷達地平線**：低空目標（貼海艦艇 / 掠海彈）只能近距被發現；
+  高山雷達站、空中載台（高高度）才看得遠 → 善用雷達站 / 預警機建立遠程偵測網。
+- 潛艦（聲納）不受地形 / 地平線影響。
+
+## 反潛聲納（E20，僅 acousticModel 場景如「反潛護航」）
+潛艦在水下**雷達看不到**，只能靠聲納（聲納方程式）偵測：
+- **被動聲納**（預設、靜默）：聽對方輻射噪音。吵的目標（水面艦 / 補給艦）很遠就被潛艦聽到；
+  安靜潛艦水面艦幾乎聽不到。**高速會變吵 → 易被偵獲**，潛艦應慢速潛行。
+- **主動聲納**（\`set_active_sonar on:true\`，拍發 ping）：偵潛距離大增（~十餘 km），
+  但 ping 極響，自身位置會被敵方被動聲納在 **>100km** 外聽到 → 高風險高回報。
+- **拖曳陣列**（\`set_towed_array on:true\`）：少數巡防艦 / 潛艦裝備，高增益被動偵潛（距離數倍），
+  但**須低速（≤ ~18kn 艦 / ~12kn 潛）才有效**，高速自動失效 → 「慢速聆聽」。潛艦被動本就優於水面艦。
+- **魚雷聲學反制**：來襲魚雷接近時，目標**自動**釋放聲學誘標（水面艦 Nixie / 潛艦誘標）軟殺，有機率誘偏（~50–60%）。
+- 反潛戰術：P-8 聲標大範圍掃蕩 + 巡防艦放拖曳陣列低速被動搜索 + 接觸後開主動聲納精確定位 → 進入魚雷射程擊沉。
+- **聲標反潛屏幕（\`deploy_sonobuoys\`）**：反潛機以兩角 cornerA/cornerB 定義搜索框，自動格網佈點，
+  每枚聲標在 MDR（~4km）內偵測敵潛。**橫跨敵潛逼近船團的軸線佈一道屏幕**，攔截穿越的潛艦；
+  聲標有電池壽命（~1hr）會失效。state.sonobuoys 列出己方已佈聲標。
+- **會聚區（CZ）**：深水中於 ~55km、~110km 處形成偵測環，環內可遠距聽到吵雜目標、環間（陰影區）聽不到。
+  潛艦常利用 CZ 遠距偵知吵雜船團；接觸時注意「直達區 → 陰影區（失聯）→ 會聚環（再現）」的距離結構。
+- **下潛深度（\`set_depth\`，潛艦）**：溫躍層約 60m。
+  - **層下（>60m，如 120m）**：水面艦在層上，跨層聲傳額外衰減 → 潛艦難被偵獲（建議伏擊深度）。
+  - **同層獵殺**：欲被動獵殺另一艘層下潛艦，自己也下潛到層下（不跨層）聽得更清楚。
+  - **潛望鏡深度（≤25m）**：可升桅用雷達，但**會暴露於敵方雷達 / 反潛機**（高風險）。
+  - 深度漸變（~3 m/s），下令後需時間到位。
 5. **只能命令己方**（side === "blue" 且 isPlayer === true 的陣營）；命令對方單位會被允許但沒意義
 6. **JSON 必須合法**：尤其 \`version\` 欄位必須完全相同
 
