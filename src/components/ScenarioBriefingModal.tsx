@@ -13,11 +13,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Swords, X, Trophy, Users, FileText, GraduationCap } from "lucide-react";
 import { scenarioStore } from "../wargame/scenarioStore";
+import { uiStore } from "../wargame/uiStore";
 import { wargameClock } from "../wargame/clock";
 import { SIDE_COLORS } from "../wargame/symbology/sideColors";
-import { UNIT_CATALOG } from "../wargame/catalog/units";
+import { UNIT_CATALOG, UNIT_KIND_DISPLAY_EN } from "../wargame/catalog/units";
 import { launchTutorial } from "./TutorialOverlay";
 import type { SideId, VictoryCondition } from "../wargame/types";
+import { t, useLang } from "../wargame/i18n/lang";
 
 function getScenarioId(): string {
   return scenarioStore.getState().scenario.id;
@@ -31,6 +33,7 @@ interface Props {
 
 export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {}) {
   const scenarioId = useSyncExternalStore(scenarioStore.subscribe, getScenarioId, getScenarioId);
+  const lang = useLang();
   const [autoOpen, setAutoOpen] = useState(false);
   const lastSeenIdRef = useRef<string>("empty");   // 預設視為已看過 empty，避免初次跳出
 
@@ -39,6 +42,8 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
     if (scenarioId === "empty") return;
     if (scenarioId !== lastSeenIdRef.current) {
       lastSeenIdRef.current = scenarioId;
+      // 紀錄片直入：跳過 briefing，不暫停（讓運鏡自動播）
+      if (uiStore.peekAndClearBriefingSuppress()) return;
       setAutoOpen(true);
       wargameClock.pause();
     }
@@ -112,7 +117,7 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
             <Swords size={32} color="#fbbf24" />
             <div>
               <div style={{ fontSize: 15, color: "#94a3b8", marginBottom: 2, letterSpacing: 1 }}>
-                場景簡報
+                {t("Briefing")}
               </div>
               <div style={{ fontSize: 32, fontWeight: 700 }}>{scenario.displayName}</div>
             </div>
@@ -128,14 +133,31 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
         {/* Body — scrollable */}
         <div style={{ padding: "16px 26px", overflowY: "auto", flex: 1 }}>
           {/* 任務說明 */}
-          <Section icon={<FileText size={14} />} title="任務說明">
-            <p style={{ margin: 0, fontSize: 17, lineHeight: 1.7, color: "#cbd5e1" }}>
-              {scenario.briefing}
-            </p>
+          <Section icon={<FileText size={14} />} title={t("Mission Briefing")}>
+            {typeof scenario.briefing === "string" ? (
+              <p style={{ margin: 0, fontSize: 17, lineHeight: 1.7, color: "#cbd5e1" }}>
+                {scenario.briefing}
+              </p>
+            ) : (
+              // 雙語：當前 lang 主顯，另一語當作對照淡色顯示
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ margin: 0, fontSize: 17, lineHeight: 1.7, color: "#cbd5e1", whiteSpace: "pre-wrap" }}>
+                  {scenario.briefing[lang]}
+                </p>
+                <details style={{ fontSize: 15, color: "#94a3b8" }}>
+                  <summary style={{ cursor: "pointer", marginBottom: 8 }}>
+                    {lang === "en" ? t("Show Chinese original") : t("Show English")}
+                  </summary>
+                  <p style={{ margin: 0, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                    {scenario.briefing[lang === "en" ? "zh" : "en"]}
+                  </p>
+                </details>
+              </div>
+            )}
           </Section>
 
           {/* 兵力統計 */}
-          <Section icon={<Users size={14} />} title="初始兵力">
+          <Section icon={<Users size={14} />} title={t("Initial Forces")}>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {sidesStats.map(({ side, total, byKind }) => {
                 const color = SIDE_COLORS[side.id as SideId].primary;
@@ -160,7 +182,7 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
                         fontSize: 16, color: "#94a3b8",
                         fontFamily: "ui-monospace, monospace",
                       }}>
-                        合計 {total} 單位
+                        {lang === "en" ? `${total} units total` : `合計 ${total} 單位`}
                       </span>
                     </div>
                     <div style={{
@@ -177,7 +199,9 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
                             color: "#cbd5e1",
                           }}
                         >
-                          {UNIT_CATALOG[kind as keyof typeof UNIT_CATALOG]?.displayName ?? kind} ×{count}
+                          {(lang === "en"
+                            ? UNIT_KIND_DISPLAY_EN[kind as keyof typeof UNIT_KIND_DISPLAY_EN]
+                            : UNIT_CATALOG[kind as keyof typeof UNIT_CATALOG]?.displayName) ?? kind} ×{count}
                         </span>
                       ))}
                     </div>
@@ -189,7 +213,7 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
 
           {/* 勝負條件 */}
           {scenario.victoryConditions.length > 0 && (
-            <Section icon={<Trophy size={14} />} title="勝負條件（優先序）">
+            <Section icon={<Trophy size={14} />} title={t("Victory Conditions (priority)")}>
               <ol style={{
                 margin: 0, paddingLeft: 22,
                 display: "flex", flexDirection: "column", gap: 6,
@@ -240,7 +264,7 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
               fontFamily: "inherit",
             }}
           >
-            開始 (Esc)
+            {t("Start")} (Esc)
           </button>
         </div>
       </div>

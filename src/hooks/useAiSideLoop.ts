@@ -22,6 +22,7 @@ import { callLlm, extractJson } from "../wargame/llm/aiClient";
 import { applyLlmCommands } from "../wargame/llm/applyCommands";
 import { SCHEMA_DOC } from "../wargame/llm/schemaDoc";
 import { runScriptedAiTick } from "../wargame/ai/scriptedAi";
+import { runScriptedAiV2Tick } from "../wargame/ai/scriptedAiV2";
 import type { LlmCommandResult } from "../wargame/llm/schema";
 
 const CHECK_INTERVAL_MS = 1000;  // 每秒檢查一次條件，不必每幀
@@ -50,8 +51,10 @@ export function useAiSideLoop() {
       });
 
       // ── 腳本模式：純規則，同步執行 ──
-      if (cfg.mode === "scripted") {
-        const r = runScriptedAiTick(cfg.sideId);
+      if (cfg.mode === "scripted" || cfg.mode === "scripted_v2") {
+        const r = cfg.mode === "scripted_v2"
+          ? runScriptedAiV2Tick(cfg.sideId)
+          : runScriptedAiTick(cfg.sideId);
         const result: LlmCommandResult = {
           version: "wargame-result-v1",
           summary: { submitted: r.commandsIssued, applied: r.commandsIssued, rejected: 0 },

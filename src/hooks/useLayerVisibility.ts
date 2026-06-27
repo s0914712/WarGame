@@ -58,6 +58,7 @@ export function useLayerVisibility() {
     groundwaterWells: false,
     iotWraRiver: false,
     iotWraStructure: false,
+    photoreal3d: false,
   });
   const layerVisibilityRef = useRef(layerVisibility);
   layerVisibilityRef.current = layerVisibility;

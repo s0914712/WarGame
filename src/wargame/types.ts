@@ -211,7 +211,8 @@ export type VictoryCondition =
 export interface Scenario {
   id: string;
   displayName: string;
-  briefing: string;
+  /** 任務簡報。string = 單語（fallback 顯示）；{zh, en} = 雙語。 */
+  briefing: string | { zh: string; en: string };
   startSimTimeSec: number;
   durationSec: number;
   sides: Side[];

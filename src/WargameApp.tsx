@@ -9,6 +9,7 @@ import { LLMPanel } from "./components/LLMPanel";
 import { EngagementLog } from "./components/EngagementLog";
 import { PovSwitcher } from "./components/PovSwitcher";
 import { ReplayPanel } from "./components/ReplayPanel";
+import { CinemaControls } from "./components/CinemaControls";
 import { BattleStatsHud } from "./components/BattleStatsHud";
 import { UnitPalette } from "./components/UnitPalette";
 import { MapStyleSwitcher } from "./components/MapStyleSwitcher";
@@ -32,6 +33,7 @@ import { attachWargameRangeRings } from "./map/wargameRangeRings";
 import { attachWargameSymbolLayer, SYMBOL_LAYER_ID } from "./map/wargameSymbolLayer";
 import { attachWargameRouteLayer } from "./map/wargameRouteLayer";
 import { loadWargameSymbols } from "./wargame/symbology/loadSymbols";
+import { registerFlagMarkers } from "./wargame/symbology/flagMarkers";
 import { useSimLoop } from "./hooks/useSimLoop";
 import { useAiSideLoop } from "./hooks/useAiSideLoop";
 import { DEFAULT_STYLE_ID, getStyleById } from "./wargame/mapStyles";
@@ -67,6 +69,7 @@ export default function WargameApp() {
     detachersRef.current = [];
 
     loadWargameSymbols(map);
+    registerFlagMarkers(map);
     detachersRef.current.push(
       attachWargameRadarLayer(map),
       attachWargameSelectionLayer(map),
@@ -195,6 +198,7 @@ export default function WargameApp() {
           <UnitEditorPanel />
           <EngagementLog />
           <ReplayPanel />
+          <CinemaControls map={mapRef.current} />
           <LLMPanel open={llmOpen} onClose={() => setLlmOpen(false)} />
 
           <button

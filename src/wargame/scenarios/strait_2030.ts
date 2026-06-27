@@ -242,7 +242,10 @@ const NEUTRAL_UNITS: Unit[] = [
 export const STRAIT_2030: Scenario = {
   id: "strait_2030",
   displayName: "台海中線對峙 2030",
-  briefing: "解放軍海空兵力越過中線，藍方反艦飛彈車與海軍進入備戰。",
+  briefing: {
+    zh: "解放軍海空兵力越過中線，藍方反艦飛彈車與海軍進入備戰。",
+    en: "PLA naval and air forces cross the Taiwan Strait median line. ROC anti-ship missile TELs and navy go to combat readiness.",
+  },
   startSimTimeSec: 0,
   durationSec: 3600,
   sides: SIDES,

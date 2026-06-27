@@ -1,81 +1,52 @@
 # Status
 
-**最後更新**：2026-04-26（session：iot_wra 整合 + 雙表 pre-aggregate + 兩 layer 接前端 + 研究文件區）
-**分支**：`master`（本機領先 origin **109 commits**；gis-platform 領先 **5 commits**；data-collectors 待 commit 1 個）
+**最後更新**：2026-06-26（session：兵棋紀錄片引擎 + 823 砲戰史實場景）
+**分支**：`master`（本機領先 origin **109 commits**；本次新功能**尚未 commit**）
 
 ## 本次 session 完成
 
-### Collector 重複度檢核（方法論）
-- **疑似重疊**：iot_wra（4-22 上線）跟既有 4 個水資源 collector 關係不清
-- **方法論**：座標 ST_DWithin 100m + sample 名字驗證（**不信編號**，前面 agent 用 UUID/text 判斷錯了）
-- **結論**：
-  - groundwater 95% 配對 → **完全重複**（停 iot 子端點）
-  - river 16% 配對 → **互補**（兩邊都留）
-  - 5 個獨有類別（流量/閘門/堤防/沖刷/揚塵）→ 全新
+### 兵棋紀錄片引擎（移植 battle-of-hong-kong-1941 概念）
+- **目標**：用兵棋的底（WARGAME engine）做戰史紀錄片式場景，先做 823 砲戰
+- 新增 `src/wargame/cinema/`：
+  - `storyboard.ts` — 分鏡資料模型（CinemaShot[] 綁 atSimSec + 雙語旁白 + 相機關鍵格）
+  - `director.ts` — 分鏡 state machine，讀 `wargameClock.getSimTime()`（live + replay 都通）驅動 Mapbox `flyTo`；grab-to-pause（拖動/縮放 3.5s 內不搶鏡）
+  - `track.ts` — `sampleTrack(track, simSec)` 時間插值（移植 HK entities.js，改 sim-sec 軸 + bearing）
+  - `cinemaTracks.ts` — 823 作者手刻航線（中海/臺生/美樂 + 沱江/維源 + 3 魚雷艇），對齊分鏡節點
+- `src/wargame/symbology/flagMarkers.ts` — canvas 畫 1958 期旗當 marker（藍→青天白日滿地紅 12 道光芒、紅→五星紅旗）；紀錄片開啟時取代 NATO 軍標
+- `src/components/CinemaControls.tsx` — 紀錄片 toggle + lower-third 字幕 HUD（日期/標題/雙語旁白/中EN 切換/殘存戰力）
+- `wargameSymbolLayer.ts` — 紀錄片開啟時：icon 換期旗 + 有 track 的單位用 sampleTrack 覆寫座標（靜態單位 fallback 引擎位置）
+- `WargameApp.tsx` — 掛 CinemaControls + registerFlagMarkers
 
-### Migration 063：iot_wra 雙表 pre-aggregate
-- `realtime.iot_wra_latest`：每站每測項最新值 + delta_since_day_start（~4k rows 固定）
-- `realtime.iot_wra_daily`：每站每測項每日 1 row + hourly timeline 字串編碼（~4k × 7 天，仿 freeway pattern）
-- 改寫 `get_iot_wra_latest`、新增 `get_iot_wra_day`
-- 3 個 cron job 排程（錯開分鐘 7,17,27,37,47,57 / 19,39,59 / 04:10 cleanup）
-- 已跑進 Supabase 驗證：3,684 latest rows / 7 types / 99% 有 delta / daily 7 天 backfill
+### 823 砲戰場景（史實化，參維基「金門炮戰」）
+- `scenarios/kinmen_823_1958.ts`（18 單位）+ 註冊進 registry
+- 引擎對應：reskin `missile_launcher`→岸砲（canEngage domain-agnostic，陸對陸原生可跑）
+- 史實：指揮官葉飛/胡璉、開戰 17:30 / 5.7 萬發 / 趙家驤章傑陣亡、砲群廈門/圍頭/蓮河/大嶝、M55 八吋自走砲、艦中海/臺生/美樂 + 沱江/維源、九二海戰、閃電計畫(美艦護航3浬)、單打雙不打
+- 勝負：hold_area 料羅灣 5 分鐘(藍勝) / destroy 中海艦(紅勝) / eliminate / time_limit
 
-### Collector 改動（cross-repo）
-- `data-collectors/collectors/iot_wra.py` 註解 groundwater 子端點（避重複；歷史 5 年保留 DB）
-
-### 前端 2 新 Layer + 細項 toggle + 圖例
-- **iotWraRiver**：1,634 站河川補強（含預測水位 9 種測項），紫↔cyan delta 著色，timeline 驅動
-- **iotWraStructure**：5 in 1（流量/閘門/堤防/沖刷/揚塵），按 station_type 著色，純 latest snapshot
-- 細項 toggle（即時/預測 + 5 類型，預設全開）
-- LegendPanel +2 段（IoT 河川 delta gradient + IoT 水工結構 5 種類別 + 主要測項說明）
-- boolean 透過 `overlayParams` 0/1 中介（仿 metroPillarVisible pattern）
-
-### 研究文件區（新建 docs/research/）
-- `iot-wra-integration-study.md` — 7 章重疊度分析 + 架構決策 + 方法論
-- `water-layer-cookbook.md` — 12 個故事組合速查（含 4 個 iot 新解鎖故事）
-- CLAUDE.md 加 `docs/research/` 指向
+### 驗證
+- `npx tsc -b` exit 0（多輪）
+- `sampleTrack` 臨時 tsx 單元測試 PASS（船團向西北插值駛入料羅灣）
+- 一致性檢查 PASS（storyboard focus / track key / victory unitId 全 ∈ 18 單位）
+- 期旗 standalone canvas render 確認畫對
+- 瀏覽器（Playwright headless）：流程通、字幕/運鏡/期旗正常、零 pageerror
 
 ## 本次 session commits（atomic）
 
-**mini-taiwan-pulse**（11 個）
-- `feat(iot-wra)` 兩 layer + 細項 toggle + LegendPanel
-- `docs(research)` 新增研究報告區 + 2 篇文件
-- `docs(claude)` CLAUDE.md 指向 docs/research/
-- `memory: append INCIDENTS` +2（IconRailSidebar 漏改 / overlayParams 型別嚴格）
-- `memory: PRINCIPLES` +3（collector 重複檢核 / 一前端兩 sidebar / boolean 0/1 中介）
-- `memory: append PLAYBOOKS` PB-09 + PB-10
-- `memory: GLOSSARY` +5（iot_wra 術語）
-- `memory: update DATA_SCOPE` (+iot_wra 區段)
-- `memory: BACKLOG` +5 done +1 new (BL-7 reservoir_daily_ops 診斷)
-- `memory: append REFLECTIONS` (iot_wra 整合反省)
-- `memory: rewrite STATUS` (本檔)
-
-**gis-platform**（待 cross-repo commit）
-- `063_iot_wra_pre_aggregate.sql`（已手動跑進 Supabase）
-
-**data-collectors**（待 cross-repo commit）
-- `iot_wra.py` 註解 groundwater 子端點
-
-## 本機未 push 累計
-
-- mini-tw：109 commits（98 + 本次 11）
-- gis-platform：5 commits（4 + 本次 1）
-- data-collectors：本次 +1
-- Supabase 已部署：migration 063 已手動跑過（cron 已啟動）
+**尚未 commit**——本次純前端新功能（cinema 引擎 + 823 場景 + flag marker），無 cross-repo / 無 DB / 無 migration。等用戶決定是否 commit + push。
 
 ## 等用戶執行
 
-- [ ] cross-repo commits（gis-platform 063 / data-collectors iot_wra.py）
-- [ ] `git push` × 3 repo
-- [ ] **重啟 data-collectors**（讓 STATION_TYPES 改動生效，停止收 iot groundwater 重複資料）
-- [ ] 瀏覽器驗證：iotWraRiver / iotWraStructure 兩 toggle 視覺 + 細項 toggle + 右下圖例
-- [ ] BL-7 reservoir_daily_ops 04-23 停擺診斷（看 Zeabur log）
+- [ ] **啟動**：`npm run dev` → http://localhost:5173/ →（預設 wargame）→ 戰役模式 → 823 砲戰 → 全局觀察 → 進入戰役 → Esc 關簡報 → 點「紀錄片」
+- [ ] decide commit：本次功能未 commit；要的話建議拆 `feat(wargame-cinema)` + `feat(scenario-823)` + `memory:` 三類
+- [ ] （可選）固化「scenario 一致性檢查」成腳本（storyboard/track/victory ID ∈ units）
+- [ ] （可選）修根 CLAUDE.md「Session 開頭必讀」舊路徑 → 指向 memory/（見 INCIDENTS 2026-06-26）
 
-## 新增規則（PRINCIPLES.md）
+## 新增規則（待 PRINCIPLES.md 定型）
 
-- **Collector 重複度檢核**（⚠ P0，2026-04-26）：不信編號系統，用座標 ST_DWithin 100m + sample 名字驗證；> 90% 配對 = 重複，< 30% = 互補
-- **一前端兩 Sidebar 同步改**（⚠ P0，2026-04-26）：LayerSidebar + IconRailSidebar，漏改 = tsc 過但 toggle 看不到
-- **boolean 透過 overlayParams 一律 0/1 中介**（2026-04-26）：仿 metroPillar3d pattern；動既有型別前先看相同類型 state 怎麼處理
+- **驗證 engine 純函式用 tsx 單元測試**（2026-06-26）：插值/規則/評分寫臨時 .ts import 真模組斷言跑完刪，別靠 dev server + Playwright 截圖計時
+- **紀錄片/overlay HUD 會蓋頂部控制列**（2026-06-26）：headless 測試先設速度再開 HUD
+- **cinema marker 座標覆寫一律 gate**（2026-06-26）：cinemaOn && 命中 track 才覆寫，靜態單位 fallback 引擎真實位置
+- **歷史/寫實場景先 WebFetch 權威來源**（2026-06-26）：人名地名艦名數字落進 briefing+storyboard 再開工
 
 ## 下一步候選（[BACKLOG.md](BACKLOG.md)）
 
@@ -85,7 +56,8 @@
 
 ## 累計狀態快照
 
-- 40 座水庫 / 1,304 雨量站 / 332 河川水位站 / 733 地下水井 / **2,800+ iot_wra 站**
+- **兵棋（?mode=wargame，預設）**：9 場景含 **823 砲戰史實場景**；紀錄片引擎（cinema：storyboard 分鏡 + director flyTo + sampleTrack 航線插值 + canvas 期旗 marker + 雙語字幕 HUD），engine 純函式可 headless（mcp-server）
+- 40 座水庫 / 1,304 雨量站 / 332 河川水位站 / 733 地下水井 / **2,800+ iot_wra 站**（civilian 模式）
 - Timeline 五層同步回放（rain / river / reservoir / groundwater / iotWraRiver）
 - **15 個水資源圖層上線**（9 靜態 backdrop + 6 動態）
 - 監測站視覺 pattern：delta_since_day_start 著色（跨站可比，timeline 撥放動）

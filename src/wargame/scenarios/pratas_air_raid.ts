@@ -123,7 +123,10 @@ const NEUTRAL_UNITS: Unit[] = [
 export const PRATAS_AIR_RAID: Scenario = {
   id: "pratas_air_raid",
   displayName: "東沙空襲 2028",
-  briefing: "紅方戰機編隊從海南方向接近東沙。藍方守備兵力少，正從台灣本島派 F-16V / IDF 增援。",
+  briefing: {
+    zh: "紅方戰機編隊從海南方向接近東沙。藍方守備兵力少，正從台灣本島派 F-16V / IDF 增援。",
+    en: "Red fighter formations approach Pratas Island from Hainan. ROC garrison is thin; F-16V / IDF reinforcements are scrambling from Taiwan main island.",
+  },
   startSimTimeSec: 0,
   durationSec: 1800,
   sides: SIDES,

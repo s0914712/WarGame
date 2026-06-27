@@ -1,0 +1,7 @@
+[mcp_servers.wargame]
+command = "npx"
+args = [
+    "-y",
+    "tsx",
+    "mcp-server/server.ts",
+]

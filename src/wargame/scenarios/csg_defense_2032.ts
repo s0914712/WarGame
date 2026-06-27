@@ -257,7 +257,10 @@ const NEUTRAL_UNITS: Unit[] = [
 export const CSG_DEFENSE_2032: Scenario = {
   id: "csg_defense_2032",
   displayName: "CSG-12 護台 2032",
-  briefing: "美軍 USS Theodore Roosevelt 戰鬥群部署於台灣東部海域，配合 ROC 海空軍應對解放軍大規模兵力。注意紅方 2 枚 DF-26 反艦彈道飛彈威脅航母。",
+  briefing: {
+    zh: "美軍 USS Theodore Roosevelt 戰鬥群部署於台灣東部海域，配合 ROC 海空軍應對解放軍大規模兵力。注意紅方 2 枚 DF-26 反艦彈道飛彈威脅航母。",
+    en: "USS Theodore Roosevelt Carrier Strike Group deployed off eastern Taiwan, joining ROC air-naval forces against large-scale PLA push. Watch for 2 DF-26 anti-ship ballistic missiles targeting the carrier.",
+  },
   startSimTimeSec: 0,
   durationSec: 3600,
   sides: SIDES,

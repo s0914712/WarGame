@@ -270,4 +270,18 @@ App 被 error boundary 接住白畫面。
 
 ---
 
+## 2026-06-26 根 CLAUDE.md「Session 開頭必讀」指向已遷移的 retro 舊路徑
+
+**現象**：照根 `CLAUDE.md` 的「Session 開頭必讀」去讀 `.claude/lessons.md` + `.claude/retrospectives/INDEX.md`，兩者都不存在，撲空浪費 round-trip。
+
+**根因**：retro 系統 2026-04-23 已從 v1（散檔 `lessons.md` + `retrospectives/`）遷到 v2（`memory/REFLECTIONS.md` + `STATUS.md` + `INCIDENTS.md`），舊檔已刪（見 `.claude/README.md` 遷移紀錄），但根 CLAUDE.md 的指向沒同步更新。
+
+**對策**：
+- 根 CLAUDE.md「Session 開頭必讀」段應改指向 `.claude/memory/{STATUS,REFLECTIONS,INCIDENTS}.md`（暫記於此，待修）
+- 在那之前：session 開頭一律以 `.claude/README.md` 的「閱讀順序」為準，不信 CLAUDE.md 的舊路徑
+
+**Long-form（無）**：修正動作小，待下次動 CLAUDE.md 時一併處理。
+
+---
+
 <!-- 追加新事件於此之上 -->

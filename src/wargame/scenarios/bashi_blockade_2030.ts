@@ -183,7 +183,10 @@ const NEUTRAL_UNITS: Unit[] = [
 export const BASHI_BLOCKADE_2030: Scenario = {
   id: "bashi_blockade_2030",
   displayName: "巴士海峽封鎖 2030",
-  briefing: "解放軍試圖封鎖巴士海峽切斷台灣海運線。美軍 SSN + DDG 自菲律賓海進入支援，ROC 南部沿岸 SAM 守備。重點：水下對抗 + 隘口控制。",
+  briefing: {
+    zh: "解放軍試圖封鎖巴士海峽切斷台灣海運線。美軍 SSN + DDG 自菲律賓海進入支援，ROC 南部沿岸 SAM 守備。重點：水下對抗 + 隘口控制。",
+    en: "PLA attempts to blockade the Bashi Channel and cut Taiwan's maritime SLOC. US SSN + DDG enter from the Philippine Sea in support; ROC south-coast SAMs hold defense. Focus: subsurface combat + choke-point control.",
+  },
   startSimTimeSec: 0,
   durationSec: 2400,
   sides: SIDES,

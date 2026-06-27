@@ -341,3 +341,27 @@ export const CORE_ATTRIBUTE_LABELS: Record<keyof UnitCatalogEntry["defaultCore"]
   detectionRangeKm: "偵測距離",
   hpMax: "耐損值",
 };
+
+/** 英文版 — 給 i18n.lang === "en" 用 */
+export const CORE_ATTRIBUTE_LABELS_EN: Record<keyof UnitCatalogEntry["defaultCore"], string> = {
+  rangeKm: "Range",
+  speedKnots: "Speed",
+  movementRangeKm: "Movement",
+  detectionRangeKm: "Detection",
+  hpMax: "HP",
+};
+
+/** 11 個 unit kind 的英文 displayName — 集中在這裡比加 displayNameEn 到每個 catalog entry 簡潔 */
+export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
+  missile_launcher: "Missile Launcher",
+  drone: "Drone",
+  ship_surface: "Surface Ship",
+  submarine: "Submarine",
+  fighter: "Fighter",
+  radar_station: "Radar Station",
+  sam_coastal: "Coastal SAM",
+  mobile_radar: "Mobile Radar",
+  sam_patriot: "Patriot SAM",
+  supply_ship: "Supply Ship",
+  airbase: "Airbase",
+};

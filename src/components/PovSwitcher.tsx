@@ -61,7 +61,7 @@ export function PovSwitcher() {
     <div
       style={{
         position: "absolute",
-        top: 56,
+        top: 64,
         right: 16,
         zIndex: 22,
         padding: "10px 12px",

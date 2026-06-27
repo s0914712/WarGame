@@ -7,6 +7,7 @@ import { BusCity, BUS_CITY_CONFIG, BUS_INTERCITY_ROUTES_JSON } from "../types";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { withLoading } from "../lib/loadingRegistry";
 import { dedupRpc } from "../lib/rpcDebounce";
+import { fetchTdxBusCurrent, tdxConfigured } from "./tdxBusLoader";
 
 // Per-city route cache
 const cityRouteCache = new Map<BusCity, BusRouteData>();
@@ -60,7 +61,10 @@ export async function loadBusRoutes(): Promise<BusRouteData> {
 
 /** 從 Supabase 拉取即時公車位置（25s 內重複呼叫直接複用） */
 export async function fetchBusCurrent(cities: BusCity[]): Promise<BusPosition[]> {
-  if (!supabaseConfigured) return [];
+  // Supabase 未設定時，改用 TDX 即時公車（讓本機 demo 也能看到移動光點）
+  if (!supabaseConfigured) {
+    return tdxConfigured ? fetchTdxBusCurrent(cities) : [];
+  }
   if (cities.length === 0) return [];
 
   const dedupKey = `get_bus_current:${[...cities].sort().join(",")}`;

@@ -1,8 +1,9 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { Play, Pause, Eye, EyeOff } from "lucide-react";
+import { Play, Pause, Eye, EyeOff, Languages } from "lucide-react";
 import { useWargameClock } from "../hooks/useWargameClock";
 import { SIM_RATE_PRESETS } from "../wargame/clock";
 import { scenarioStore } from "../wargame/scenarioStore";
+import { langStore, useLang, t } from "../wargame/i18n/lang";
 
 /**
  * 左上 T+ 顯示 + 播放 / 暫停 / 速率切換。
@@ -16,6 +17,7 @@ function getFowSnapshot(): boolean {
 export function WargameClockHUD() {
   const { tPlus, rate, isPaused, toggle, setRate } = useWargameClock();
   const fogOfWar = useSyncExternalStore(scenarioStore.subscribe, getFowSnapshot, getFowSnapshot);
+  const lang = useLang();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -58,7 +60,7 @@ export function WargameClockHUD() {
     >
       <button
         onClick={toggle}
-        title={isPaused ? "繼續（Space）" : "暫停（Space）"}
+        title={(isPaused ? t("Resume") : t("Pause")) + "（Space）"}
         className="wg-btn"
         style={{
           width: 42,
@@ -118,9 +120,32 @@ export function WargameClockHUD() {
             letterSpacing: 1,
           }}
         >
-          PAUSED
+          {t("PAUSED")}
         </span>
       )}
+
+      {/* 語言切換 */}
+      <button
+        onClick={() => langStore.toggle()}
+        title={lang === "zh" ? "Switch to English" : "切換為中文"}
+        className="wg-btn"
+        style={{
+          marginLeft: 4,
+          padding: "6px 10px",
+          borderRadius: 4,
+          border: "1px solid rgba(148, 163, 184, 0.4)",
+          background: "rgba(30, 41, 59, 0.4)",
+          color: "#cbd5e1",
+          fontSize: 17,
+          fontWeight: 600,
+          cursor: "pointer",
+          fontFamily: "inherit",
+          display: "flex", alignItems: "center", gap: 5,
+        }}
+      >
+        <Languages size={14} />
+        {lang === "zh" ? "中" : "EN"}
+      </button>
 
       {/* 戰爭迷霧切換 */}
       <button

@@ -8,6 +8,7 @@ import { addAllOverlays, updateAllOverlayThemes, setOverlayVisible } from "./ove
 import { ensureH3Layers } from "./h3LayerFactory";
 import { ensurePopCountLayers, ensureIndicatorsLayers } from "./demographicsLayerFactory";
 import { ensureYoubikeLayers } from "./youbikeLayerFactory";
+import { createPhotoreal3DTiles, type Photoreal3DHandle } from "./photoreal3dTilesLayer";
 
 interface MapViewProps {
   preset: CameraPreset;
@@ -52,6 +53,7 @@ export function MapView({ preset, styleUrl, flights, renderMode, isDarkTheme = t
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const readyRef = useRef(false);
+  const photoreal3dRef = useRef<Photoreal3DHandle | null>(null);
 
   const onMapReadyRef = useRef(onMapReady);
   const presetRef = useRef(preset);
@@ -127,6 +129,8 @@ export function MapView({ preset, styleUrl, flights, renderMode, isDarkTheme = t
     map.on("load", () => {
       mapRef.current = map;
       readyRef.current = true;
+      // dev-only：方便自動化測試/除錯直接拿到 map（prod build 不會帶）
+      if (import.meta.env.DEV) (window as unknown as { __map?: mapboxgl.Map }).__map = map;
       ensureH3Layers(map);
       ensurePopCountLayers(map);
       ensureIndicatorsLayers(map);
@@ -135,12 +139,27 @@ export function MapView({ preset, styleUrl, flights, renderMode, isDarkTheme = t
     });
 
     return () => {
+      photoreal3dRef.current?.remove();
+      photoreal3dRef.current = null;
       map.remove();
       mapRef.current = null;
       readyRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 實景 3D Tiles 底圖（lazy create-on-enable / remove-on-disable）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    const on = layerVisibility.photoreal3d;
+    if (on && !photoreal3dRef.current) {
+      photoreal3dRef.current = createPhotoreal3DTiles(map);
+    } else if (!on && photoreal3dRef.current) {
+      photoreal3dRef.current.remove();
+      photoreal3dRef.current = null;
+    }
+  }, [layerVisibility]);
 
   // 切換底圖樣式
   useEffect(() => {

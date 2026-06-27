@@ -12,6 +12,7 @@ import { ChevronDown, Swords } from "lucide-react";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { wargameClock } from "../wargame/clock";
 import { SCENARIO_REGISTRY, findScenario } from "../wargame/scenarios/registry";
+import { t, useLang } from "../wargame/i18n/lang";
 
 interface Props {
   map: MapboxMap | null;
@@ -23,6 +24,7 @@ function getScenarioName(): string {
 
 export function ScenarioPicker({ map }: Props) {
   useSyncExternalStore(scenarioStore.subscribe, getScenarioName, getScenarioName);
+  const lang = useLang();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -83,7 +85,7 @@ export function ScenarioPicker({ map }: Props) {
         }}
       >
         <Swords size={14} color="#fbbf24" />
-        <span style={{ color: "#94a3b8", fontSize: 15 }}>場景</span>
+        <span style={{ color: "#94a3b8", fontSize: 15 }}>{t("Scenario")}</span>
         <span style={{ fontWeight: 600 }}>{getScenarioName()}</span>
         <ChevronDown size={14} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
@@ -144,8 +146,12 @@ export function ScenarioPicker({ map }: Props) {
                     </span>
                   ))}
                 </div>
-                <div style={{ fontSize: 15, color: "#64748b", marginTop: 4, lineHeight: 1.45 }}>
-                  {entry.scenario.briefing}
+                <div style={{ fontSize: 15, color: "#64748b", marginTop: 4, lineHeight: 1.45,
+                              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                              overflow: "hidden" }}>
+                  {typeof entry.scenario.briefing === "string"
+                    ? entry.scenario.briefing
+                    : entry.scenario.briefing[lang]}
                 </div>
               </button>
             );

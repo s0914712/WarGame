@@ -459,6 +459,7 @@ export interface LayerVisibility {
   groundwaterWells: boolean;
   iotWraRiver: boolean;
   iotWraStructure: boolean;
+  photoreal3d: boolean;
 }
 
 // ── 空氣品質 ──

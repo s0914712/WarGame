@@ -135,7 +135,10 @@ const NEUTRAL_UNITS: Unit[] = [
 export const KINMEN_2027: Scenario = {
   id: "kinmen_2027",
   displayName: "金門離島防衛 2027",
-  briefing: "紅方兩棲艦群自廈門方向接近金門，藍方守備兵力進入備戰狀態。距離極近，戰況短促。",
+  briefing: {
+    zh: "紅方兩棲艦群自廈門方向接近金門，藍方守備兵力進入備戰狀態。距離極近，戰況短促。",
+    en: "Red amphibious group approaches Kinmen from Xiamen. ROC garrison goes to combat readiness. Very close range — fast, sharp engagement.",
+  },
   startSimTimeSec: 0,
   durationSec: 1800,
   sides: SIDES,

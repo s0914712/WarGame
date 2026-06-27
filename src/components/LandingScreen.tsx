@@ -10,17 +10,19 @@ import { useState, useSyncExternalStore } from "react";
 import type { Map as MapboxMap } from "mapbox-gl";
 import {
   Swords, ClipboardList, GraduationCap, ChevronRight, Globe,
-  ArrowLeft, Play,
+  ArrowLeft, Play, Clapperboard,
 } from "lucide-react";
 import { uiStore } from "../wargame/uiStore";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { viewStore, type ActiveView } from "../wargame/viewStore";
 import { editorStore } from "../wargame/editor/editorStore";
 import { wargameClock } from "../wargame/clock";
+import { cinemaDirector } from "../wargame/cinema/director";
 import { SCENARIO_REGISTRY } from "../wargame/scenarios/registry";
 import { EMPTY_SCENARIO } from "../wargame/scenarios/empty";
 import { SIDE_COLORS } from "../wargame/symbology/sideColors";
 import { launchTutorial } from "./TutorialOverlay";
+import { useLang, langStore } from "../wargame/i18n/lang";
 
 interface Props {
   map: MapboxMap | null;
@@ -32,6 +34,7 @@ function isOpen() { return uiStore.isLandingOpen(); }
 
 export function LandingScreen({ map }: Props) {
   const open = useSyncExternalStore(uiStore.subscribe, isOpen, isOpen);
+  const lang = useLang();
   const [pane, setPane] = useState<Pane>("main");
   const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null);
   const [selectedSide, setSelectedSide] = useState<ActiveView>("blue");
@@ -66,6 +69,23 @@ export function LandingScreen({ map }: Props) {
     setTimeout(() => launchTutorial(), 100);
   };
 
+  // ── 戰史紀錄片直入（823 砲戰）：載場景 → 觀察視角 → 跳過 briefing → 自動運鏡 + 播放 ──
+  const startDocumentary = () => {
+    const entry = SCENARIO_REGISTRY.find((e) => e.scenario.id === "kinmen_823_1958");
+    if (!entry) return;
+    uiStore.setSuppressBriefingOnce();
+    wargameClock.reset();
+    scenarioStore.loadScenario(entry.scenario);
+    viewStore.setActiveView("spectator");
+    uiStore.setLandingOpen(false);
+    // 等場景套用 + 地圖就緒，啟動運鏡並自動播放（30x，旁白可讀）
+    setTimeout(() => {
+      cinemaDirector.start(map);
+      wargameClock.setRate(30);
+      wargameClock.resume();
+    }, 250);
+  };
+
   return (
     <div
       style={{
@@ -97,12 +117,15 @@ export function LandingScreen({ map }: Props) {
           padding: "40px 48px 28px",
           background: "linear-gradient(135deg, rgba(59, 130, 246, 0.18), transparent)",
           borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
+          position: "relative",
         }}>
+          {/* 右上角語言選擇 — 開頭即可選 */}
+          <LangPicker />
           <div style={{ fontSize: 17, color: "#60a5fa", letterSpacing: 3, fontWeight: 600 }}>
             WARGAME PLATFORM
           </div>
           <div style={{ fontSize: 42, fontWeight: 800, marginTop: 8, letterSpacing: 1 }}>
-            台灣兵棋推演平台
+            {lang === "en" ? "Taiwan Wargame Platform" : "台灣兵棋推演平台"}
           </div>
           <div style={{ fontSize: 20, color: "#94a3b8", marginTop: 8 }}>
             Mini Taiwan Pulse · Wargame Edition
@@ -116,6 +139,7 @@ export function LandingScreen({ map }: Props) {
               onCampaign={() => setPane("campaign")}
               onPlanMode={startPlanMode}
               onTutorial={startTutorial}
+              onDocumentary={startDocumentary}
             />
           )}
           {pane === "campaign" && (
@@ -135,35 +159,87 @@ export function LandingScreen({ map }: Props) {
 }
 
 // ── 主選單 ──
-function MainPane({ onCampaign, onPlanMode, onTutorial }: {
+function MainPane({ onCampaign, onPlanMode, onTutorial, onDocumentary }: {
   onCampaign: () => void; onPlanMode: () => void; onTutorial: () => void;
+  onDocumentary: () => void;
 }) {
+  const lang = useLang();
   return (
     <div style={{
-      display: "flex", flexDirection: "column", gap: 20,
-      height: "100%", justifyContent: "center",
+      display: "flex", flexDirection: "column", gap: 16,
+      paddingBottom: 8,
     }}>
       <BigChoice
+        icon={<Clapperboard size={56} color="#d97757" />}
+        title={lang === "en" ? "War History Documentary · 823 Bombardment" : "戰史紀錄片 · 823 砲戰"}
+        desc={lang === "en"
+          ? "One click into the 1958 Kinmen bombardment: auto cinematic camera + bilingual narration over the real battle, 1958-era flags. Press Space to pause, drag to look around."
+          : "一鍵進入 1958 金門 823 砲戰：自走運鏡 + 雙語旁白重現史實戰役、1958 期旗 marker。Space 暫停、拖曳地圖可自由觀看。"}
+        accent="#d97757"
+        onClick={onDocumentary}
+      />
+      <BigChoice
         icon={<Swords size={56} color="#fbbf24" />}
-        title="戰役模式"
-        desc="挑選 5 個預設場景之一，選擇扮演的陣營（藍方 ROC / 紅方 PLA / 全局觀察），進入推演。"
+        title={lang === "en" ? "Scenario Mode" : "戰役模式"}
+        desc={lang === "en"
+          ? "Pick one of the preset scenarios, choose your side (Blue ROC / Red PLA / Spectator), enter the sim."
+          : "挑選 9 個預設場景之一，選擇扮演的陣營（藍方 ROC / 紅方 PLA / 全局觀察），進入推演。"}
         accent="#fbbf24"
         onClick={onCampaign}
       />
       <BigChoice
         icon={<ClipboardList size={56} color="#fb923c" />}
-        title="Plan Mode（自由建立）"
-        desc="從空白戰場開始，自由放置 9 種兵棋單位、設定屬性、規劃航線。可匯出為 JSON 場景。"
+        title={lang === "en" ? "Plan Mode (free build)" : "Plan Mode（自由建立）"}
+        desc={lang === "en"
+          ? "Start from an empty battlefield. Place 9 unit kinds, edit attributes, route waypoints, export as JSON scenario."
+          : "從空白戰場開始，自由放置 9 種兵棋單位、設定屬性、規劃航線。可匯出為 JSON 場景。"}
         accent="#fb923c"
         onClick={onPlanMode}
       />
       <BigChoice
         icon={<GraduationCap size={56} color="#60a5fa" />}
-        title="介紹 / 教學"
-        desc="8 步 walkthrough 帶你看完所有 UI 元素：時鐘 / 戰況 / Plan Mode / LLM 介接 等。"
+        title={lang === "en" ? "Tutorial" : "介紹 / 教學"}
+        desc={lang === "en"
+          ? "8-step walkthrough covering all UI: clock / engagement / Plan Mode / LLM bridge etc."
+          : "8 步 walkthrough 帶你看完所有 UI 元素：時鐘 / 戰況 / Plan Mode / LLM 介接 等。"}
         accent="#60a5fa"
         onClick={onTutorial}
       />
+    </div>
+  );
+}
+
+/** 右上角語言切換 — 兩顆大按鈕「中 | EN」 */
+function LangPicker() {
+  const lang = useLang();
+  const baseStyle: React.CSSProperties = {
+    padding: "6px 14px", borderRadius: 6,
+    fontSize: 16, fontWeight: 600, cursor: "pointer",
+    fontFamily: "inherit",
+    border: "1px solid rgba(148, 163, 184, 0.4)",
+  };
+  return (
+    <div style={{
+      position: "absolute", top: 16, right: 20,
+      display: "flex", gap: 6, alignItems: "center",
+    }}>
+      <span style={{ fontSize: 13, color: "#94a3b8", marginRight: 4 }}>語言 / Language</span>
+      <button
+        onClick={() => langStore.set("zh")}
+        style={{
+          ...baseStyle,
+          background: lang === "zh" ? "#3b82f6" : "rgba(30, 41, 59, 0.6)",
+          color: lang === "zh" ? "#fff" : "#cbd5e1",
+        }}
+      >中文</button>
+      <button
+        onClick={() => langStore.set("en")}
+        style={{
+          ...baseStyle,
+          background: lang === "en" ? "#3b82f6" : "rgba(30, 41, 59, 0.6)",
+          color: lang === "en" ? "#fff" : "#cbd5e1",
+        }}
+      >English</button>
     </div>
   );
 }
@@ -176,8 +252,8 @@ function BigChoice({ icon, title, desc, accent, onClick }: {
       onClick={onClick}
       className="wg-btn"
       style={{
-        display: "flex", alignItems: "center", gap: 28,
-        padding: "28px 32px",
+        display: "flex", alignItems: "center", gap: 24,
+        padding: "20px 30px",
         background: "rgba(30, 41, 59, 0.6)",
         border: `1px solid ${accent}40`,
         borderLeft: `6px solid ${accent}`,

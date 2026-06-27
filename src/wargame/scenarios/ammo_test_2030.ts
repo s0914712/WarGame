@@ -169,7 +169,10 @@ const RED_UNITS: Unit[] = [
 export const AMMO_TEST_2030: Scenario = {
   id: "ammo_test_2030",
   displayName: "防空彈藥消耗測試 2030",
-  briefing: "藍方 2 PAC-3 + 2 F-16V + 2 海岸 SAM 對抗 3 波 12 單位紅方來襲。測試彈藥耗用 + 補給艦 RAS 效果。建議 30× 加速觀察。",
+  briefing: {
+    zh: "藍方 2 PAC-3 + 2 F-16V + 2 海岸 SAM 對抗 3 波 12 單位紅方來襲。測試彈藥耗用 + 補給艦 RAS 效果。建議 30× 加速觀察。",
+    en: "Blue 2 PAC-3 + 2 F-16V + 2 coastal SAMs vs 3 waves of 12 red inbound units. Tests ammo consumption + supply ship RAS replenishment. Recommend 30× sim rate to observe clearly.",
+  },
   startSimTimeSec: 0,
   durationSec: 1800,
   sides: SIDES,

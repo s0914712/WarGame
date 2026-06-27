@@ -11,6 +11,8 @@ import { CSG_DEFENSE_2032 } from "./csg_defense_2032";
 import { BASHI_BLOCKADE_2030 } from "./bashi_blockade_2030";
 import { AMMO_TEST_2030 } from "./ammo_test_2030";
 import { INVASION_H_HOUR_2030 } from "./invasion_h_hour_2030";
+import { IRAN_HORMUZ_2030 } from "./iran_hormuz_2030";
+import { KINMEN_823_1958 } from "./kinmen_823_1958";
 
 export interface ScenarioEntry {
   scenario: Scenario;
@@ -55,6 +57,16 @@ export const SCENARIO_REGISTRY: ScenarioEntry[] = [
     scenario: INVASION_H_HOUR_2030,
     shortDescription: "三線兩棲登陸 + 彈道飛彈壓制 · ~70 單位 · 90 分鐘",
     tags: ["高難度", "登島", "ROC", "USN", "PLA", "全要素"],
+  },
+  {
+    scenario: IRAN_HORMUZ_2030,
+    shortDescription: "荷莫茲海峽危機 · 不對稱戰 · 反艦彈道 / IRGCN 快艇 / Shahed 自殺無人機 · 90 分鐘",
+    tags: ["中東", "Iran", "USN", "不對稱", "反艦彈道"],
+  },
+  {
+    scenario: KINMEN_823_1958,
+    shortDescription: "823 砲戰運補突圍 · 廈門/圍頭岸砲 vs 金門 · 九二海戰 + 中海/臺生衝料羅灣 · 史實場景 · 40 分鐘",
+    tags: ["歷史", "1958", "ROC", "PLA", "運補", "岸砲", "九二海戰"],
   },
 ];
 

@@ -6,7 +6,35 @@
 import type { SideId } from "../types";
 import type { LlmCommandResult } from "./schema";
 
-export type AiMode = "llm" | "scripted";
+export type AiMode = "llm" | "scripted" | "scripted_v2";
+
+/**
+ * Scripted AI v2 (QMIX-inspired) 的可調參數。
+ * 6 個高階旋鈕 → 內部公式 weights。Default 對應原本 hardcode 值。
+ */
+export interface ScriptedV2Params {
+  /** 攻擊性 0–2：threat_weight × range_bonus。↑ 推進更深 / 更願意吃對方火力 */
+  aggression: number;
+  /** HVU 優先 0–4：CVN/airbase/supply 加分。↑ 集火高價值目標 */
+  hvuPriority: number;
+  /** 協調強度 0–1：每多 1 隊伍打同目標的 penalty。↑ 分散打 / ↓ 群毆 */
+  coordination: number;
+  /** 收尾傾向 0–1.5：HP<40% 加分。↑ 優先打殘血 */
+  finishing: number;
+  /** 推進到射程的 % 0.5–1.0：0.8 = 推到 80% 射程處（留邊際） */
+  approachPct: number;
+  /** 自保 HP 門檻 0–0.5：HP 低於此 % 就 hold（不再衝） */
+  selfPreserve: number;
+}
+
+export const DEFAULT_V2_PARAMS: ScriptedV2Params = {
+  aggression: 1.0,
+  hvuPriority: 2.0,
+  coordination: 0.4,
+  finishing: 0.6,
+  approachPct: 0.80,
+  selfPreserve: 0.25,
+};
 
 export interface AiConfig {
   enabled: boolean;
@@ -17,6 +45,7 @@ export interface AiConfig {
   intervalSimSec: number; // 兩次決策之間的最短 sim-time 間隔
   sideId: SideId;         // AI 控制哪個陣營
   temperature: number;
+  v2Params: ScriptedV2Params;  // Scripted v2 (QMIX-inspired) 的可調 weights
 }
 
 export interface AiStatus {
@@ -57,6 +86,7 @@ const DEFAULT_CONFIG: AiConfig = {
   intervalSimSec: 60,
   sideId: "red",
   temperature: 0.5,
+  v2Params: { ...DEFAULT_V2_PARAMS },
 };
 
 function loadFromStorage(): AiConfig {
@@ -77,6 +107,9 @@ function loadFromStorage(): AiConfig {
       if (typeof v === "string" && v.trim() === "") continue;
       merged[k] = v;
     }
+    // 確保 v2Params 至少有預設（舊 localStorage 沒這欄）+ 缺欄補上
+    const stored = (merged.v2Params ?? {}) as Partial<ScriptedV2Params>;
+    merged.v2Params = { ...DEFAULT_V2_PARAMS, ...stored };
     return merged as unknown as AiConfig;
   } catch {
     return envMerged;

@@ -13,6 +13,10 @@ import type { Map as MapboxMap } from "mapbox-gl";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { viewStore } from "../wargame/viewStore";
 import { iconNameOf } from "../wargame/symbology/sidc";
+import { flagIconNameOf } from "../wargame/symbology/flagMarkers";
+import { cinemaDirector } from "../wargame/cinema/director";
+import { getCinemaTrack } from "../wargame/cinema/cinemaTracks";
+import { sampleTrack } from "../wargame/cinema/track";
 
 const SOURCE_ID = "wargame-units-src";
 export const SYMBOL_LAYER_ID = "wargame-units-symbol";
@@ -44,12 +48,15 @@ function hpColorOf(frac: number): string {
 }
 
 function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, FeatureProps> {
-  const { units, scenario } = scenarioStore.getState();
+  const { units, scenario, simTimeSec } = scenarioStore.getState();
   const selectedId = scenarioStore.getSelectedUnitId();
   const fogStrict = scenarioStore.isFogOfWar();
   const activeSide = viewStore.getActiveSideId();   // null = spectator
   const playerSide = activeSide ? scenario.sides.find((s) => s.id === activeSide) : null;
   const hostileToActive = playerSide?.isHostileTo ?? [];
+
+  // 紀錄片模式：marker 換成 1958 期旗（無對應旗的陣營 fallback 回軍標）
+  const cinemaOn = cinemaDirector.isActive();
 
   const features: GeoJSON.Feature<GeoJSON.Point, FeatureProps>[] = [];
   for (const u of Object.values(units)) {
@@ -63,11 +70,24 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
     if (visible === 0 && fogStrict) continue;
 
     const hpFrac = u.hpCurrent / u.core.hpMax;
+
+    // 紀錄片模式：有作者軌跡的單位 → sampleTrack 內插覆寫座標（平滑運鏡，與引擎脫鉤）；
+    // 其餘單位（岸砲 / 觀測所）fallback 回引擎真實位置。
+    let lng = u.position.lng;
+    let lat = u.position.lat;
+    if (cinemaOn) {
+      const track = getCinemaTrack(scenario.id, u.id);
+      if (track) {
+        const pose = sampleTrack(track, simTimeSec);
+        if (pose) { lng = pose.lng; lat = pose.lat; }
+      }
+    }
+
     features.push({
       type: "Feature",
       properties: {
         unitId: u.id,
-        icon: iconNameOf(u.kind, u.sideId),
+        icon: (cinemaOn && flagIconNameOf(u.sideId)) || iconNameOf(u.kind, u.sideId),
         callsign: u.callsign,
         selected: u.id === selectedId,
         visible,
@@ -75,7 +95,7 @@ function buildFeatureCollection(): GeoJSON.FeatureCollection<GeoJSON.Point, Feat
         hpColor: hpColorOf(hpFrac),
         hpText: `${u.hpCurrent}/${u.core.hpMax}`,
       },
-      geometry: { type: "Point", coordinates: [u.position.lng, u.position.lat] },
+      geometry: { type: "Point", coordinates: [lng, lat] },
     });
   }
   return { type: "FeatureCollection", features };
@@ -169,9 +189,10 @@ export function attachWargameSymbolLayer(map: MapboxMap): () => void {
 
   const unsub1 = scenarioStore.subscribe(refresh);
   const unsub2 = viewStore.subscribe(refresh);     // POV 切換時重畫
+  const unsub3 = cinemaDirector.subscribe(refresh); // 紀錄片開關 → 軍標 ⇄ 期旗
 
   return () => {
-    unsub1(); unsub2();
+    unsub1(); unsub2(); unsub3();
     if (map.getLayer(HPBAR_LAYER_ID)) map.removeLayer(HPBAR_LAYER_ID);
     if (map.getLayer(LABEL_LAYER_ID)) map.removeLayer(LABEL_LAYER_ID);
     if (map.getLayer(SYMBOL_LAYER_ID)) map.removeLayer(SYMBOL_LAYER_ID);

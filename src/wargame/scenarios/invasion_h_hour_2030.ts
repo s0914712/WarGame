@@ -424,7 +424,10 @@ const NEUTRAL_UNITS: Unit[] = [
 export const INVASION_H_HOUR_2030: Scenario = {
   id: "invasion_h_hour_2030",
   displayName: "H 時 — 共軍登島作戰 2030",
-  briefing: "解放軍三線兩棲艦群（13 艦）同時逼近台灣西部三處登陸區（桃園、台中、台南），含 8 J-20 + 4 J-16 制空、3 SSN 潛伏、8 彈道飛彈壓制。藍方全面動員 + 美軍 4 單位介入。高難度全要素戰場。",
+  briefing: {
+    zh: "解放軍三線兩棲艦群（13 艦）同時逼近台灣西部三處登陸區（桃園、台中、台南），含 8 J-20 + 4 J-16 制空、3 SSN 潛伏、8 彈道飛彈壓制。藍方全面動員 + 美軍 4 單位介入。高難度全要素戰場。",
+    en: "PLA three-axis amphibious task force (13 ships) simultaneously approaches Taiwan's western landing zones (Taoyuan, Taichung, Tainan). Includes 8 J-20 + 4 J-16 air superiority, 3 SSN lurking, 8 ballistic missiles for suppression. Blue full mobilization + 4 USN assets engaged. Highest difficulty, all-elements battlefield.",
+  },
   startSimTimeSec: 0,
   durationSec: 5400,    // 90 分鐘
   sides: SIDES,

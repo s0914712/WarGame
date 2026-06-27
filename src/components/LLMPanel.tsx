@@ -9,11 +9,12 @@ import { buildStateExport } from "../wargame/llm/exportState";
 import { applyLlmCommands } from "../wargame/llm/applyCommands";
 import type { LlmCommandResult } from "../wargame/llm/schema";
 import { SCHEMA_DOC } from "../wargame/llm/schemaDoc";
-import { aiConfigStore, isUsingEnvDefaults } from "../wargame/llm/aiConfig";
+import { aiConfigStore, isUsingEnvDefaults, DEFAULT_V2_PARAMS, type ScriptedV2Params } from "../wargame/llm/aiConfig";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { callLlm } from "../wargame/llm/aiClient";
 import { computeMatchScore } from "../wargame/sim/matchScore";
 import { leaderboardStore } from "../wargame/llm/leaderboard";
+import { t, useLang } from "../wargame/i18n/lang";
 
 // Apertis 統一 endpoint preset — 一個 base URL / API key，model 切換即可比 3 個
 const APERTIS_ENDPOINT_DEV = "/llm-proxy/v1/chat/completions";   // Vite proxy
@@ -28,6 +29,7 @@ interface Props {
 type Tab = "state" | "commands" | "schema" | "adversary" | "scoreboard";
 
 export function LLMPanel({ open, onClose }: Props) {
+  useLang();  // re-render on language toggle
   const [tab, setTab] = useState<Tab>("state");
   const [commandsText, setCommandsText] = useState("");
   const [result, setResult] = useState<LlmCommandResult | null>(null);
@@ -80,7 +82,7 @@ export function LLMPanel({ open, onClose }: Props) {
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 22, fontWeight: 600 }}>LLM 介接</span>
+            <span style={{ fontSize: 22, fontWeight: 600 }}>{t("LLM Bridge")}</span>
             <span style={{ fontSize: 15, color: "#94a3b8" }}>
               wargame v1 protocol
             </span>
@@ -98,25 +100,25 @@ export function LLMPanel({ open, onClose }: Props) {
         <div style={{
           display: "flex", borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
         }}>
-          {(["state", "commands", "schema", "adversary", "scoreboard"] as Tab[]).map((t) => (
+          {(["state", "commands", "schema", "adversary", "scoreboard"] as Tab[]).map((tabId) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={tabId}
+              onClick={() => setTab(tabId)}
               style={{
                 flex: 1, padding: "10px 16px",
-                background: t === tab ? "rgba(59, 130, 246, 0.12)" : "transparent",
-                color: t === tab ? "#60a5fa" : "#94a3b8",
+                background: tabId === tab ? "rgba(59, 130, 246, 0.12)" : "transparent",
+                color: tabId === tab ? "#60a5fa" : "#94a3b8",
                 border: "none",
-                borderBottom: t === tab ? "2px solid #3b82f6" : "2px solid transparent",
-                fontSize: 17, fontWeight: t === tab ? 600 : 400,
+                borderBottom: tabId === tab ? "2px solid #3b82f6" : "2px solid transparent",
+                fontSize: 17, fontWeight: tabId === tab ? 600 : 400,
                 cursor: "pointer",
               }}
             >
-              {t === "state" && "1. 當前狀態"}
-              {t === "commands" && "2. 套用指令"}
-              {t === "schema" && "3. Schema"}
-              {t === "adversary" && "4. 🤖 自動駕駛"}
-              {t === "scoreboard" && "5. 🏆 比分"}
+              {tabId === "state" && `1. ${t("Current State")}`}
+              {tabId === "commands" && `2. ${t("Apply Commands")}`}
+              {tabId === "schema" && `3. ${t("Schema")}`}
+              {tabId === "adversary" && `4. 🤖 ${t("AI Autopilot")}`}
+              {tabId === "scoreboard" && `5. 🏆 ${t("Scoreboard")}`}
             </button>
           ))}
         </div>
@@ -313,8 +315,9 @@ function AdversaryTab() {
             onChange={(e) => aiConfigStore.updateConfig({ mode: e.target.value as typeof cfg.mode })}
             style={inputStyle}
           >
-            <option value="llm">LLM（呼叫 API）</option>
-            <option value="scripted">Scripted（純規則，免 API）</option>
+            <option value="llm">LLM（呼叫 API / LLM API）</option>
+            <option value="scripted">Scripted v1（greedy nearest / basic）</option>
+            <option value="scripted_v2">Scripted v2 QMIX-inspired（中央分配 + 角色 / centralized）</option>
           </select>
         </div>
         <div style={{ flex: 1 }}>
@@ -431,6 +434,9 @@ function AdversaryTab() {
       </div>
       </>}
 
+      {/* Scripted v2 (QMIX-inspired) 可調參數 */}
+      {cfg.mode === "scripted_v2" && <V2ParamsPanel />}
+
       {/* 通用：呼叫間隔 */}
       <div>
         <div style={{ fontSize: 15, color: "#94a3b8", marginBottom: 4 }}>
@@ -443,9 +449,9 @@ function AdversaryTab() {
           style={{ width: "100%" }}
         />
         <div style={{ fontSize: 14, color: "#64748b", marginTop: 2 }}>
-          {cfg.mode === "scripted"
-            ? "腳本模式可設低（5-30 sec），回應快"
-            : "LLM 模式建議 60+ sec，避免 API rate limit"}
+          {cfg.mode === "llm"
+            ? "LLM 模式建議 60+ sec，避免 API rate limit"
+            : "腳本模式可設低（5-30 sec），回應快"}
         </div>
       </div>
 
@@ -516,6 +522,77 @@ function AdversaryTab() {
   );
 }
 
+// ── Scripted v2 (QMIX-inspired) 可調參數面板 ─────────────
+function V2ParamsPanel() {
+  useSyncExternalStore(aiConfigStore.subscribe, aiConfigStore.getConfig, aiConfigStore.getConfig);
+  const p = aiConfigStore.getConfig().v2Params;
+  const set = (patch: Partial<ScriptedV2Params>) =>
+    aiConfigStore.updateConfig({ v2Params: { ...p, ...patch } });
+
+  // 6 sliders metadata
+  const sliders: Array<{
+    key: keyof ScriptedV2Params; label: string; hint: string;
+    min: number; max: number; step: number;
+  }> = [
+    { key: "aggression",    label: "攻擊性 / Aggression",    hint: "↑ 推進更深 / 更願吃對方火力",
+      min: 0,    max: 2,    step: 0.1 },
+    { key: "hvuPriority",   label: "HVU 優先 / HVU Priority", hint: "CVN/airbase/supply 加分。↑ 集火高價值",
+      min: 0,    max: 4,    step: 0.2 },
+    { key: "coordination",  label: "協調強度 / Coordination", hint: "↑ 分散打 / ↓ 群毆同目標",
+      min: 0,    max: 1,    step: 0.05 },
+    { key: "finishing",     label: "收尾傾向 / Finishing",    hint: "↑ 優先打殘血（HP<40%）",
+      min: 0,    max: 1.5,  step: 0.1 },
+    { key: "approachPct",   label: "推進到射程的 % / Approach", hint: "0.8 = 推到 80% 射程處留邊際",
+      min: 0.5,  max: 1.0,  step: 0.05 },
+    { key: "selfPreserve",  label: "自保 HP 門檻 / Self-preserve", hint: "HP 低於此就 hold（不再衝）",
+      min: 0,    max: 0.5,  step: 0.025 },
+  ];
+
+  return (
+    <div style={{
+      padding: 12, background: "rgba(99, 102, 241, 0.08)",
+      border: "1px solid rgba(99, 102, 241, 0.3)", borderRadius: 6,
+      display: "flex", flexDirection: "column", gap: 10,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 16, fontWeight: 600, color: "#a5b4fc" }}>
+          ⚙ v2 QMIX-inspired utility 參數
+        </span>
+        <button
+          onClick={() => set({ ...DEFAULT_V2_PARAMS })}
+          style={{
+            padding: "3px 10px", background: "rgba(148, 163, 184, 0.15)",
+            color: "#cbd5e1", border: "1px solid rgba(148, 163, 184, 0.3)",
+            borderRadius: 4, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+          }}
+        >重設為預設</button>
+      </div>
+
+      {sliders.map((s) => (
+        <div key={s.key}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 2 }}>
+            <span style={{ color: "#cbd5e1" }}>{s.label}</span>
+            <span style={{ color: "#e2e8f0", fontFamily: "ui-monospace, monospace" }}>
+              {p[s.key].toFixed(s.step < 0.05 ? 3 : 2)}
+            </span>
+          </div>
+          <input
+            type="range" min={s.min} max={s.max} step={s.step}
+            value={p[s.key]}
+            onChange={(e) => set({ [s.key]: Number(e.target.value) } as Partial<ScriptedV2Params>)}
+            style={{ width: "100%", accentColor: "#6366f1" }}
+          />
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 1 }}>{s.hint}</div>
+        </div>
+      ))}
+
+      <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.4, marginTop: 4 }}>
+        u = threat×aggression + hvu + role + range + finish − dist×0.7 − assigned×coordination
+      </div>
+    </div>
+  );
+}
+
 // ── Tab: Scoreboard（多模型對戰比分） ───────────────────
 function ScoreboardTab() {
   // 訂閱 scenarioStore（state 變即時更新分數）+ leaderboardStore
@@ -530,7 +607,9 @@ function ScoreboardTab() {
 
   const handleRecord = () => {
     leaderboardStore.add({
-      model: cfg.mode === "scripted" ? `scripted (${cfg.sideId})` : `${cfg.model} (${cfg.sideId})`,
+      model: cfg.mode === "scripted" ? `scripted-v1 (${cfg.sideId})`
+           : cfg.mode === "scripted_v2" ? `scripted-v2-qmix (${cfg.sideId})`
+           : `${cfg.model} (${cfg.sideId})`,
       scenarioId: state.scenario.id,
       total: score.total,
       breakdown: score,
@@ -550,7 +629,11 @@ function ScoreboardTab() {
         <div style={{ fontSize: 14, color: "#94a3b8" }}>當前場景</div>
         <div style={{ fontSize: 17, fontWeight: 600 }}>{state.scenario.displayName}</div>
         <div style={{ fontSize: 14, color: "#94a3b8", marginTop: 2 }}>
-          AI 控制：{cfg.sideId} · Model：<code style={{ color: "#a5b4fc" }}>{cfg.mode === "scripted" ? "scripted" : cfg.model}</code>
+          AI 控制：{cfg.sideId} · Model：<code style={{ color: "#a5b4fc" }}>
+            {cfg.mode === "scripted" ? "scripted-v1"
+             : cfg.mode === "scripted_v2" ? "scripted-v2-qmix"
+             : cfg.model}
+          </code>
         </div>
       </div>
 

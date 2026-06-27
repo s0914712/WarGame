@@ -13,6 +13,7 @@ import { Circle, Square, FolderOpen, ChevronLeft, ChevronRight, X, Film } from "
 import { recorderStore } from "../wargame/replay/recorder";
 import { replayPlayer, loadRecordingFromFile } from "../wargame/replay/player";
 import { formatTPlus } from "../wargame/clock";
+import { t, useLang } from "../wargame/i18n/lang";
 
 interface Snapshot {
   isRecording: boolean;
@@ -61,6 +62,7 @@ function subscribe(cb: () => void): () => void {
 
 export function ReplayPanel() {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  useLang();
   const s = getSnapshot();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,8 +79,8 @@ export function ReplayPanel() {
     <div
       style={{
         position: "absolute",
-        bottom: 16,
-        right: 156,                 // LLM 按鈕左側
+        bottom: 72,                 // 自成一列（replay 展開會變寬，往左長）
+        right: 16,
         zIndex: 25,
         padding: "8px 12px",
         background: "rgba(15, 23, 42, 0.92)",
@@ -99,7 +101,7 @@ export function ReplayPanel() {
           <span style={{ color: "#fbbf24", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
             <Film size={14} /> REPLAY
           </span>
-          <button onClick={() => replayPlayer.prev()} style={btnSmall} className="wg-btn" title="上一張">
+          <button onClick={() => replayPlayer.prev()} style={btnSmall} className="wg-btn" title={t("prev")}>
             <ChevronLeft size={14} />
           </button>
           <input
@@ -110,14 +112,14 @@ export function ReplayPanel() {
             onChange={(e) => replayPlayer.seekToIndex(Number(e.target.value))}
             style={{ width: 140, accentColor: "#fbbf24" }}
           />
-          <button onClick={() => replayPlayer.next()} style={btnSmall} className="wg-btn" title="下一張">
+          <button onClick={() => replayPlayer.next()} style={btnSmall} className="wg-btn" title={t("next")}>
             <ChevronRight size={14} />
           </button>
           <span style={{ color: "#94a3b8", fontFamily: "ui-monospace, monospace", fontSize: 15 }}>
             {s.replayIndex + 1}/{s.replayTotal}
           </span>
-          <button onClick={() => replayPlayer.exit()} style={btnSecondary} className="wg-btn" title="退出 replay 回到場景">
-            <X size={12} /> 退出
+          <button onClick={() => replayPlayer.exit()} style={btnSecondary} className="wg-btn" title={t("Exit replay")}>
+            <X size={12} /> {t("exit")}
           </button>
         </>
       )}
@@ -131,19 +133,19 @@ export function ReplayPanel() {
                 <Circle size={10} fill="#ef4444" /> REC
               </span>
               <span style={{ color: "#cbd5e1", fontFamily: "ui-monospace, monospace", fontSize: 15 }}>
-                {s.snapshotCount} 張 · {formatTPlus(s.durationSec)}
+                {s.snapshotCount} {t("snapshots")} · {formatTPlus(s.durationSec)}
               </span>
               <button onClick={() => recorderStore.downloadCurrent()} style={btnPrimary} className="wg-btn">
-                <Square size={11} fill="currentColor" /> 結束並下載
+                <Square size={11} fill="currentColor" /> {t("Stop & download")}
               </button>
             </>
           ) : (
             <>
-              <button onClick={() => recorderStore.start()} style={btnPrimary} className="wg-btn" title="開始錄製當前場景">
-                <Circle size={11} fill="currentColor" /> 錄製
+              <button onClick={() => recorderStore.start()} style={btnPrimary} className="wg-btn" title={t("Start recording")}>
+                <Circle size={11} fill="currentColor" /> {t("Record")}
               </button>
-              <button onClick={() => fileInputRef.current?.click()} style={btnSecondary} className="wg-btn" title="載入 .json replay 檔">
-                <FolderOpen size={12} /> 載入
+              <button onClick={() => fileInputRef.current?.click()} style={btnSecondary} className="wg-btn" title={t("Load replay")}>
+                <FolderOpen size={12} /> {t("Load")}
               </button>
             </>
           )}

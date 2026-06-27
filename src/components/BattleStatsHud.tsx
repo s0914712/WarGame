@@ -77,7 +77,7 @@ export function BattleStatsHud() {
     <div
       style={{
         position: "absolute",
-        top: 16,
+        top: 88,
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 22,

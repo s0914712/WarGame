@@ -34,6 +34,26 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        // TDX（交通部運輸資料）：dev 代理避免瀏覽器 CORS；TDX 即時公車/軌道來源。
+        // TDX 閘道會擋瀏覽器特徵（headless UA / Origin / Sec-Fetch-*）→ 把外送標頭
+        // 正規化成乾淨的伺服器請求（與 curl 等價，可通過）。
+        "/tdx": {
+          target: "https://tdx.transportdata.tw",
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/tdx/, ""),
+          configure: (proxy) => {
+            proxy.on("proxyReq", (proxyReq) => {
+              proxyReq.setHeader("User-Agent", "curl/8.0");
+              for (const h of [
+                "origin", "referer", "cookie",
+                "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest",
+                "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform",
+              ]) {
+                proxyReq.removeHeader(h);
+              }
+            });
+          },
+        },
       },
     },
   };

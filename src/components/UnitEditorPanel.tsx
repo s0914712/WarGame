@@ -16,9 +16,10 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { CoreAttributes } from "../wargame/types";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { editorStore } from "../wargame/editor/editorStore";
-import { UNIT_CATALOG, CORE_ATTRIBUTE_LABELS } from "../wargame/catalog/units";
+import { UNIT_CATALOG, CORE_ATTRIBUTE_LABELS, CORE_ATTRIBUTE_LABELS_EN, UNIT_KIND_DISPLAY_EN } from "../wargame/catalog/units";
 import { wargameClock } from "../wargame/clock";
 import { validatePlan } from "../wargame/sim/validate";
+import { t, useLang } from "../wargame/i18n/lang";
 
 const CORE_KEYS: (keyof CoreAttributes)[] = [
   "rangeKm",
@@ -74,6 +75,8 @@ function subscribe(cb: () => void): () => void {
 
 export function UnitEditorPanel() {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const lang = useLang();
+  const LABELS = lang === "en" ? CORE_ATTRIBUTE_LABELS_EN : CORE_ATTRIBUTE_LABELS;
 
   const mode = editorStore.getMode();
   const planningUnitId = editorStore.getPlanningUnitId();
@@ -157,8 +160,12 @@ export function UnitEditorPanel() {
                 fontSize: 17, color: "#94a3b8", whiteSpace: "nowrap",
                 overflow: "hidden", textOverflow: "ellipsis",
               }}
+              title={targetUnit.displayName}
             >
-              {targetUnit.displayName}
+              {/* en 模式：原中文名 / English kind 對照；中文模式：保留原顯示名 */}
+              {lang === "en"
+                ? `${targetUnit.displayName} / ${UNIT_KIND_DISPLAY_EN[targetUnit.kind]}`
+                : targetUnit.displayName}
             </div>
           </div>
         </div>
@@ -171,7 +178,7 @@ export function UnitEditorPanel() {
             width: 24, height: 24, borderRadius: 4, border: "none",
             background: "transparent", color: "#94a3b8", fontSize: 22, cursor: "pointer",
           }}
-          title="關閉"
+          title={t("Close")}
         >×</button>
       </div>
 
@@ -183,9 +190,9 @@ export function UnitEditorPanel() {
           borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
         }}
       >
-        <span>陣營：{side?.displayName ?? targetUnit.sideId}</span>
+        <span>{t("Side")}：{side?.displayName ?? targetUnit.sideId}</span>
         <span>·</span>
-        <span>類型：{catalog.displayName}</span>
+        <span>{t("Type")}：{lang === "en" ? UNIT_KIND_DISPLAY_EN[targetUnit.kind] : catalog.displayName}</span>
       </div>
       {/* 狀態列：HP + 燃料 + 彈藥 */}
       <div
@@ -207,14 +214,14 @@ export function UnitEditorPanel() {
           color="#4ade80"
         />
         <StatusBar
-          label="油料"
+          label={t("Fuel")}
           value={Math.max(0, targetUnit.core.movementRangeKm - targetUnit.distanceTravelledKm)}
           max={targetUnit.core.movementRangeKm}
           color="#60a5fa"
           unit=" km"
         />
         <StatusBar
-          label="彈藥"
+          label={t("Ammo")}
           value={Math.round(targetUnit.ammoCurrent)}
           max={targetUnit.ammoMax}
           color="#fbbf24"
@@ -232,11 +239,11 @@ export function UnitEditorPanel() {
             color: "#fed7aa",
           }}
         >
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>規劃航線模式</div>
-          <div>點擊地圖加航點 · Backspace 移除上一點 · Enter 套用 · Esc 取消</div>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("Plan Route Mode")}</div>
+          <div>{t("Plan Route Mode hint")}</div>
           <div style={{ marginTop: 6, fontFamily: "ui-monospace, monospace" }}>
-            {pending.length} 個航點 · {validation.totalKm.toFixed(1)} km · ETA {formatEta(validation.totalSec)}
-            {" · 剩餘油料 "}{validation.remainingFuelKm.toFixed(0)} km
+            {pending.length} {t("waypoints")} · {validation.totalKm.toFixed(1)} km · ETA {formatEta(validation.totalSec)}
+            {" · " + t("remaining fuel") + " "}{validation.remainingFuelKm.toFixed(0)} km
           </div>
           {validation.issues.length > 0 && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -271,7 +278,7 @@ export function UnitEditorPanel() {
           return (
             <div key={key} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 19, marginBottom: 6 }}>
-                <span style={{ color: "#cbd5e1", fontWeight: 500 }}>{CORE_ATTRIBUTE_LABELS[key]}</span>
+                <span style={{ color: "#cbd5e1", fontWeight: 500 }}>{LABELS[key]}</span>
                 <span style={{ color: "#e2e8f0", fontFamily: "ui-monospace, monospace", fontWeight: 600 }}>
                   {value} {range.unit}
                 </span>
@@ -306,7 +313,7 @@ export function UnitEditorPanel() {
         {!isPlanningThis && (
           <>
             <div style={{ fontSize: 15, color: "#94a3b8" }}>
-              目前航線：{targetUnit.waypoints.length} 個航點
+              {t("Current Route")}：{targetUnit.waypoints.length} {t("waypoints")}
               {targetUnit.waypoints.length > 0 && (
                 <> · {validation.totalKm.toFixed(1)} km · ETA {formatEta(validation.totalSec)}</>
               )}
@@ -316,21 +323,24 @@ export function UnitEditorPanel() {
                 onClick={() => editorStore.startPlanRoute(targetUnit.id)}
                 style={btnPrimary(sideColor)}
               >
-                規劃航線
+                {t("Plan Route")}
               </button>
               {targetUnit.waypoints.length > 0 && (
                 <button
                   onClick={() => editorStore.clearUnitWaypoints(targetUnit.id)}
                   style={btnSecondary}
                 >
-                  清除航線
+                  {t("Clear Route")}
                 </button>
               )}
             </div>
             {mode === "placeUnit" && (
               <button
                 onClick={() => {
-                  if (confirm(`刪除單位「${targetUnit.callsign}」？`)) {
+                  const msg = lang === "en"
+                    ? `Delete unit "${targetUnit.callsign}"?`
+                    : `刪除單位「${targetUnit.callsign}」？`;
+                  if (confirm(msg)) {
                     scenarioStore.removeUnit(targetUnit.id);
                   }
                 }}
@@ -339,7 +349,7 @@ export function UnitEditorPanel() {
                   marginTop: 4,
                 }}
               >
-                🗑 刪除單位
+                🗑 {t("Delete Unit")}
               </button>
             )}
           </>
@@ -355,12 +365,12 @@ export function UnitEditorPanel() {
                 opacity: (pending.length === 0 || !validation.ok) ? 0.4 : 1,
                 cursor: (pending.length === 0 || !validation.ok) ? "not-allowed" : "pointer",
               }}
-              title={!validation.ok ? "有違規航點，請先移除" : ""}
+              title={!validation.ok ? (lang === "en" ? "Invalid waypoints — remove first" : "有違規航點，請先移除") : ""}
             >
-              ✓ 套用 ({pending.length})
+              ✓ {t("Apply")} ({pending.length})
             </button>
             <button onClick={() => editorStore.cancel()} style={btnSecondary}>
-              ✗ 取消
+              ✗ {t("Cancel")}
             </button>
           </div>
         )}

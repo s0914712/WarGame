@@ -60,6 +60,7 @@ const LAYER_COLORS: Record<keyof LayerVisibility, string> = {
   groundwaterWells: "#64748b",
   iotWraRiver: "#06b6d4",
   iotWraStructure: "#a855f7",
+  photoreal3d: "#a0d8ff",
 };
 
 const TRANSPORT_LABELS: Record<TransportType, string> = {
@@ -82,6 +83,12 @@ interface SectionDef {
 }
 
 const SECTIONS: SectionDef[] = [
+  {
+    title: "BASEMAP",
+    layers: [
+      { key: "photoreal3d", label: "實景 3D Photoreal" },
+    ],
+  },
   {
     title: "MOVING",
     layers: [

@@ -216,4 +216,35 @@
 
 ---
 
+## 2026-06-26 兵棋紀錄片引擎 + 823 砲戰史實場景（移植 battle-of-hong-kong-1941 概念）
+
+### What worked ✅
+
+- **資料層即可做歷史場景，引擎零改**：`rules/v1.ts` 的 `canEngage` 是 domain-agnostic（只看 hpCurrent>0 / ammoCurrent>0 / 距離 ≤ rangeKm），所以「岸砲對轟」這種陸對陸用 reskin 過的 `missile_launcher`（射程砍短、彈量加大）原生可跑。新場景純資料、零引擎風險。
+- **驗證引擎邏輯用 tsx 單元測試讀真 module，不靠 UI 計時**：`sampleTrack` 內插與 storyboard/track/victory ID 一致性，都用 `npx tsx <臨時檔>` import 真實模組斷言（跑完即刪），確定性遠勝 Playwright 截圖。
+- **flaky UI 的細節改用獨立 render 驗證**：期旗軍標在低 zoom 太小看不清 → 把 `flagMarkers.ts` 的 canvas draw 抽到 standalone HTML 放大 10× 截圖，確認青天白日滿地紅 / 五星紅旗畫對，完全繞開場景流程的 flakiness。
+- **史實化先抓權威來源再落資料**：用 WebFetch 讀維基「金門炮戰」，把指揮官（葉飛/胡璉）、開戰數字（17:30、5.7 萬發、趙家驤/章傑陣亡）、砲群位置（廈門/圍頭/蓮河/大嶝）、艦名（中海/臺生/美樂、沱江/維源）、九二海戰、閃電計畫、單打雙不打全部落進 scenario + storyboard，敘事可信度大增。
+
+### What didn't ❌
+
+- **Playwright 點 823（在清單摺疊線下方）+ 速度鈕間歇 timeout**：823 卡片要 scroll 才進視窗，auto-scroll 不穩；紀錄片 HUD 開啟後會「蓋住」頂部 1x/5x/30x/60x 速度鈕導致點不到 → headless 一直推不過 t=420 看不到航行段。改用 sampleTrack 單元測試直接驗插值才脫困。教訓：**UI 驅動驗證遇 2–3 次 timeout 就該換確定性手段**，別硬刷。
+- **CLAUDE.md「Session 開頭必讀」指向已不存在的路徑**：根 CLAUDE.md 仍寫 `.claude/lessons.md` + `.claude/retrospectives/INDEX.md`，但這套在 2026-04-23 已遷到 v2（`memory/REFLECTIONS.md` + `STATUS.md`），舊檔已刪。照 CLAUDE.md 去讀會撲空、浪費 round-trip。**根 CLAUDE.md 該更新指向 memory/**。
+
+### Next-time rules 🎯
+
+1. **驗證 engine 純函式（插值 / 規則 / 評分）** → 寫臨時 `.ts` 用 `npx tsx` import 真模組斷言，跑完刪；不要靠 dev server + Playwright 截圖計時
+2. **紀錄片 / overlay HUD 會蓋頂部控制列** → headless 測試要先設速度再開 HUD，或直接驗底層 store/clock
+3. **cinema marker 位置覆寫一律 gate**：`cinemaOn && getCinemaTrack(scenarioId, unitId)` 命中才覆寫，靜態單位（岸砲/觀測所）fallback 引擎真實位置——避免與戰鬥座標脫鉤誤導
+4. **做歷史 / 寫實場景先 WebFetch 權威來源**（維基 / 戰史），把人名地名艦名數字落進 briefing + storyboard，再開工
+5. **新 scenario rewrite 後跑一致性檢查**：storyboard `focus[]` / cinemaTracks key / victory `unitId` 全部要 ∈ scenario.units（這次靠臨時 tsx check 抓，建議固化成腳本）
+
+### Memory 產出
+
+- REFLECTIONS：+本條
+- STATUS：rewrite（823 紀錄片功能段落）
+- INCIDENTS：+1（CLAUDE.md 根檔指向已遷移的 retro 舊路徑 → 待修）
+- 新增程式模組：`wargame/cinema/{storyboard,director,track,cinemaTracks}.ts`、`wargame/symbology/flagMarkers.ts`、`components/CinemaControls.tsx`、`scenarios/kinmen_823_1958.ts`（皆已 tsc -b 通過、未 commit）
+
+---
+
 <!-- /wrap-up 之後追加新反省 -->

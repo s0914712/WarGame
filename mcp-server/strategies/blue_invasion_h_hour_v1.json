@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "name": "blue_invasion_h_hour_v1",
+    "scenario": "invasion_h_hour_2030",
+    "side": "blue",
+    "author": "claude-opus-4-8",
+    "result": "LOSS — red wins on T+90 residual-force tiebreaker (red 134 / blue 9). All 3 landings DENIED (holdsCompleted 0).",
+    "doctrine": "Mass the 6x Hsiung Feng III (250km) on the 075 LHAs; ships finish the south LPD; keep surface ships HELD at coastal standoff (engage makes them charge into the SSN/055 screen and die); push 1 sub into the south lane; hold fighters to stop air bleed.",
+    "note": "executeAtSimSec is RELATIVE to apply time (engine: execSimSec = currentSimSec + executeAtSimSec). Therefore APPLY THIS WHOLE DOC ONCE AT T+0 (immediately after load_scenario, before any step) so the values below act as ABSOLUTE sim-seconds. engage targets may be hidden at T+0 — that's fine, detection is only enforced at firing time.",
+    "replay": [
+      "1. mcp__wargame__load_scenario { scenarioId: 'invasion_h_hour_2030' }",
+      "2. mcp__wargame__apply_commands { commandsJson: <this file, the 'version'+'commands' part> }   // do this at T+0",
+      "3. mcp__wargame__step { dtSimSec: 5400 }",
+      "4. mcp__wargame__compute_score { sideId: 'blue' }  and  { sideId: 'red' }"
+    ],
+    "known_weaknesses": [
+      "Red opening DF-17/DF-26 + J-16 suppression kills ~4 of 6 launchers + 1 Patriot early; this doc does not disperse/relocate them beforehand.",
+      "075/052D HHQ-9 umbrella shoots down anti-ship missiles; 2 launchers cannot sustain saturation. Should strip the 4x 052D + 4x 055 escorts FIRST (see v2).",
+      "51 vs 34 starting force: even an even kill-trade loses the residual tiebreaker."
+    ]
+  },
+  "version": "wargame-commands-v1",
+  "commands": [
+    { "kind": "engage", "unitId": "BLUE-ML-06", "targetUnitId": "RED-LHA-C1", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-ML-05", "targetUnitId": "RED-LHA-C1", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-ML-04", "targetUnitId": "RED-LHA-B1", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-ML-03", "targetUnitId": "RED-LHA-B1", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-ML-02", "targetUnitId": "RED-LHA-A1", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-ML-01", "targetUnitId": "RED-LHA-A1", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-SH-03", "targetUnitId": "RED-LPD-C2", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-SH-04", "targetUnitId": "RED-LPD-C2", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-SH-05", "targetUnitId": "RED-LHA-C1", "executeAtSimSec": 180 },
+    { "kind": "engage", "unitId": "BLUE-SH-06", "targetUnitId": "RED-LHA-B1", "executeAtSimSec": 180 },
+    { "kind": "set_waypoints", "unitId": "BLUE-SUB-02", "waypoints": [[119.90, 22.70], [119.70, 23.00]], "executeAtSimSec": 180 },
+
+    { "kind": "hold", "unitId": "BLUE-SH-04", "executeAtSimSec": 360 },
+    { "kind": "hold", "unitId": "BLUE-SH-05", "executeAtSimSec": 360 },
+    { "kind": "hold", "unitId": "BLUE-SH-06", "executeAtSimSec": 360 },
+    { "kind": "set_waypoints", "unitId": "BLUE-SUB-02", "waypoints": [[120.00, 22.85]], "executeAtSimSec": 360 },
+
+    { "kind": "engage", "unitId": "BLUE-ML-03", "targetUnitId": "RED-LHA-C1", "executeAtSimSec": 660 },
+    { "kind": "engage", "unitId": "BLUE-ML-05", "targetUnitId": "RED-LHA-C1", "executeAtSimSec": 660 },
+    { "kind": "engage", "unitId": "BLUE-ML-01", "targetUnitId": "RED-LHA-A1", "executeAtSimSec": 660 },
+    { "kind": "engage", "unitId": "BLUE-ML-02", "targetUnitId": "RED-LHA-B1", "executeAtSimSec": 660 },
+    { "kind": "hold", "unitId": "BLUE-FT-03", "executeAtSimSec": 660 },
+    { "kind": "hold", "unitId": "BLUE-FT-04", "executeAtSimSec": 660 },
+
+    { "kind": "engage", "unitId": "BLUE-ML-03", "targetUnitId": "RED-LHA-C1", "executeAtSimSec": 1200 },
+    { "kind": "engage", "unitId": "BLUE-ML-05", "targetUnitId": "RED-LHA-C1", "executeAtSimSec": 1200 }
+  ]
+}

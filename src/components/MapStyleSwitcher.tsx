@@ -15,8 +15,8 @@ export function MapStyleSwitcher({ selectedId, onChange }: Props) {
     <div
       style={{
         position: "absolute",
-        top: 16,
-        right: 220,           // 不擋場景名稱
+        top: 112,             // 疊在 場景 / 視角 下面，右緣對齊
+        right: 16,
         zIndex: 22,
         padding: "8px 12px",
         background: "rgba(15, 23, 42, 0.92)",
