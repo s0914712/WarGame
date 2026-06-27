@@ -109,6 +109,7 @@ function evaluate(
       const insideOwn = Object.values(units).some((u) => {
         if (u.sideId !== cond.sideId) return false;
         if (u.hpCurrent <= 0) return false;
+        if (cond.requireKinds && !cond.requireKinds.includes(u.kind)) return false;
         const d = haversineKm([u.position.lng, u.position.lat], cond.centerLngLat);
         return d <= cond.radiusKm;
       });

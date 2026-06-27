@@ -341,8 +341,12 @@ export type VictoryCondition =
   | { kind: "destroy_unit"; unitId: UnitId; sideId: SideId; label?: string }
   /** sideId 方勝：targetSideId 所有單位全滅 */
   | { kind: "eliminate_side"; targetSideId: SideId; sideId: SideId; label?: string }
-  /** sideId 方勝：自己至少 1 個單位連續在區域內 forSec 秒 */
-  | { kind: "hold_area"; centerLngLat: LngLat; radiusKm: number; sideId: SideId; forSec: number; label?: string }
+  /**
+   * sideId 方勝：自己至少 1 個單位連續在區域內 forSec 秒。
+   * requireKinds 設了 → 只有這些 kind 的單位算數（如運補需 supply_ship 抵達卸載，
+   * 避免岸砲/護航艦本來就在區內就誤判控制）。
+   */
+  | { kind: "hold_area"; centerLngLat: LngLat; radiusKm: number; sideId: SideId; forSec: number; requireKinds?: UnitKind[]; label?: string }
   /** 時限到時：誰存活單位多、誰勝（中性條件，每場景建議加一條當 fallback） */
   | { kind: "time_limit"; label?: string };
 
