@@ -49,7 +49,7 @@ const KINMEN_823: ScenarioTracks = {
     { atSimSec: 1800, lng: 118.45, lat: 24.42 },
     { atSimSec: 2400, lng: 118.45, lat: 24.42 },
   ],
-  // ── 護航艦 維源 ──
+  // ── 護航艦 維源（旗艦）──
   "BLUE-DD-02": [
     { atSimSec: 0, lng: 118.52, lat: 24.28 },
     { atSimSec: 360, lng: 118.52, lat: 24.28 },
@@ -58,27 +58,58 @@ const KINMEN_823: ScenarioTracks = {
     { atSimSec: 1800, lng: 118.42, lat: 24.42 },
     { atSimSec: 2400, lng: 118.42, lat: 24.42 },
   ],
+  // ── 護航艦 柳江 ──
+  "BLUE-DD-03": [
+    { atSimSec: 0, lng: 118.54, lat: 24.32 },
+    { atSimSec: 360, lng: 118.54, lat: 24.32 },
+    { atSimSec: 780, lng: 118.48, lat: 24.36 },
+    { atSimSec: 1260, lng: 118.45, lat: 24.40 },
+    { atSimSec: 1800, lng: 118.44, lat: 24.42 },
+    { atSimSec: 2400, lng: 118.44, lat: 24.42 },
+  ],
   // ── 魚雷快艇：待命 → 出擊攔截 → 撲向船團 ──
   "RED-TB-01": [
-    { atSimSec: 0, lng: 118.22, lat: 24.50 },
-    { atSimSec: 600, lng: 118.22, lat: 24.50 },
-    { atSimSec: 900, lng: 118.35, lat: 24.44 },
+    { atSimSec: 0, lng: 118.13, lat: 24.57 },
+    { atSimSec: 360, lng: 118.13, lat: 24.57 },
+    { atSimSec: 900, lng: 118.30, lat: 24.47 },
     { atSimSec: 1320, lng: 118.43, lat: 24.40 },
     { atSimSec: 2400, lng: 118.43, lat: 24.40 },
   ],
   "RED-TB-02": [
-    { atSimSec: 0, lng: 118.24, lat: 24.52 },
-    { atSimSec: 600, lng: 118.24, lat: 24.52 },
-    { atSimSec: 900, lng: 118.36, lat: 24.45 },
+    { atSimSec: 0, lng: 118.15, lat: 24.59 },
+    { atSimSec: 360, lng: 118.15, lat: 24.59 },
+    { atSimSec: 900, lng: 118.32, lat: 24.48 },
     { atSimSec: 1320, lng: 118.44, lat: 24.41 },
     { atSimSec: 2400, lng: 118.44, lat: 24.41 },
   ],
   "RED-TB-03": [
-    { atSimSec: 0, lng: 118.20, lat: 24.48 },
-    { atSimSec: 540, lng: 118.20, lat: 24.48 },
-    { atSimSec: 900, lng: 118.34, lat: 24.42 },
+    { atSimSec: 0, lng: 118.10, lat: 24.55 },
+    { atSimSec: 360, lng: 118.10, lat: 24.55 },
+    { atSimSec: 900, lng: 118.28, lat: 24.45 },
     { atSimSec: 1320, lng: 118.42, lat: 24.39 },
     { atSimSec: 2400, lng: 118.42, lat: 24.39 },
+  ],
+  // ── 55 甲型砲艇：隨魚雷艇後出擊，與沱江近距對轟 ──
+  "RED-GB-01": [
+    { atSimSec: 0, lng: 118.16, lat: 24.54 },
+    { atSimSec: 480, lng: 118.16, lat: 24.54 },
+    { atSimSec: 960, lng: 118.31, lat: 24.46 },
+    { atSimSec: 1380, lng: 118.43, lat: 24.41 },
+    { atSimSec: 2400, lng: 118.43, lat: 24.41 },
+  ],
+  "RED-GB-02": [
+    { atSimSec: 0, lng: 118.18, lat: 24.56 },
+    { atSimSec: 480, lng: 118.18, lat: 24.56 },
+    { atSimSec: 960, lng: 118.33, lat: 24.47 },
+    { atSimSec: 1380, lng: 118.44, lat: 24.40 },
+    { atSimSec: 2400, lng: 118.44, lat: 24.40 },
+  ],
+  "RED-GB-03": [
+    { atSimSec: 0, lng: 118.14, lat: 24.52 },
+    { atSimSec: 480, lng: 118.14, lat: 24.52 },
+    { atSimSec: 960, lng: 118.29, lat: 24.44 },
+    { atSimSec: 1380, lng: 118.42, lat: 24.40 },
+    { atSimSec: 2400, lng: 118.42, lat: 24.40 },
   ],
 };
 

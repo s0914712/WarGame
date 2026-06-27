@@ -54,6 +54,12 @@ interface MkOpts {
   core?: Partial<Unit["core"]>;
   /** 覆寫彈量（持續砲擊用大彈量；catalog 預設 missile_launcher 只有 4 發） */
   ammoMax?: number;
+  /**
+   * 明確武器掛載 — 設了就**繞過** catalog defaultLoadout（避免新武器系統把 1958
+   * 船艦塞進現代 sam_ship/ciws/asm/torpedo 組合，導致海戰互相攔截打不死人）。
+   * 1958 期：岸砲/艦砲 → asm（短射程，當砲彈用）、魚雷艇 → torpedo、補給艦 → 無武器。
+   */
+  weapons?: Unit["weapons"];
 }
 
 function mkUnit(
@@ -68,7 +74,13 @@ function mkUnit(
   const cat = UNIT_CATALOG[kind];
   const core = { ...cat.defaultCore, ...(opts.core ?? {}) };
   if (opts.speedKnots !== undefined) core.speedKnots = opts.speedKnots;
-  const ammoMax = opts.ammoMax ?? cat.defaultAmmoMax;
+  // 有明確 weapons → ammo 由各彈艙加總，否則沿用 opts.ammoMax / catalog 預設
+  const ammoMax = opts.weapons
+    ? opts.weapons.reduce((s, m) => s + m.ammoMax, 0)
+    : (opts.ammoMax ?? cat.defaultAmmoMax);
+  const ammoCurrent = opts.weapons
+    ? opts.weapons.reduce((s, m) => s + m.ammoCurrent, 0)
+    : ammoMax;
   return {
     id, sideId, kind, callsign, displayName,
     position: {
@@ -81,16 +93,23 @@ function mkUnit(
     distanceTravelledKm: 0,
     hpCurrent: core.hpMax,
     ammoMax,
-    ammoCurrent: ammoMax,
+    ammoCurrent,
+    ...(opts.weapons ? { weapons: opts.weapons } : {}),
     detectedBy: {},
     lastTickSimSec: 0,
   };
 }
 
-// 岸砲共用調校：固定砲位、坑道硬化高 HP、彈量大（持續砲擊）、跨海峽自我觀測
+// 1958 期武器掛載（繞過現代 catalog defaultLoadout：避免 sam_ship/ciws 點防禦互相攔截）。
+// 引擎無「艦砲」武器 → 借 asm（短射程，當砲彈用）；魚雷艇用 torpedo。射程沿用 core.rangeKm。
+const GUN = (ammo: number): Unit["weapons"] => [{ weaponId: "asm", ammoCurrent: ammo, ammoMax: ammo }];
+const TORP = (ammo: number): Unit["weapons"] => [{ weaponId: "torpedo", ammoCurrent: ammo, ammoMax: ammo }];
+
+// 岸砲共用調校：固定砲位、坑道硬化高 HP、跨海峽自我觀測。
+// 彈量刻意壓低（asm 每發 ~60% HP，太多發會把海上船團瞬間清空）→ 以反砲戰為主。
 const ARTY = (rangeKm: number, hpMax = 120): MkOpts => ({
   core: { rangeKm, speedKnots: 0, movementRangeKm: 0, detectionRangeKm: 26, hpMax },
-  ammoMax: 60,
+  weapons: GUN(10),
 });
 
 const BLUE_UNITS: Unit[] = [
@@ -102,9 +121,10 @@ const BLUE_UNITS: Unit[] = [
   // 105mm 榴彈砲（對大嶝、蓮河）
   mkUnit("BLUE-ART-03", "blue", "missile_launcher", "古寧105榴", "古寧頭 105mm 榴彈砲連", 118.30, 24.49, ARTY(12)),
   // 9/26 投入的 M55 八吋（203mm）自走砲——一小時內摧毀圍頭砲陣地數十處
-  mkUnit("BLUE-ART-04", "blue", "missile_launcher", "M55八吋", "M55 八吋自走砲（203mm，反砲戰主力）", 118.41, 24.43, {
+  // 注意：勿放進料羅灣 hold_area（半徑 4km）內，否則開局即「控制目標區」→ t≈300 誤判勝利
+  mkUnit("BLUE-ART-04", "blue", "missile_launcher", "M55八吋", "M55 八吋自走砲（203mm，反砲戰主力）", 118.36, 24.46, {
     core: { rangeKm: 24, speedKnots: 0, movementRangeKm: 6, detectionRangeKm: 28, hpMax: 100 },
-    ammoMax: 40,
+    weapons: GUN(14),
   }),
 
   // ── 觀測哨（無武器，提供守軍跨海峽眼睛）──
@@ -114,38 +134,48 @@ const BLUE_UNITS: Unit[] = [
 
   // ── 運補船團（鴻運／閃電計畫）：中字號 LST／LSM，自外海衝向料羅灣 ──
   // 中海艦 LST（運補旗艦，史實九二海戰中重創）
+  // 速度刻意拉高（史實 LST ~12kt，此處為「強行衝灘」全速）→ 約 t=1800 抵料羅灣，
+  // 對齊分鏡「衝進料羅灣」並讓 hold_area 在時限內完成。
   mkUnit("BLUE-LST-01", "blue", "supply_ship", "中海", "中海艦 LST（運補旗艦）", 118.56, 24.26, {
-    speedKnots: 12,
+    speedKnots: 22,
     waypoints: [[118.50, 24.33], [118.46, 24.38], [118.42, 24.40]],
     core: { hpMax: 420 },
   }),
   // 臺生輪（運補，史實遭擊沉）
   mkUnit("BLUE-LST-02", "blue", "supply_ship", "臺生", "臺生輪（運補）", 118.58, 24.24, {
-    speedKnots: 12,
+    speedKnots: 22,
     waypoints: [[118.52, 24.31], [118.47, 24.37], [118.43, 24.40]],
     core: { hpMax: 360 },
   }),
-  // 美樂號 LSM（9/8 遭海岸砲第 150 連擊中，死傷 11）
-  mkUnit("BLUE-LSM-01", "blue", "supply_ship", "美樂", "美樂號 LSM-242（運補）", 118.60, 24.27, {
-    speedKnots: 11,
+  // 美堅號 LSM-249（九二海戰實際卸載艦，載「彈道測向儀」雷達 + 美軍顧問 + 中外記者 30 餘人）
+  mkUnit("BLUE-LSM-01", "blue", "supply_ship", "美堅", "美堅號 LSM-249（載彈道測向儀）", 118.60, 24.27, {
+    speedKnots: 20,
     waypoints: [[118.53, 24.33], [118.48, 24.38], [118.44, 24.41]],
     core: { hpMax: 300 },
   }),
 
-  // ── 護航艦（1958 艦砲射程 ~12 km）──
-  // 沱江號驅潛艦（九二海戰主力，史實重創仍力戰）
-  mkUnit("BLUE-DD-01", "blue", "ship_surface", "沱江", "沱江號驅潛艦（護航）", 118.55, 24.30, {
+  // ── 護航支隊（總指揮黎玉璽少將；1958 艦砲射程 ~12 km）──
+  // 沱江號 PC-1247 驅潛艦（艦長劉溢川少校）— 九二海戰主角：主砲卡彈遭砲艇圍攻、彈孔 70 餘、
+  // 10 餘陣亡，失去動力後由維源/柳江拖回，戰後評估無修復價值除役。低 HP 反映其脆弱。
+  mkUnit("BLUE-DD-01", "blue", "ship_surface", "沱江", "沱江號 PC-1247 驅潛艦（艦長劉溢川）", 118.55, 24.30, {
     speedKnots: 26,
     waypoints: [[118.49, 24.35], [118.45, 24.39], [118.45, 24.42]],
-    core: { rangeKm: 12, detectionRangeKm: 24, hpMax: 220 },
-    ammoMax: 30,
+    core: { rangeKm: 12, detectionRangeKm: 24, hpMax: 150 },
+    weapons: GUN(18),
   }),
-  // 維源艦（永興號巡邏艦，護航）
-  mkUnit("BLUE-DD-02", "blue", "ship_surface", "維源", "維源艦（永興號 · 護航）", 118.52, 24.28, {
+  // 維源號 PCE-869 巡邏艦（旗艦 · 支隊長姚道義上校）
+  mkUnit("BLUE-DD-02", "blue", "ship_surface", "維源", "維源號 PCE-869 巡邏艦（旗艦·姚道義）", 118.52, 24.28, {
     speedKnots: 24,
     waypoints: [[118.47, 24.34], [118.44, 24.38], [118.42, 24.42]],
+    core: { rangeKm: 12, detectionRangeKm: 26, hpMax: 200 },
+    weapons: GUN(24),
+  }),
+  // 柳江號 PC-461 驅潛艦（艦長李仕材少校）
+  mkUnit("BLUE-DD-03", "blue", "ship_surface", "柳江", "柳江號 PC-461 驅潛艦（艦長李仕材）", 118.54, 24.32, {
+    speedKnots: 26,
+    waypoints: [[118.48, 24.36], [118.45, 24.40], [118.44, 24.42]],
     core: { rangeKm: 12, detectionRangeKm: 24, hpMax: 180 },
-    ammoMax: 30,
+    weapons: GUN(22),
   }),
 ];
 
@@ -154,24 +184,41 @@ const RED_UNITS: Unit[] = [
   // 廈門砲群（130mm 海岸砲群，瞰制金門西側）
   mkUnit("RED-ART-01", "red", "missile_launcher", "廈門砲群", "廈門前沿 130mm 海岸砲群", 118.08, 24.45, ARTY(24)),
   // 圍頭砲群（距料羅最近，瞰制料羅灣航道）
-  mkUnit("RED-ART-02", "red", "missile_launcher", "圍頭砲群", "圍頭 152mm 加農砲群（瞰制料羅灣）", 118.59, 24.51, ARTY(22)),
+  mkUnit("RED-ART-02", "red", "missile_launcher", "圍頭砲群", "圍頭 152mm 加農砲群（瞰制料羅灣）", 118.59, 24.51, ARTY(17)),
   // 蓮河砲群
   mkUnit("RED-ART-03", "red", "missile_launcher", "蓮河砲群", "蓮河 152mm 榴彈砲群", 118.38, 24.57, ARTY(20)),
   // 大嶝島砲群（對古寧頭、瞰制北航道）
   mkUnit("RED-ART-04", "red", "missile_launcher", "大嶝砲群", "大嶝島 122mm 榴彈砲群", 118.32, 24.55, ARTY(18)),
 
-  // ── 東海艦隊魚雷快艇（九二海戰出動 8 艘，高速、短射程、低 HP）──
-  mkUnit("RED-TB-01", "red", "ship_surface", "魚雷艇1", "東海艦隊魚雷快艇 1", 118.22, 24.50, {
-    speedKnots: 42, waypoints: [[118.35, 24.44], [118.43, 24.40]],
-    core: { rangeKm: 8, speedKnots: 42, detectionRangeKm: 14, hpMax: 55 }, ammoMax: 4,
+  // ── 東海艦隊魚雷快艇大隊（九二海戰出動 6 艘 123-K/B 型，參謀長張逸民指揮·174 艇）──
+  // 自廈門 / 大嶝錨地外海待命（金門岸砲射程外），夜間沿北水道高速殺出攔截船團。
+  // 史實：劇烈顛簸損失 1/3 魚雷、雷達誤判目標、魚雷定深 3m 過深均脫靶；撤退中 180 艇舵損
+  // 遭 174 艇相撞沉沒、174 艇再被國軍砲火擊沉。起點拉遠 → 約 t=1300 進料羅外海接戰。
+  mkUnit("RED-TB-01", "red", "ship_surface", "魚雷174", "魚雷快艇 174（張逸民·123-K 型）", 118.13, 24.57, {
+    speedKnots: 42, waypoints: [[118.30, 24.47], [118.43, 24.40]],
+    core: { rangeKm: 8, speedKnots: 42, detectionRangeKm: 14, hpMax: 70 }, weapons: TORP(4),
   }),
-  mkUnit("RED-TB-02", "red", "ship_surface", "魚雷艇2", "東海艦隊魚雷快艇 2", 118.24, 24.52, {
-    speedKnots: 42, waypoints: [[118.36, 24.45], [118.44, 24.41]],
-    core: { rangeKm: 8, speedKnots: 42, detectionRangeKm: 14, hpMax: 55 }, ammoMax: 4,
+  mkUnit("RED-TB-02", "red", "ship_surface", "魚雷177", "魚雷快艇 177（123-K 型）", 118.15, 24.59, {
+    speedKnots: 42, waypoints: [[118.32, 24.48], [118.44, 24.41]],
+    core: { rangeKm: 8, speedKnots: 42, detectionRangeKm: 14, hpMax: 70 }, weapons: TORP(4),
   }),
-  mkUnit("RED-TB-03", "red", "ship_surface", "魚雷艇3", "東海艦隊魚雷快艇 3", 118.20, 24.48, {
-    speedKnots: 40, waypoints: [[118.34, 24.42], [118.42, 24.39]],
-    core: { rangeKm: 8, speedKnots: 40, detectionRangeKm: 14, hpMax: 55 }, ammoMax: 4,
+  mkUnit("RED-TB-03", "red", "ship_surface", "魚雷180", "魚雷快艇 180（123-K 型）", 118.10, 24.55, {
+    speedKnots: 40, waypoints: [[118.28, 24.45], [118.42, 24.39]],
+    core: { rangeKm: 8, speedKnots: 40, detectionRangeKm: 14, hpMax: 70 }, weapons: TORP(4),
+  }),
+
+  // ── 55 甲型 75 噸快速砲艇（大隊長魏垣武）：以雙管 37mm 機砲與沱江近距對轟 ──
+  mkUnit("RED-GB-01", "red", "ship_surface", "砲艇556", "55 甲型快速砲艇 556（37mm）", 118.16, 24.54, {
+    speedKnots: 30, waypoints: [[118.31, 24.46], [118.43, 24.41]],
+    core: { rangeKm: 6, speedKnots: 30, detectionRangeKm: 12, hpMax: 90 }, weapons: GUN(20),
+  }),
+  mkUnit("RED-GB-02", "red", "ship_surface", "砲艇557", "55 甲型快速砲艇 557（37mm）", 118.18, 24.56, {
+    speedKnots: 30, waypoints: [[118.33, 24.47], [118.44, 24.40]],
+    core: { rangeKm: 6, speedKnots: 30, detectionRangeKm: 12, hpMax: 90 }, weapons: GUN(20),
+  }),
+  mkUnit("RED-GB-03", "red", "ship_surface", "砲艇558", "55 甲型快速砲艇 558（37mm）", 118.14, 24.52, {
+    speedKnots: 30, waypoints: [[118.29, 24.44], [118.42, 24.40]],
+    core: { rangeKm: 6, speedKnots: 30, detectionRangeKm: 12, hpMax: 90 }, weapons: GUN(20),
   }),
 
   // ── 觀測所 ──
@@ -185,15 +232,20 @@ export const KINMEN_823_1958: Scenario = {
   displayName: "823 砲戰 · 運補突圍 1958",
   briefing: {
     zh: "1958 年 8 月 23 日 17 時 30 分，解放軍廈門、圍頭、蓮河、大嶝一線岸砲群突襲砲擊金門，" +
-      "兩小時內落彈約 5.7 萬發，副司令官趙家驤、章傑陣亡。共軍封鎖外援，逼金門撤守。" +
-      "守軍每日需補給約 300 噸——國軍以中海、臺生、美樂等中字號運補船團，在沱江、維源護航下，" +
-      "冒砲火與東海艦隊魚雷快艇攔截，強行駛入料羅灣卸載。守住金門、把船團安全送進料羅灣，即為勝利。",
-    en: "23 Aug 1958, 17:30 — PLA shore batteries at Xiamen, Weitou, Lianhe and Dadeng open a surprise " +
-      "bombardment of Kinmen: ~57,000 shells in two hours, killing deputy commanders Zhao Jiaxiang and " +
-      "Zhang Jie. The PLA blockades resupply to force the offshore islands' abandonment. Kinmen needs " +
-      "~300 tons of supply a day. The ROC runs LST/LSM convoys (Zhonghai, Taisheng, Meile), escorted by " +
-      "Tuojiang and Weiyuan, through artillery fire and torpedo-boat interception into Liaoluo Bay to " +
-      "unload. Hold Kinmen and land the convoy to win.",
+      "兩小時內落彈約 5.7 萬發，副司令官趙家驤、章傑陣亡。共軍封鎖外援、逼金門撤守，守軍每日需補給約 300 噸。\n" +
+      "本場景聚焦 9 月 1–2 日「九二海戰」（料羅灣海戰）：美堅號 LSM-249 載「彈道測向儀」雷達與美軍顧問搶運料羅，" +
+      "由海軍副總司令黎玉璽指揮、姚道義旗艦維源號率沱江、柳江護航。解放軍張逸民魚雷快艇大隊（174 等 6 艇）與" +
+      "魏垣武 55 甲型砲艇（556/557/558）夜襲船團——魚雷因定深過深、誤判目標全脫靶，砲艇與沱江近距對轟（沱江主砲卡彈、" +
+      "彈孔 70 餘、10 餘殉職、重創除役），撤退中共軍 174、180 艇相撞 / 遭砲火擊沉。把運補艦安全送進料羅灣卸載，即為勝利。",
+    en: "23 Aug 1958, 17:30 — PLA shore batteries (Xiamen, Weitou, Lianhe, Dadeng) open a surprise " +
+      "bombardment of Kinmen: ~57,000 shells in two hours, killing deputy commanders Zhao Jiaxiang and Zhang Jie. " +
+      "Kinmen needs ~300 tons of supply a day.\n" +
+      "This scenario centers on the Battle of Liaoluo Bay (1–2 Sep). LSM-249 Meijian runs a ballistic " +
+      "direction-finding radar and US advisors into Liaoluo, escorted by flagship Weiyuan (PCE-869, Cdr Yao Daoyi) " +
+      "with Tuojiang (PC-1247) and Liujiang (PC-461) under VADM Li Yuxi. Zhang Yimin's torpedo-boat squadron (boat 174 " +
+      "and five others) and Wei Yuanwu's 55-type gunboats (556/557/558) ambush at night — the torpedoes all miss " +
+      "(set too deep, wrong target), the gunboats trade fire with Tuojiang (jammed main gun, 70+ holes, crippled), " +
+      "and PLA boats 174 and 180 are lost in the retreat. Land the supply ship at Liaoluo to win.",
   },
   startSimTimeSec: 0,
   durationSec: 2400, // 40 分鐘
@@ -214,6 +266,7 @@ export const KINMEN_823_1958: Scenario = {
       radiusKm: 4,
       sideId: "blue",
       forSec: 300,
+      requireKinds: ["supply_ship"], // 必須是運補艦抵達卸載（岸砲/護航艦在區內不算）
       label: "運補成功 — 補給船團進入料羅灣卸載 5 分鐘",
     },
     // 紅方勝：擊沉運補旗艦中海艦
