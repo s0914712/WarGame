@@ -29,7 +29,13 @@ function subscribe(cb: () => void) { return searchPlannerStore.subscribe(cb); }
 /** snapshot 必須是每次變動都改變的值 —— 見 searchPlannerStore.getVersion 的說明 */
 const getVersion = () => searchPlannerStore.getVersion();
 
-export function SearchPlannerPanel({ standalone = false }: { standalone?: boolean } = {}) {
+/**
+ * @param standalone  獨立 app 模式（自己佔滿容器、面板恆開、不顯示關閉鈕）
+ * @param embedded    嵌在行動版 dock 分頁裡（無外框、無標題列、由 dock 提供捲動）
+ */
+export function SearchPlannerPanel(
+  { standalone = false, embedded = false }: { standalone?: boolean; embedded?: boolean } = {},
+) {
   useSyncExternalStore(subscribe, getVersion, getVersion);
   const langRaw = useLang();
   const lang: "zh" | "en" = langRaw === "en" ? "en" : "zh";
@@ -62,11 +68,12 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
     return c >= POD_DISPLAY_CAP ? `>${(POD_DISPLAY_CAP * 100).toFixed(1)}%` : `${(c * 100).toFixed(1)}%`;
   };
 
-  if (!open && !standalone) return null;
+  // standalone / embedded 皆視為恆開（沒有收合入口）
+  if (!open && !standalone && !embedded) return null;
 
   if (picking) {
     return (
-      <div style={pickBar}>
+      <div style={embedded ? pickBarInline : pickBar}>
         <Crosshair size={16} color="#facc15" />
         <span style={{ color: "#fef9c3", fontWeight: 600 }}>
           {a ? t.pickSecondCorner : t.pickFirstCorner}
@@ -108,7 +115,8 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
   };
 
   return (
-    <div style={standalone ? rootStandalone : root}>
+    <div style={embedded ? rootEmbedded : standalone ? rootStandalone : root}>
+      {!embedded && (
       <div style={header}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 20, color: "#fef9c3" }}>
@@ -127,8 +135,16 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
           )}
         </div>
       </div>
+      )}
 
-      <div style={body}>
+      {embedded && (
+        <button className="wg-btn" style={{ ...smallBtn, alignSelf: "flex-end", marginBottom: 6 }}
+          onClick={() => searchPlannerStore.reset()}>
+          <RotateCcw size={12} /> {t.reset}
+        </button>
+      )}
+
+      <div style={embedded ? bodyEmbedded : body}>
         {/* ① 搜索區 */}
         <Section title={t.secArea}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -825,6 +841,20 @@ const root: React.CSSProperties = {
 const rootStandalone: React.CSSProperties = {
   ...panelBase, width: "100%", height: "100%",
   borderRight: "1px solid rgba(250, 204, 21, 0.25)",
+};
+/** 嵌在行動版 dock 分頁：不搶版面、捲動交給 dock */
+const rootEmbedded: React.CSSProperties = {
+  display: "flex", flexDirection: "column",
+  fontFamily: "ui-sans-serif, system-ui, sans-serif",
+  background: "transparent",
+};
+const bodyEmbedded: React.CSSProperties = { padding: 0 };
+/** 框選提示的內嵌版（dock 內用，不做 fixed 定位） */
+const pickBarInline: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+  padding: "10px 12px", borderRadius: 8,
+  background: "rgba(15, 23, 42, 0.95)", border: "1px solid rgba(250, 204, 21, 0.5)",
+  fontSize: 16, fontFamily: "ui-sans-serif, system-ui, sans-serif",
 };
 const header: React.CSSProperties = {
   display: "flex", justifyContent: "space-between", alignItems: "flex-start",

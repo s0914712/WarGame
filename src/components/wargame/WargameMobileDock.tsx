@@ -14,15 +14,17 @@
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Map as MapboxMap } from "mapbox-gl";
-import { ScrollText, SlidersHorizontal, ClipboardList, Settings } from "lucide-react";
+import { ScrollText, SlidersHorizontal, ClipboardList, Settings, Radar } from "lucide-react";
 import { scenarioStore } from "../../wargame/scenarioStore";
 import { editorStore } from "../../wargame/editor/editorStore";
 import { UnitEditorPanel } from "../UnitEditorPanel";
 import { EngagementLog } from "../EngagementLog";
 import { UnitPalette } from "../UnitPalette";
+import { SearchPlannerPanel } from "../SearchPlannerPanel";
+import { searchPlannerStore } from "../../wargame/search/searchPlannerStore";
 import { WargameMobileSettings } from "./WargameMobileSettings";
 
-type Tab = "unit" | "log" | "plan" | "settings";
+type Tab = "unit" | "log" | "plan" | "search" | "settings";
 
 const NAV_HEIGHT = 56;
 
@@ -34,6 +36,7 @@ function contentHeight(isLandscape: boolean): number {
 
 function selSnap(): string | null { return scenarioStore.getSelectedUnitId(); }
 function modeSnap(): string { return editorStore.getMode(); }
+function pickSnap(): boolean { return searchPlannerStore.isPicking(); }
 
 interface Props {
   map: MapboxMap | null;
@@ -51,6 +54,7 @@ export function WargameMobileDock({
 }: Props) {
   const selectedId = useSyncExternalStore(scenarioStore.subscribe, selSnap, selSnap);
   const mode = useSyncExternalStore(editorStore.subscribe, modeSnap, modeSnap);
+  const picking = useSyncExternalStore(searchPlannerStore.subscribe, pickSnap, pickSnap);
   const [active, setActive] = useState<Tab | null>(null);
 
   // 選到新單位 → 展開「單位」
@@ -65,6 +69,11 @@ export function WargameMobileDock({
     if (mode === "planRoute") setActive("unit");
   }, [mode]);
 
+  // 開始在地圖上框選搜索區 → 收起 dock，把整個畫面讓給地圖
+  useEffect(() => {
+    if (picking) setActive(null);
+  }, [picking]);
+
   const cH = contentHeight(isLandscape);
   const open = active !== null;
   useEffect(() => {
@@ -76,6 +85,7 @@ export function WargameMobileDock({
       const next = cur === t ? null : t;
       if (next === "plan") editorStore.enterPlaceMode();
       else if (editorStore.getMode() === "placeUnit") editorStore.exitPlaceMode();
+      if (next === "search") searchPlannerStore.setOpen(true);
       return next;
     });
   };
@@ -124,6 +134,7 @@ export function WargameMobileDock({
             </div>
           )}
           {active === "log" && <EngagementLog embedded />}
+          {active === "search" && <SearchPlannerPanel embedded />}
           {active === "plan" && <UnitPalette embedded />}
           {active === "settings" && (
             <WargameMobileSettings
@@ -143,6 +154,7 @@ export function WargameMobileDock({
         <NavItem active={active === "unit"} onClick={() => selectTab("unit")} Icon={SlidersHorizontal} label="單位" />
         <NavItem active={active === "log"} onClick={() => selectTab("log")} Icon={ScrollText} label="戰報" />
         <NavItem active={active === "plan"} onClick={() => selectTab("plan")} Icon={ClipboardList} label="佈署" />
+        <NavItem active={active === "search"} onClick={() => selectTab("search")} Icon={Radar} label="搜索" />
         <NavItem active={active === "settings"} onClick={() => selectTab("settings")} Icon={Settings} label="設定" />
       </div>
     </div>

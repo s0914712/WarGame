@@ -8,8 +8,15 @@
 > 文字層：`src/wargame/search/i18n.ts`（中／英）
 >
 > **兩種使用方式**
-> - 獨立工具：`?mode=search` → `src/SearchPlannerApp.tsx`（左面板 + 右地圖，不載入兵推場景）
-> - 兵推模式內：`?mode=wargame` 右下 📡 按鈕，可把產生的航線直接指派給場上無人機
+> - 獨立工具：`?mode=search` → `src/SearchPlannerApp.tsx`
+>   - 桌面：左面板 + 右地圖
+>   - 手機：地圖滿版 + 底部抽屜（可收合；按「在地圖上框選」會自動收起讓出地圖）
+> - 兵推模式內：
+>   - 桌面：右下 📡 按鈕開啟右側面板
+>   - 手機：底部 dock 的「搜索」分頁
+>
+> 面板元件 `SearchPlannerPanel` 以三種形態服務上述宿主：預設（兵推桌面側欄）、
+> `standalone`（獨立 app 桌面）、`embedded`（手機 dock 分頁 / 底部抽屜，無外框與標題列）。
 
 ---
 
