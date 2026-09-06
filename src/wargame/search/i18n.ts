@@ -172,6 +172,12 @@ export interface SearchStrings {
   clearContacts: string; noContacts: string; contactHint: string;
   checkFirst: string; contactP: string; contactDelta: string; contactGamma: string;
   rankingNote: string; integratedCount: string;
+  coverageChoice: string; coverageSparse: string; coverageIdeal: string; coverageDense: string;
+  coverageAuto: string; coverageNote: string;
+  rangeLimits: string; horizonRange: string; resolutionRange: string;
+  maxLateral: string; limitedByHorizon: string; limitedByResolution: string;
+  gsdAtMax: string; sweepCap: string; sweepCapped: string; rangeNote: string;
+  eoirHfov: string; eoirPixels: string; eoirPixelsOnTarget: string;
 }
 
 const ZH: SearchStrings = {
@@ -285,6 +291,21 @@ const ZH: SearchStrings = {
   contactP: "p(格)", contactDelta: "δ(格)", contactGamma: "是目標的機率 γ",
   rankingNote: "γ 正比於 p(j)/δ(j) —— 目標機率相對假目標密度高的接觸才值得先查。航道上的接觸即使機率不低也會被往後排。",
   integratedCount: "區內假目標期望總數",
+  coverageChoice: "覆蓋因子 C",
+  coverageSparse: "0.75 疏", coverageIdeal: "1.0 理想", coverageDense: "1.3 密",
+  coverageAuto: "自動",
+  coverageNote: "直接指定 C，由 S = W / C 反推航跡間距。C 越大搜得越密、POD 越高，但同樣時間內能搜的面積越小。文件六(一)的理想值是 C = 1（S = W）。",
+  rangeLimits: "高度對應的理論偵測距離",
+  horizonRange: "幾何地平線",
+  resolutionRange: "光學解析度上限（側向）",
+  maxLateral: "最大側向偵測距離",
+  limitedByHorizon: "受地平線限制",
+  limitedByResolution: "受解析度限制",
+  gsdAtMax: "該距離的地面解析度",
+  sweepCap: "掃掠寬硬上界 (2× 側向)",
+  sweepCapped: "⚠ 表列掃掠寬度超過此高度／鏡頭的物理上限，已夾限",
+  rangeNote: "地平線 d = 1.17√h(ft)（含標準折射）；解析度上限 R = D/(N·IFOV)，N 為判讀所需像素數（Johnson 準則：偵測 ≈ 2、辨識 ≈ 6）。這是「不可能超過」的界，不是掃掠寬度的估計值。",
+  eoirHfov: "窄視場 HFOV", eoirPixels: "水平像素", eoirPixelsOnTarget: "判讀所需像素",
 };
 
 const EN: SearchStrings = {
@@ -398,6 +419,21 @@ const EN: SearchStrings = {
   contactP: "p(cell)", contactDelta: "δ(cell)", contactGamma: "P(is target) γ",
   rankingNote: "γ is proportional to p(j)/δ(j) — only contacts whose target probability is high relative to the local false-target density are worth checking first. A contact in a shipping lane gets demoted even if its probability is decent.",
   integratedCount: "Expected false targets in area",
+  coverageChoice: "Coverage factor C",
+  coverageSparse: "0.75 sparse", coverageIdeal: "1.0 ideal", coverageDense: "1.3 dense",
+  coverageAuto: "Auto",
+  coverageNote: "Set C directly; track spacing follows as S = W / C. Higher C means tighter tracks and higher POD, but less area covered in the same time. §6(1) gives C = 1 (S = W) as the ideal.",
+  rangeLimits: "Theoretical detection range for this altitude",
+  horizonRange: "Geometric horizon",
+  resolutionRange: "Resolution limit (lateral)",
+  maxLateral: "Max lateral detection range",
+  limitedByHorizon: "horizon-limited",
+  limitedByResolution: "resolution-limited",
+  gsdAtMax: "Ground resolution at that range",
+  sweepCap: "Hard sweep-width bound (2× lateral)",
+  sweepCapped: "⚠ Table sweep width exceeds the physical limit for this altitude/optic — clamped",
+  rangeNote: "Horizon d = 1.17√h(ft) including standard refraction; resolution limit R = D/(N·IFOV), N = pixels needed across the target (Johnson: detection ≈ 2, recognition ≈ 6). This is an upper bound that cannot be exceeded, not an estimate of sweep width.",
+  eoirHfov: "Narrow HFOV", eoirPixels: "Horizontal pixels", eoirPixelsOnTarget: "Pixels on target",
 };
 
 export function searchStrings(lang: SearchLang): SearchStrings {

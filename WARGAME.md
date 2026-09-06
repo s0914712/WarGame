@@ -115,6 +115,7 @@
 | `planner.ts` | 兩個解算方向：`solveForTime()`（給架數→時間/POD）、`solveForAssets()`（給時間→架數/圖形） |
 | `tracks.ts` | 圖形 → 每架無人機的 waypoint 陣列（PS/CS/SS/VS/TS；等高線不自動產生） |
 | `monteCarlo.ts` | 蒙地卡羅：Koopman 反立方律感測器 + 漂流 / 導航誤差 / 感測器妥善率 → 經驗 POD、Wilson CI、發現時間分布 |
+| `sensorRange.ts` | 高度 → 理論偵測距離：幾何地平線、EO/IR 解析度（GSD / Johnson 準則）上限 |
 | `detection.ts` | Stone §4 偵測函數：定距上界 / 指數下界、σ/W 插值、掃掠寬度不確定性混合 |
 | `optimalRectangle.ts` | Stone §5 最佳搜索矩形 P_D(K)：告訴使用者「框該畫多大」 |
 | `falseTargets.ts` | Stone §6 假目標：Poisson 接觸數、查證時間不動點、空間化密度場（航道 / 漂流帶）、式(5) 接觸優先順序 |

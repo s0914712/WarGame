@@ -14,6 +14,7 @@ import { useState, useSyncExternalStore } from "react";
 import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin } from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
+  currentRangeLimits,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
@@ -104,6 +105,9 @@ export function SearchPlannerPanel(
   const loggedContacts = searchPlannerStore.getLoggedContacts();
   const logging = searchPlannerStore.isLoggingContact();
   const rankedContacts = inputs.falseTargetsEnabled ? searchPlannerStore.rankLoggedContacts(4) : [];
+  const limits = currentRangeLimits();
+  const tableWu = W?.uncorrectedNm ?? 0;
+  const sweepExceedsPhysics = tableWu > limits.sweepWidthCapNm + 1e-9;
   const analyticPod = sol
     ? (fwd?.pod ?? inv?.achievedPod ?? podFromCoverage(sol.trackSpacingNm > 0 ? (W?.correctedNm ?? 0) / sol.trackSpacingNm : 0, inputs.podModel))
     : 0;
@@ -206,6 +210,28 @@ export function SearchPlannerPanel(
               {[500, 1000, 1500, 2000].map((ft) => <option key={ft} value={ft}>{ft.toLocaleString()} ft</option>)}
             </select>
           </Row>
+          <div style={{
+            padding: "7px 9px", borderRadius: 4, marginTop: 2,
+            background: "rgba(30,41,59,0.5)", fontSize: 13, lineHeight: 1.6, color: "#94a3b8",
+          }}>
+            <div style={{ color: "#cbd5e1", fontWeight: 600, marginBottom: 2 }}>{t.rangeLimits}</div>
+            <div>{t.horizonRange}: <b style={{ color: "#e2e8f0" }}>{limits.horizonNm.toFixed(1)} nm</b></div>
+            <div>{t.resolutionRange}: <b style={{ color: "#e2e8f0" }}>
+              {limits.gsdLateralNm > 999 ? ">999" : limits.gsdLateralNm.toFixed(1)} nm</b></div>
+            <div style={{ color: "#cbd5e1" }}>
+              {t.maxLateral}: <b>{limits.maxLateralNm.toFixed(1)} nm</b>
+              {" "}({limits.limitedBy === "horizon" ? t.limitedByHorizon : t.limitedByResolution})
+              {" · "}{t.gsdAtMax} {limits.gsdAtMaxM.toFixed(2)} m/px
+            </div>
+            {sweepExceedsPhysics && (
+              <div style={{ color: "#fed7aa", marginTop: 3 }}>{t.sweepCapped}</div>
+            )}
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{t.rangeNote}</div>
+          </div>
+          <NumField label={t.eoirHfov} value={inputs.eoir.hfovDeg} min={0.5} max={30} step={0.5} unit="°"
+            onChange={(v) => patch({ eoir: { ...inputs.eoir, hfovDeg: v } })} />
+          <NumField label={t.eoirPixelsOnTarget} value={inputs.eoir.pixelsOnTarget} min={1} max={12} step={1} unit="px"
+            onChange={(v) => patch({ eoir: { ...inputs.eoir, pixelsOnTarget: v } })} />
           <NumField label={t.visibility} value={inputs.visibilityKm} min={0.5} max={40} step={0.5} unit="km"
             onChange={(v) => patch({ visibilityKm: v })} />
           <NumField label={t.wind} value={inputs.windKn} min={0} max={50} step={1} unit="kn"
@@ -267,6 +293,26 @@ export function SearchPlannerPanel(
 
         {/* ⑤ 航跡間距與圖形 */}
         <Section title={t.secSpacing}>
+          <Row label={t.coverageChoice}>
+            <div style={{ display: "flex", gap: 4, flex: 1, flexWrap: "wrap" }}>
+              {([[null, t.coverageAuto], [0.75, t.coverageSparse], [1.0, t.coverageIdeal], [1.3, t.coverageDense]] as [number | null, string][])
+                .map(([v, label]) => {
+                  const active = inputs.coverageOverride === v;
+                  return (
+                    <button key={label} className="wg-btn"
+                      onClick={() => patch({ coverageOverride: v, trackSpacingOverrideNm: null })}
+                      style={{
+                        flex: 1, minWidth: 62, padding: "5px 6px", borderRadius: 4, fontSize: 14,
+                        cursor: "pointer", fontFamily: "inherit", fontWeight: active ? 700 : 400,
+                        border: `1px solid ${active ? "#facc15" : "rgba(148,163,184,0.25)"}`,
+                        background: active ? "rgba(250,204,21,0.2)" : "rgba(30,41,59,0.4)",
+                        color: active ? "#fef9c3" : "#cbd5e1",
+                      }}>{label}</button>
+                  );
+                })}
+            </div>
+          </Row>
+          <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>{t.coverageNote}</div>
           <Row label={t.trackSpacing}>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1 }}>
               <input type="number" step={0.1} min={0.1}

@@ -14,5 +14,6 @@ export * from "./detection";
 export * from "./optimalRectangle";
 export * from "./targetDistribution";
 export * from "./falseTargets";
+export * from "./sensorRange";
 export * from "./i18n";
 export * from "./searchPlannerStore";
