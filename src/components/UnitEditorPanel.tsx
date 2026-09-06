@@ -205,6 +205,11 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
     });
   };
   const isSubmarine = UNIT_CATALOG[targetUnit.kind].domain === "subsurface";
+  // UAV 規格：滯空時數 / 作戰半徑（extensions；沒設的單位不顯示）
+  const rawEndurance = targetUnit.extensions.endurance;
+  const enduranceHr = typeof rawEndurance === "number" ? rawEndurance : undefined;
+  const rawRadius = targetUnit.extensions.commandRadiusKm;
+  const commandRadiusKm = typeof rawRadius === "number" ? rawRadius : undefined;
   const curDepthM = Math.round(Math.max(0, -targetUnit.position.altMeters));
   const layerM = scenarioStore.getState().scenario.sonarLayerDepthM ?? 60;
   const setDepth = (depthM: number) => {
@@ -353,6 +358,31 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
           color="#fbbf24"
         />
       </div>
+
+      {/* 滯空時數 / 作戰半徑 — 只有帶這些 extension 的單位（UAV）才顯示 */}
+      {(enduranceHr !== undefined || commandRadiusKm !== undefined) && (
+        <div
+          style={{
+            padding: "6px 14px",
+            fontSize: 15,
+            color: "#94a3b8",
+            display: "flex",
+            gap: 14,
+            borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
+            fontFamily: "ui-monospace, monospace",
+          }}
+        >
+          {enduranceHr !== undefined && (
+            <span>{t("Endurance")}：{enduranceHr} hr</span>
+          )}
+          {commandRadiusKm !== undefined && (
+            <span>
+              {t("Combat radius")}：{commandRadiusKm.toFixed(0)} km
+              {" "}({(commandRadiusKm / 1.852).toFixed(0)} nm)
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ROE（己方）/ 偵測狀態（敵方） */}
       <div

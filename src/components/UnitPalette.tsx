@@ -8,7 +8,7 @@
  * - [💾 Export]：當前場景下載為 JSON
  */
 import { useSyncExternalStore } from "react";
-import { ClipboardList, Rocket, Plane, Ship, Anchor, PlaneTakeoff, Radio, Download, X, Shield, ShieldCheck, Radar, Truck, Building2, Wind } from "lucide-react";
+import { ClipboardList, Rocket, Plane, Ship, Anchor, PlaneTakeoff, Radio, Download, X, Shield, ShieldCheck, Radar, Truck, Building2, Wind, Bird, Send } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { editorStore } from "../wargame/editor/editorStore";
 import { scenarioStore } from "../wargame/scenarioStore";
@@ -69,6 +69,8 @@ const KIND_OPTIONS: { kind: UnitKind; Icon: LucideIcon }[] = [
   { kind: "supply_ship",      Icon: Truck },
   { kind: "airbase",          Icon: Building2 },
   { kind: "asw_helo",         Icon: Wind },
+  { kind: "uav_ruiyuan",      Icon: Bird },
+  { kind: "uav_ruihuo",       Icon: Send },
 ];
 
 export function UnitPalette({ embedded = false }: { embedded?: boolean } = {}) {

@@ -8,7 +8,7 @@
 
 本 repo 並存兩個 app，由 URL 決定：
 - **`?mode=civilian`（預設）**：原 Mini Taiwan Pulse — 23 圖層即時資料視覺化
-- **`?mode=wargame`**：軍事兵棋推演 — 6 種單位 / 戰鬥模擬 / LLM 介接
+- **`?mode=wargame`**：軍事兵棋推演 — 14 種單位 / 戰鬥模擬 / LLM 介接
 
 兵棋部分的完整文件見 [`WARGAME.md`](./WARGAME.md)（專案說明 / 模組地圖 / 架構 / 多方對戰 roadmap）。
 

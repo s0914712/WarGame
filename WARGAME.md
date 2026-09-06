@@ -9,7 +9,8 @@
 
 把原本「資料視覺化 demo」變成可推演的戰場：
 - 可暫停即時制（1×/5×/30×/60× 加速）
-- 6 種單位（飛彈車 / 無人機 / 船艦 / 潛艦 / 戰機 / 雷達站）
+- 14 種單位（機動飛彈車 / 無人機 / 銳鳶 UAV / 銳穫 UAV / 船艦 / 潛艦 / 戰機 / 反潛直升機 /
+  雷達站 / 機動雷達車 / 海岸 SAM / 愛國者 SAM / 補給艦 / 空軍基地）
 - NATO APP-6 軍事符號（藍方 / 紅方 / 中立分色與形狀）
 - 偵測 + 戰爭迷霧 + 隱身（stealth）
 - 航線規劃編輯器 + 驗證（地形 / 油料 / 時間）
@@ -29,7 +30,7 @@
 ### `src/wargame/types.ts` — 中央型別
 | 型別 | 用途 |
 |---|---|
-| `UnitKind` | 6 種：`missile_launcher` / `drone` / `ship_surface` / `submarine` / `fighter` / `radar_station` |
+| `UnitKind` | 14 種：`missile_launcher` / `drone` / `uav_ruiyuan` / `uav_ruihuo` / `ship_surface` / `submarine` / `fighter` / `asw_helo` / `radar_station` / `mobile_radar` / `sam_coastal` / `sam_patriot` / `supply_ship` / `airbase` |
 | `Domain` | `land` / `air` / `sea` / `subsurface` |
 | `CoreAttributes` | 5 個 UI 可調屬性：rangeKm / speedKnots / movementRangeKm / detectionRangeKm / hpMax |
 | `ExtensionKey` | 15 個保留 enum（armor / stealthRcs / ecmStrength / ...） |
@@ -57,9 +58,10 @@
 - `subscribe(cb)` — symbol / route / radar / log 層全部訂閱
 
 ### `src/wargame/catalog/units.ts` — 單位目錄
-`UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry>` 一個物件管全 6 種：
+`UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry>` 一個物件管全 14 種：
 - `domain` / `iconShape` / `defaultAltitudeM`
 - `defaultCore` — 場景未指定就用這套
+- `defaultExtensions` — 放置 / 載入場景時預填的 extension（如 UAV 的 `endurance` 滯空時數、`commandRadiusKm` 作戰半徑）
 - `uiRanges` — slider 的 min/max/step/unit
 - `constraints` — `forbidDomains` / `defaultPlanTimeLimitSec` / `requireRoundTrip`
 
@@ -98,7 +100,7 @@
 ### `src/wargame/symbology/` — NATO 符號
 | 檔 | 用途 |
 |---|---|
-| `sidc.ts` | 6 種 × 3 陣營 = 18 SIDC，iconNameOf() 對應 |
+| `sidc.ts` | 14 種 × 5 陣營 = 70 SIDC，iconNameOf() 對應 |
 | `loadSymbols.ts` | 啟動時用 milsymbol 產 SVG → Mapbox `addImage` |
 
 ### `src/wargame/llm/` — LLM 介接
@@ -186,7 +188,7 @@ units[id].waypoints / speed / engagingTargetId 改寫
 | 加新 unit attribute（不必改 schema） | 用 `unit.extensions[k]` + 加 `ExtensionKey` enum |
 | 加新移動限制（禁飛 / 天候） | `validate.ts` 加新 `RouteIssueType` |
 | 加新 LLM 命令 | `schema.ts` 加 union member + `applyCommands.ts` 加 switch case |
-| 加新單位種類 | `UnitKind` enum + `UNIT_CATALOG` + `sidc.ts` 加 SIDC |
+| 加新單位種類 | `UnitKind` enum + `UNIT_CATALOG` + `sidc.ts` 加 SIDC + `UnitPalette` KIND_OPTIONS + `scriptedAiV2.roleOf` + `UnitScene.domainOf` |
 | 換符號集（MIL-STD-2525D） | `loadSymbols.ts` 改 milsymbol 版本 / 加 standard option |
 | FoW 升級為 4 級漸進 | `detection.ts` 加 unknown/classified 計時器 + symbol layer 多 opacity 階段 |
 

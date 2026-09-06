@@ -49,6 +49,10 @@ export const langStore = {
 type Dict = Record<string, string>;
 
 const ZH: Dict = {
+  // Unit panel — UAV 規格
+  "Endurance": "滯空",
+  "Combat radius": "作戰半徑",
+
   // HUD / clock
   "Pause": "暫停",
   "Resume": "繼續",
