@@ -85,10 +85,13 @@ export default function SearchPlannerApp() {
       map.on("click", (e) => {
         if (searchPlannerStore.isPicking()) {
           searchPlannerStore.setCorner(e.lngLat.lng, e.lngLat.lat);
+        } else if (searchPlannerStore.isLoggingContact()) {
+          searchPlannerStore.addContactAt(e.lngLat.lng, e.lngLat.lat);
         }
       });
       const cursor = () => {
-        map.getCanvas().style.cursor = searchPlannerStore.isPicking() ? "crosshair" : "";
+        const active = searchPlannerStore.isPicking() || searchPlannerStore.isLoggingContact();
+        map.getCanvas().style.cursor = active ? "crosshair" : "";
       };
       searchPlannerStore.subscribe(cursor);
       setMapReady(true);

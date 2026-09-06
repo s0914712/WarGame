@@ -15,12 +15,17 @@ import { langStore } from "../wargame/i18n/lang";
 import { searchStrings } from "../wargame/search/i18n";
 import { podForDisplay, POD_DISPLAY_CAP } from "../wargame/search/pod";
 
+const SRC_BANDS = "wg-search-bands-src";
+const SRC_CONTACTS = "wg-search-contacts-src";
 const SRC_PROB = "wg-search-prob-src";
 const SRC_OPT = "wg-search-opt-src";
 const SRC_BOX = "wg-search-box-src";
 const SRC_SWEEP = "wg-search-sweep-src";
 const SRC_TRACKS = "wg-search-tracks-src";
 
+const LAYER_BANDS = "wg-search-bands";
+const LAYER_CONTACTS = "wg-search-contacts";
+const LAYER_CONTACT_LABEL = "wg-search-contact-label";
 const LAYER_PROB = "wg-search-prob";
 const LAYER_OPT = "wg-search-opt";
 const LAYER_SWEEP = "wg-search-sweep";
@@ -159,11 +164,46 @@ function buildOptimalRect(): GeoJSON.FeatureCollection {
   };
 }
 
-export function attachWargameSearchLayer(map: MapboxMap): () => void {
-  const all = [LAYER_LABEL, LAYER_TRACK_PTS, LAYER_TRACKS, LAYER_OPT, LAYER_BOX, LAYER_SWEEP, LAYER_PROB];
-  for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
-  for (const id of [SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_PROB]) if (map.getSource(id)) map.removeSource(id);
+/** 假目標密度帶（航道 / 漂流帶）—— 空間化的 δ(j) */
+function buildBands(): GeoJSON.FeatureCollection {
+  const inputs = searchPlannerStore.getInputs();
+  if (!inputs.falseTargetsEnabled || !inputs.densityBandsEnabled) return EMPTY;
+  return {
+    type: "FeatureCollection",
+    features: searchPlannerStore.getDensityBands().map((b) => ({
+      type: "Feature" as const,
+      properties: { widthNm: b.widthNm, mult: b.multiplier },
+      geometry: { type: "LineString" as const, coordinates: b.path },
+    })),
+  };
+}
 
+/** 已記錄的接觸，依 Stone 式(5) 的查證順序編號 */
+function buildContacts(): GeoJSON.FeatureCollection {
+  const inputs = searchPlannerStore.getInputs();
+  if (!inputs.falseTargetsEnabled) return EMPTY;
+  const ranked = searchPlannerStore.rankLoggedContacts(4);
+  if (ranked.length === 0) return EMPTY;
+  return {
+    type: "FeatureCollection",
+    features: ranked.map((c) => ({
+      type: "Feature" as const,
+      properties: { rank: c.rank, label: `${c.rank}`, top: c.rank === 1 ? 1 : 0 },
+      geometry: { type: "Point" as const, coordinates: [c.lng, c.lat] },
+    })),
+  };
+}
+
+export function attachWargameSearchLayer(map: MapboxMap): () => void {
+  const all = [LAYER_CONTACT_LABEL, LAYER_CONTACTS, LAYER_LABEL, LAYER_TRACK_PTS, LAYER_TRACKS,
+    LAYER_OPT, LAYER_BOX, LAYER_SWEEP, LAYER_BANDS, LAYER_PROB];
+  for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
+  for (const id of [SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
+    if (map.getSource(id)) map.removeSource(id);
+  }
+
+  map.addSource(SRC_BANDS, { type: "geojson", data: buildBands() });
+  map.addSource(SRC_CONTACTS, { type: "geojson", data: buildContacts() });
   map.addSource(SRC_PROB, { type: "geojson", data: buildProbability() });
   map.addSource(SRC_OPT, { type: "geojson", data: buildOptimalRect() });
   map.addSource(SRC_SWEEP, { type: "geojson", data: buildSweep() });
@@ -179,6 +219,21 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
         0, "#1e3a8a", 0.35, "#7c3aed", 0.7, "#f59e0b", 1, "#fca5a5",
       ],
       "fill-opacity": ["interpolate", ["linear"], ["get", "intensity"], 0, 0.05, 1, 0.45],
+    },
+  });
+
+  // 假目標密度帶（畫在機率圖之上、掃掠帶之下）
+  map.addLayer({
+    id: LAYER_BANDS, type: "line", source: SRC_BANDS,
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": "#fb923c",
+      "line-opacity": 0.16,
+      "line-width": [
+        "interpolate", ["exponential", 2], ["zoom"],
+        4, ["*", ["get", "widthNm"], 2 * 1852 / (156543 / Math.pow(2, 4))],
+        14, ["*", ["get", "widthNm"], 2 * 1852 / (156543 / Math.pow(2, 14))],
+      ],
     },
   });
 
@@ -228,6 +283,24 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
     },
   });
 
+  // 接觸標記（依查證順序編號；第 1 順位綠色）
+  map.addLayer({
+    id: LAYER_CONTACTS, type: "circle", source: SRC_CONTACTS,
+    paint: {
+      "circle-radius": ["case", ["==", ["get", "top"], 1], 11, 9],
+      "circle-color": ["case", ["==", ["get", "top"], 1], "#4ade80", "#94a3b8"],
+      "circle-stroke-color": "#0f172a", "circle-stroke-width": 2,
+    },
+  });
+  map.addLayer({
+    id: LAYER_CONTACT_LABEL, type: "symbol", source: SRC_CONTACTS,
+    layout: {
+      "text-field": ["get", "label"], "text-size": 12, "text-allow-overlap": true,
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+    },
+    paint: { "text-color": "#0f172a" },
+  });
+
   // 區域標籤
   map.addLayer({
     id: LAYER_LABEL, type: "symbol", source: SRC_BOX,
@@ -242,6 +315,8 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
 
   const refresh = () => {
     (map.getSource(SRC_PROB) as mapboxgl.GeoJSONSource | undefined)?.setData(buildProbability());
+    (map.getSource(SRC_BANDS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildBands());
+    (map.getSource(SRC_CONTACTS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildContacts());
     (map.getSource(SRC_OPT) as mapboxgl.GeoJSONSource | undefined)?.setData(buildOptimalRect());
     (map.getSource(SRC_SWEEP) as mapboxgl.GeoJSONSource | undefined)?.setData(buildSweep());
     (map.getSource(SRC_BOX) as mapboxgl.GeoJSONSource | undefined)?.setData(buildBox());
@@ -253,6 +328,8 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   return () => {
     unsub(); unsubLang();
     for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
-    for (const id of [SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_PROB]) if (map.getSource(id)) map.removeSource(id);
+    for (const id of [SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
+      if (map.getSource(id)) map.removeSource(id);
+    }
   };
 }

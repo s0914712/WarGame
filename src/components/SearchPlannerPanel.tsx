@@ -11,7 +11,7 @@
  * 面板同時服務兵推模式與 standalone 搜索規劃 app。
  */
 import { useState, useSyncExternalStore } from "react";
-import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play } from "lucide-react";
+import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin } from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
 } from "../wargame/search/searchPlannerStore";
@@ -101,6 +101,9 @@ export function SearchPlannerPanel(
     ? actualTrackNm / Math.max(1, sol.droneCount) / Math.max(0.1, inputs.speedKn)
     : 0;
   const contactLoad = fwd?.contacts ?? inv?.contacts ?? null;
+  const loggedContacts = searchPlannerStore.getLoggedContacts();
+  const logging = searchPlannerStore.isLoggingContact();
+  const rankedContacts = inputs.falseTargetsEnabled ? searchPlannerStore.rankLoggedContacts(4) : [];
   const analyticPod = sol
     ? (fwd?.pod ?? inv?.achievedPod ?? podFromCoverage(sol.trackSpacingNm > 0 ? (W?.correctedNm ?? 0) / sol.trackSpacingNm : 0, inputs.podModel))
     : 0;
@@ -655,6 +658,83 @@ export function SearchPlannerPanel(
                     note={`${(contactLoad.timeShare * 100).toFixed(0)}% · ${t.worstCase} ${contactLoad.worstCaseInvestigationHours.toFixed(1)} hr`} />
                 </div>
               )}
+              <label style={{ ...checkRow, marginTop: 6 }}>
+                <input type="checkbox" checked={inputs.densityBandsEnabled}
+                  onChange={(e) => patch({ densityBandsEnabled: e.target.checked })} />
+                {t.densityBands}
+              </label>
+              {inputs.densityBandsEnabled && (
+                <>
+                  <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5, paddingLeft: 22 }}>
+                    {t.densityBandsNote}
+                  </div>
+                  <div style={{ ...readout, fontSize: 15 }}>
+                    {t.integratedCount}: <b style={{ color: "#fef9c3" }}>
+                      {searchPlannerStore.integratedFalseTargets().toFixed(1)}
+                    </b>
+                  </div>
+                </>
+              )}
+
+              {/* 接觸記錄 + Stone 式(5) 排序 */}
+              <div style={{ fontSize: 15, color: "#94a3b8", marginTop: 10 }}>{t.contactLog}</div>
+              <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>{t.contactHint}</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                <button className="wg-btn"
+                  style={{ ...primaryBtn, flex: 1, borderColor: logging ? "#4ade80" : undefined,
+                           background: logging ? "rgba(74,222,128,0.2)" : primaryBtn.background,
+                           color: logging ? "#bbf7d0" : primaryBtn.color }}
+                  onClick={() => searchPlannerStore.setLoggingContact(!logging)}>
+                  <MapPin size={13} /> {logging ? t.logContactActive : t.logContact}
+                </button>
+                {loggedContacts.length > 0 && (
+                  <button className="wg-btn" style={smallBtn}
+                    onClick={() => searchPlannerStore.clearContacts()}>
+                    <Trash2 size={12} /> {t.clearContacts}
+                  </button>
+                )}
+              </div>
+
+              {rankedContacts.length === 0 ? (
+                <div style={{ ...readout, color: "#94a3b8", fontSize: 15 }}>{t.noContacts}</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 15, color: "#bbf7d0", fontWeight: 700, marginTop: 6 }}>
+                    {t.checkFirst}
+                  </div>
+                  {rankedContacts.map((c) => (
+                    <div key={c.id} style={{
+                      display: "flex", alignItems: "center", gap: 8, marginTop: 4,
+                      padding: "6px 8px", borderRadius: 4,
+                      background: c.rank === 1 ? "rgba(74,222,128,0.12)" : "rgba(30,41,59,0.5)",
+                      border: `1px solid ${c.rank === 1 ? "rgba(74,222,128,0.4)" : "rgba(148,163,184,0.2)"}`,
+                    }}>
+                      <span style={{
+                        width: 22, height: 22, borderRadius: 11, flexShrink: 0,
+                        background: c.rank === 1 ? "#4ade80" : "rgba(148,163,184,0.35)",
+                        color: c.rank === 1 ? "#052e16" : "#e2e8f0",
+                        fontSize: 13, fontWeight: 700,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>{c.rank}</span>
+                      <div style={{ flex: 1, minWidth: 0, fontFamily: "ui-monospace, monospace", fontSize: 13, color: "#cbd5e1" }}>
+                        <div>{c.lat.toFixed(3)}°N {c.lng.toFixed(3)}°E</div>
+                        <div style={{ color: "#64748b" }}>
+                          {t.contactP} {c.p.toExponential(1)} · {t.contactDelta} {c.delta.toFixed(3)} · p/δ {c.ratio.toFixed(4)}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: c.rank === 1 ? "#4ade80" : "#e2e8f0" }}>
+                        {(c.gamma * 100).toFixed(1)}%
+                      </span>
+                      <button className="wg-btn" style={{ ...smallBtn, padding: "2px 5px" }}
+                        onClick={() => searchPlannerStore.removeContact(c.id)}>×</button>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5, marginTop: 6 }}>
+                    {t.rankingNote}
+                  </div>
+                </>
+              )}
+
               <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55, marginTop: 6 }}>
                 {t.falseTargetsNote}
               </div>
