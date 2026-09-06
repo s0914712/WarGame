@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import "./wargame/styles.css";
-import { Bot, GraduationCap, Swords } from "lucide-react";
+import { Bot, GraduationCap, Radar, Swords } from "lucide-react";
 import { WargameClockHUD } from "./components/WargameClockHUD";
 import { UnitEditorPanel } from "./components/UnitEditorPanel";
 import { LLMPanel } from "./components/LLMPanel";
@@ -12,6 +12,7 @@ import { ReplayPanel } from "./components/ReplayPanel";
 import { CinemaControls } from "./components/CinemaControls";
 import { BattleStatsHud } from "./components/BattleStatsHud";
 import { UnitPalette } from "./components/UnitPalette";
+import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
 import { MapStyleSwitcher } from "./components/MapStyleSwitcher";
 import { ScenarioPicker } from "./components/ScenarioPicker";
 import { DemoModeToggle } from "./components/DemoModeToggle";
@@ -24,6 +25,8 @@ import { LandingScreen } from "./components/LandingScreen";
 import { HelpCircle, Menu } from "lucide-react";
 import { uiStore } from "./wargame/uiStore";
 import { attachWargameCombatLayer } from "./map/wargameCombatLayer";
+import { attachWargameSearchLayer } from "./map/wargameSearchLayer";
+import { searchPlannerStore } from "./wargame/search/searchPlannerStore";
 import { attachWargameRadarLayer } from "./map/wargameRadarLayer";
 import { attachWargameWrecksLayer } from "./map/wargameWrecksLayer";
 import { attachWargameSelectionLayer } from "./map/wargameSelectionLayer";
@@ -84,6 +87,7 @@ export default function WargameApp() {
       attachWargameRouteLayer(map),
       attachWargameWrecksLayer(map),
       attachWargameSonobuoyLayer(map),
+      attachWargameSearchLayer(map),
       attachWargameBearingLayer(map),
       attachWargameCombatLayer(map),
     );
@@ -112,6 +116,11 @@ export default function WargameApp() {
 
       // Click：三種模式（view / planRoute / placeUnit）
       map.on("click", (e) => {
+        // 搜索規劃器框選搜索區（與 editorStore 模式獨立，故先攔）
+        if (searchPlannerStore.isPicking()) {
+          searchPlannerStore.setCorner(e.lngLat.lng, e.lngLat.lat);
+          return;
+        }
         const mode = editorStore.getMode();
         if (mode === "planRoute") {
           editorStore.appendWaypoint(e.lngLat.lng, e.lngLat.lat);
@@ -143,6 +152,7 @@ export default function WargameApp() {
       //   右鍵點空白海面 → 移動（Shift = 接續排隊航點）
       map.on("contextmenu", (e) => {
         if (editorStore.getMode() !== "view") return;   // 規劃 / 放置模式不攔右鍵
+        if (searchPlannerStore.isPicking()) return;     // 搜索區框選中不攔右鍵
         const unitId = scenarioStore.getSelectedUnitId();
         if (!unitId) return;
         e.preventDefault();
@@ -158,9 +168,11 @@ export default function WargameApp() {
       const updateCursor = () => {
         const canvas = map.getCanvas();
         const mode = editorStore.getMode();
-        canvas.style.cursor = (mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea") ? "crosshair" : "";
+        const picking = searchPlannerStore.isPicking();
+        canvas.style.cursor = (picking || mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea") ? "crosshair" : "";
       };
       editorStore.subscribe(updateCursor);
+      searchPlannerStore.subscribe(updateCursor);
       map.on("mouseenter", SYMBOL_LAYER_ID, () => {
         if (editorStore.getMode() === "view") map.getCanvas().style.cursor = "pointer";
       });
@@ -239,6 +251,7 @@ export default function WargameApp() {
           <PovSwitcher />
           <UnitPalette />
           <UnitEditorPanel />
+          <SearchPlannerPanel />
           <EngagementLog />
           <ReplayPanel />
           <CinemaControls map={mapRef.current} />
@@ -265,6 +278,14 @@ export default function WargameApp() {
             position: "absolute", bottom: 16, right: 156, zIndex: 25,
             display: "flex", gap: 6,
           }}>
+            <button
+              onClick={() => searchPlannerStore.setOpen(!searchPlannerStore.isOpen())}
+              title="搜索規劃器（掃區時間 / POD / 建議架數與搜索圖形）"
+              className="wg-btn"
+              style={iconBtn}
+            >
+              <Radar size={16} />
+            </button>
             <button
               onClick={() => uiStore.setLandingOpen(true)}
               title="返回主選單"
