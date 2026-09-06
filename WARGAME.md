@@ -9,7 +9,8 @@
 
 把原本「資料視覺化 demo」變成可推演的戰場：
 - 可暫停即時制（1×/5×/30×/60× 加速）
-- 6 種單位（飛彈車 / 無人機 / 船艦 / 潛艦 / 戰機 / 雷達站）
+- 14 種單位（機動飛彈車 / 無人機 / 銳鳶 UAV / 銳穫 UAV / 船艦 / 潛艦 / 戰機 / 反潛直升機 /
+  雷達站 / 機動雷達車 / 海岸 SAM / 愛國者 SAM / 補給艦 / 空軍基地）
 - NATO APP-6 軍事符號（藍方 / 紅方 / 中立分色與形狀）
 - 偵測 + 戰爭迷霧 + 隱身（stealth）
 - 航線規劃編輯器 + 驗證（地形 / 油料 / 時間）
@@ -29,7 +30,7 @@
 ### `src/wargame/types.ts` — 中央型別
 | 型別 | 用途 |
 |---|---|
-| `UnitKind` | 6 種：`missile_launcher` / `drone` / `ship_surface` / `submarine` / `fighter` / `radar_station` |
+| `UnitKind` | 14 種：`missile_launcher` / `drone` / `uav_ruiyuan` / `uav_ruihuo` / `ship_surface` / `submarine` / `fighter` / `asw_helo` / `radar_station` / `mobile_radar` / `sam_coastal` / `sam_patriot` / `supply_ship` / `airbase` |
 | `Domain` | `land` / `air` / `sea` / `subsurface` |
 | `CoreAttributes` | 5 個 UI 可調屬性：rangeKm / speedKnots / movementRangeKm / detectionRangeKm / hpMax |
 | `ExtensionKey` | 15 個保留 enum（armor / stealthRcs / ecmStrength / ...） |
@@ -57,9 +58,10 @@
 - `subscribe(cb)` — symbol / route / radar / log 層全部訂閱
 
 ### `src/wargame/catalog/units.ts` — 單位目錄
-`UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry>` 一個物件管全 6 種：
+`UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry>` 一個物件管全 14 種：
 - `domain` / `iconShape` / `defaultAltitudeM`
 - `defaultCore` — 場景未指定就用這套
+- `defaultExtensions` — 放置 / 載入場景時預填的 extension（如 UAV 的 `endurance` 滯空時數、`commandRadiusKm` 作戰半徑）
 - `uiRanges` — slider 的 min/max/step/unit
 - `constraints` — `forbidDomains` / `defaultPlanTimeLimitSec` / `requireRoundTrip`
 
@@ -98,8 +100,24 @@
 ### `src/wargame/symbology/` — NATO 符號
 | 檔 | 用途 |
 |---|---|
-| `sidc.ts` | 6 種 × 3 陣營 = 18 SIDC，iconNameOf() 對應 |
+| `sidc.ts` | 14 種 × 5 陣營 = 70 SIDC，iconNameOf() 對應 |
 | `loadSymbols.ts` | 啟動時用 milsymbol 產 SVG → Mapbox `addImage` |
+
+### `src/wargame/search/` — 無人機搜索規劃（IAMSAR）
+純函式解算，依《搜索參數的選擇與機率》與《六大搜索圖形》實作。完整模型與出處見
+[`docs/search-planning.md`](./docs/search-planning.md)。
+
+| 檔 | 用途 |
+|---|---|
+| `sweepWidth.ts` | 未修正掃掠寬度 Wu 查表（高度 × 能見度 × 目標尺寸）+ `W = Wu × Fw × Fv × Ff` |
+| `pod.ts` | 覆蓋因子 `C = W/S`、POD 曲線（由文件表 4-2 反解）、累積 POD、顯示封頂 |
+| `patterns.ts` | 六大圖形 metadata + 擴展方形航段表（表 4-3）+ 航跡間距上限 + 圖形建議 |
+| `planner.ts` | 兩個解算方向：`solveForTime()`（給架數→時間/POD）、`solveForAssets()`（給時間→架數/圖形） |
+| `tracks.ts` | 圖形 → 每架無人機的 waypoint 陣列（PS/CS/SS/VS/TS；等高線不自動產生） |
+| `searchPlannerStore.ts` | external store：搜索區、參數、產生的航線、指派到單位 |
+
+搜索五要素 `A = T × N × P × S`。產生的航線經 `enqueueCommand({ kind: "set_waypoints" })`
+下達，engine 仍是 units 的唯一 mutator。
 
 ### `src/wargame/llm/` — LLM 介接
 | 檔 | 用途 |
@@ -119,6 +137,7 @@
 | `wargameRouteLayer.ts` | current 航線（淡藍虛線）+ pending（亮橘） |
 | `wargameCombatLayer.ts` | 飛彈光點 + 拖尾 + 爆炸環（hit 黃 / miss 灰） |
 | `wargameRadarLayer.ts` | 雷達常駐偵測圈（青虛線）+ 資料鏈（黃虛線） |
+| `wargameSearchLayer.ts` | 搜索區框 + 掃掠帶 + 各架搜索航線（分色）+ 面積/時間/POD 標籤 |
 
 ### `src/components/` — UI（兵棋部分）
 | 檔 | 用途 |
@@ -127,6 +146,7 @@
 | `UnitEditorPanel.tsx` | 右側選中單位面板：5 slider + 規劃航線 / 驗證 |
 | `EngagementLog.tsx` | 左下戰報滾動（含 50 條最近事件 + 摺疊） |
 | `LLMPanel.tsx` | 全螢幕 modal：State / Commands / Schema 三分頁 |
+| `SearchPlannerPanel.tsx` | 右側搜索規劃器：框搜索區 → 解算掃區時間 / POD / 建議架數與圖形 → 產生航線並指派 |
 
 ### `src/hooks/`
 | 檔 | 用途 |
@@ -186,7 +206,7 @@ units[id].waypoints / speed / engagingTargetId 改寫
 | 加新 unit attribute（不必改 schema） | 用 `unit.extensions[k]` + 加 `ExtensionKey` enum |
 | 加新移動限制（禁飛 / 天候） | `validate.ts` 加新 `RouteIssueType` |
 | 加新 LLM 命令 | `schema.ts` 加 union member + `applyCommands.ts` 加 switch case |
-| 加新單位種類 | `UnitKind` enum + `UNIT_CATALOG` + `sidc.ts` 加 SIDC |
+| 加新單位種類 | `UnitKind` enum + `UNIT_CATALOG` + `sidc.ts` 加 SIDC + `UnitPalette` KIND_OPTIONS + `scriptedAiV2.roleOf` + `UnitScene.domainOf` |
 | 換符號集（MIL-STD-2525D） | `loadSymbols.ts` 改 milsymbol 版本 / 加 standard option |
 | FoW 升級為 4 級漸進 | `detection.ts` 加 unknown/classified 計時器 + symbol layer 多 opacity 階段 |
 

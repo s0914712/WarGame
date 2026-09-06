@@ -111,7 +111,7 @@ export const editorStore = {
       },
       waypoints: [],
       core: { ...cat.defaultCore },
-      extensions: {},
+      extensions: { ...(cat.defaultExtensions ?? {}) },
       distanceTravelledKm: 0,
       hpCurrent: cat.defaultCore.hpMax,
       ammoMax: cat.defaultAmmoMax,

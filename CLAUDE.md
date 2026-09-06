@@ -8,7 +8,7 @@
 
 本 repo 並存兩個 app，由 URL 決定：
 - **`?mode=civilian`（預設）**：原 Mini Taiwan Pulse — 23 圖層即時資料視覺化
-- **`?mode=wargame`**：軍事兵棋推演 — 6 種單位 / 戰鬥模擬 / LLM 介接
+- **`?mode=wargame`**：軍事兵棋推演 — 14 種單位 / 戰鬥模擬 / LLM 介接
 
 兵棋部分的完整文件見 [`WARGAME.md`](./WARGAME.md)（專案說明 / 模組地圖 / 架構 / 多方對戰 roadmap）。
 
@@ -136,6 +136,7 @@ Hook 參數表**不收** `currentTime`。理由與節流表見 [`docs/developmen
 - [`docs/TIMELINE_ARCHITECTURE.md`](./docs/TIMELINE_ARCHITECTURE.md) — 時間軸架構
 - [`docs/bus-layer-design.md`](./docs/bus-layer-design.md) — 公車 progress-based 架構 + 全台擴展指南
 - [`docs/known-issues.md`](./docs/known-issues.md) — 歷史 bug + 診斷指令
+- [`docs/search-planning.md`](./docs/search-planning.md) — 無人機搜索規劃器（IAMSAR 掃掠寬度 / POD / 六大圖形）
 - [`docs/research/`](./docs/research/) — 研究報告區（決策軌跡、跨系統比對、故事 cookbook）
 
 ## 關聯專案
