@@ -25,7 +25,10 @@ import type { SearchPatternId } from "./patterns";
 import { boxFromCorners, generateSearchTracks, measureBox, type DroneTrack } from "./tracks";
 import { runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
 import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
-import { densityFromExpectedCount, type FalseTargetModel } from "./falseTargets";
+import {
+  calibrateBaseDensity, densityAt, integrateDensity, rankContacts,
+  type ContactRanking, type DensityField, type FalseTargetModel,
+} from "./falseTargets";
 import { optimalRectangle, searchEffortNm2, type OptimalRectangleResult } from "./optimalRectangle";
 import {
   cumulativeSuccess, distributionStats, propagate, rasterize, sampleParticles,
@@ -98,6 +101,8 @@ export interface PlannerInputs {
   expectedFalseTargetsInArea: number;
   /** 查證一個接觸所需時間（小時） */
   investigationHr: number;
+  /** 假目標密度是否分帶（航道 / 漂流帶）；false = 整區均勻 */
+  densityBandsEnabled: boolean;
 }
 
 /**
@@ -167,7 +172,25 @@ const DEFAULT_INPUTS: PlannerInputs = {
   falseTargetsEnabled: false,
   expectedFalseTargetsInArea: 12,
   investigationHr: 0.25,
+  densityBandsEnabled: false,
 };
+
+/**
+ * 預設假目標密度帶 —— 台海的兩個典型來源。
+ * 密度倍率是示意值；實務上應由該海域的航運密度與漂流物觀測估計。
+ */
+export const DEFAULT_DENSITY_BANDS: DensityField["bands"] = [
+  {
+    id: "lane", label: "主航道", labelEn: "Main shipping lane",
+    path: [[119.2, 22.6], [119.9, 23.8], [120.6, 25.2]],
+    widthNm: 12, multiplier: 6,
+  },
+  {
+    id: "convergence", label: "漂流輻合帶", labelEn: "Drift convergence zone",
+    path: [[119.0, 23.9], [120.8, 23.5]],
+    widthNm: 8, multiplier: 3,
+  },
+];
 
 /** 預設情境 —— Stone §2 的範例形狀（回報位置 + 漂流） */
 export const DEFAULT_SCENARIOS: SearchScenario[] = [
@@ -199,6 +222,11 @@ let scenarios: SearchScenario[] = DEFAULT_SCENARIOS.map((x) => ({ ...x }));
 let particles: Particle[] = [];
 /** 各趟搜索的 POS（Stone §7 的累積成功機率用） */
 let sortiePos: number[] = [];
+/** 已記錄、尚未查證的接觸（Stone §6 式 5 的排序對象） */
+let loggedContacts: { id: string; lng: number; lat: number }[] = [];
+/** 是否處於「點地圖記錄接觸」模式 */
+let loggingContact = false;
+let densityBands: DensityField["bands"] = DEFAULT_DENSITY_BANDS.map((b) => ({ ...b }));
 
 const listeners = new Set<Listener>();
 
@@ -299,12 +327,29 @@ function currentSweepHours(): number {
   return inv.actualTimeHr;
 }
 
-/** 由「整區預期接觸數」換算成 Stone §6 的密度 δ */
+/**
+ * 假目標密度場。使用者輸入的是「整區預期幾個」，這裡反推基礎密度，
+ * 使積分後恰好等於該數 —— 開啟分帶時，同樣的總數會重新分配到航道 / 輻合帶。
+ */
+export function densityField(): DensityField {
+  const bands = inputs.densityBandsEnabled ? densityBands : [];
+  const { a, b } = { a: cornerA, b: cornerB };
+  if (!a || !b) return { baseDensityPerNm2: 0, bands };
+  const box = boxFromCorners(a, b);
+  const field: DensityField = { baseDensityPerNm2: 1, bands };
+  return {
+    baseDensityPerNm2: calibrateBaseDensity(field, box, inputs.expectedFalseTargetsInArea),
+    bands,
+  };
+}
+
+/** 平均密度（給 planner 的時間預算用；空間結構影響的是接觸排序，不是總量） */
 function falseTargets(): FalseTargetModel {
   if (!inputs.falseTargetsEnabled) return { densityPerNm2: 0, investigationHr: 0 };
   const area = geometry();
+  const A = area?.areaNm2 ?? 0;
   return {
-    densityPerNm2: densityFromExpectedCount(inputs.expectedFalseTargetsInArea, area?.areaNm2 ?? 0),
+    densityPerNm2: A > 0 ? inputs.expectedFalseTargetsInArea / A : 0,
     investigationHr: inputs.investigationHr,
   };
 }
@@ -431,6 +476,9 @@ export const searchPlannerStore = {
   getScenarios: () => scenarios,
   getParticles: () => particles,
   getSortiePos: () => sortiePos,
+  getLoggedContacts: () => loggedContacts,
+  isLoggingContact: () => loggingContact,
+  getDensityBands: () => densityBands,
   getAssignedUnitIds: () => assignedUnitIds,
 
   setOpen(v: boolean): void {
@@ -443,6 +491,7 @@ export const searchPlannerStore = {
   /** 進入地圖框選模式（面板收合成細列） */
   startPickArea(): void {
     picking = true;
+    loggingContact = false;
     cornerA = null;
     cornerB = null;
     tracks = [];
@@ -505,6 +554,9 @@ export const searchPlannerStore = {
     mcResult = null;
     particles = [];
     sortiePos = [];
+    loggedContacts = [];
+    loggingContact = false;
+    densityBands = DEFAULT_DENSITY_BANDS.map((b) => ({ ...b }));
     notify();
   },
 
@@ -633,6 +685,88 @@ export const searchPlannerStore = {
     mcResult = null;
     notify();
     return true;
+  },
+
+  // ── Stone §6 式(5)：接觸記錄與優先查證順序 ───────────────
+  /** 進入 / 離開「點地圖記錄接觸」模式 */
+  setLoggingContact(on: boolean): void {
+    if (loggingContact === on) return;
+    loggingContact = on;
+    if (on) picking = false;          // 兩種點地圖模式互斥
+    notify();
+  },
+
+  addContactAt(lng: number, lat: number): void {
+    loggedContacts = [
+      ...loggedContacts,
+      { id: `c${Date.now().toString(36)}${loggedContacts.length}`, lng, lat },
+    ];
+    notify();
+  },
+
+  removeContact(id: string): void {
+    loggedContacts = loggedContacts.filter((c) => c.id !== id);
+    notify();
+  },
+
+  clearContacts(): void {
+    loggedContacts = [];
+    notify();
+  },
+
+  setDensityBands(bands: DensityField["bands"]): void {
+    densityBands = bands;
+    notify();
+  },
+
+  /**
+   * 依 Stone §6 式 (5) 排出「先查哪個接觸」。
+   *
+   *   γᵢ = (p(jᵢ)/δ(jᵢ)) / (1 − P + Σₖ p(jₖ)/δ(jₖ))
+   *
+   * p(j)：接觸所在格的目標機率 —— 由粒子權重在該格內加總
+   * δ(j)：該格的假目標期望個數 —— 由密度場乘格面積
+   * P   ：本趟的事前發現機率（式 4），取最近一趟的 POS，無則用解析 POD
+   *
+   * δ 均勻時排序退化成「照機率高低排」；分帶開啟後，航道上的接觸即使機率不低
+   * 也會被往後排 —— 那正是式 (5) 的價值。
+   */
+  rankLoggedContacts(cellSizeNm = 3): (ContactRanking & { lng: number; lat: number; p: number; delta: number })[] {
+    if (loggedContacts.length === 0) return [];
+    const field = densityField();
+    const cellArea = cellSizeNm * cellSizeNm;
+    const half = cellSizeNm / 2;
+    const kLat = 111.32 / 1.852;                       // 每度緯度多少浬
+
+    const rows = loggedContacts.map((c) => {
+      const kLng = (111.32 * Math.cos((c.lat * Math.PI) / 180)) / 1.852;
+      // p(j)：落在該格內的粒子權重和
+      let p = 0;
+      for (const q of particles) {
+        if (Math.abs((q.lng - c.lng) * kLng) <= half && Math.abs((q.lat - c.lat) * kLat) <= half) {
+          p += q.weight;
+        }
+      }
+      const delta = densityAt(field, c.lng, c.lat) * cellArea;
+      return { id: c.id, lng: c.lng, lat: c.lat, p, delta };
+    });
+
+    const P = sortiePos.length > 0 ? (sortiePos[sortiePos.length - 1] ?? 0) : 0;
+    const ranked = rankContacts(
+      rows.map((r) => ({ id: r.id, cellTargetProbability: r.p, cellFalseTargetRate: r.delta })),
+      P,
+    );
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return ranked.map((r) => {
+      const src = byId.get(r.id);
+      return { ...r, lng: src?.lng ?? 0, lat: src?.lat ?? 0, p: src?.p ?? 0, delta: src?.delta ?? 0 };
+    });
+  },
+
+  /** 搜索區內假目標期望總數（對密度場積分，分帶時仍等於使用者輸入的個數） */
+  integratedFalseTargets(): number {
+    if (!cornerA || !cornerB) return 0;
+    return integrateDensity(densityField(), boxFromCorners(cornerA, cornerB));
   },
 
   setAssignedUnitIds(ids: UnitId[]): void {

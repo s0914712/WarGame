@@ -32,6 +32,110 @@
  * 純函式、語言中立。
  */
 
+// ── 空間化的假目標密度（Stone §6 的 δ(j)）─────────────────
+/**
+ * 假目標密度不是均勻的：航道上有船、輻合帶聚集漂流物、近岸有養殖與浮標。
+ * Stone 的 δ(j) 本來就是 per-cell 的，只是他假設「已知或可由該區地質資訊估計」。
+ *
+ * 這裡以「基礎密度 + 若干高密度帶」表示：帶狀區用一條中心線 + 半徑描述
+ * （航道、漂流帶都是線狀的），密度在半徑內線性衰減到基礎值。
+ */
+export interface DensityBand {
+  id: string;
+  label: string;
+  labelEn?: string;
+  /** 帶狀中心線（至少兩點） */
+  path: [number, number][];
+  /** 影響半徑（浬） */
+  widthNm: number;
+  /** 帶內中心的密度倍率（相對基礎密度）；2 = 中心是基礎的兩倍 */
+  multiplier: number;
+}
+
+export interface DensityField {
+  /** 基礎密度（每平方浬期望個數） */
+  baseDensityPerNm2: number;
+  bands: DensityBand[];
+}
+
+const KM_PER_NM_LOCAL = 1.852;
+const KM_PER_DEG_LAT_LOCAL = 111.32;
+
+/** 點到線段最短距離（浬），用本地平面近似 */
+function pointToSegmentNm(
+  px: number, py: number, ax: number, ay: number, bx: number, by: number, refLat: number,
+): number {
+  const kx = (KM_PER_DEG_LAT_LOCAL * Math.cos((refLat * Math.PI) / 180)) / KM_PER_NM_LOCAL;
+  const ky = KM_PER_DEG_LAT_LOCAL / KM_PER_NM_LOCAL;
+  const PX = px * kx, PY = py * ky;
+  const AX = ax * kx, AY = ay * ky;
+  const BX = bx * kx, BY = by * ky;
+  const dx = BX - AX, dy = BY - AY;
+  const len2 = dx * dx + dy * dy;
+  if (len2 <= 1e-12) return Math.hypot(PX - AX, PY - AY);
+  let t = ((PX - AX) * dx + (PY - AY) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(PX - (AX + t * dx), PY - (AY + t * dy));
+}
+
+/**
+ * 某座標的假目標密度 δ（每平方浬）。
+ * 帶內密度 = 基礎 × (1 + (multiplier − 1)·(1 − d/width))，d 為到中心線距離。
+ * 多條帶重疊時取最大值（不疊加 —— 疊加會讓交叉口密度失真）。
+ */
+export function densityAt(field: DensityField, lng: number, lat: number): number {
+  let mult = 1;
+  for (const band of field.bands) {
+    for (let i = 1; i < band.path.length; i++) {
+      const a = band.path[i - 1], b = band.path[i];
+      if (!a || !b) continue;
+      const d = pointToSegmentNm(lng, lat, a[0], a[1], b[0], b[1], lat);
+      if (d < band.widthNm) {
+        const local = 1 + (band.multiplier - 1) * (1 - d / band.widthNm);
+        if (local > mult) mult = local;
+      }
+    }
+  }
+  return Math.max(0, field.baseDensityPerNm2) * mult;
+}
+
+/**
+ * 搜索區內假目標的期望總數（對密度場積分，以格點取樣近似）。
+ * 供 UI 顯示「這個框裡大概會遇到幾個」。
+ */
+export function integrateDensity(
+  field: DensityField,
+  box: { west: number; east: number; south: number; north: number },
+  samples = 40,
+): number {
+  const midLat = (box.north + box.south) / 2;
+  const wNm = ((box.east - box.west) * KM_PER_DEG_LAT_LOCAL * Math.cos((midLat * Math.PI) / 180)) / KM_PER_NM_LOCAL;
+  const hNm = ((box.north - box.south) * KM_PER_DEG_LAT_LOCAL) / KM_PER_NM_LOCAL;
+  const cellArea = (Math.abs(wNm) * Math.abs(hNm)) / (samples * samples);
+  let total = 0;
+  for (let i = 0; i < samples; i++) {
+    for (let j = 0; j < samples; j++) {
+      const lng = box.west + ((i + 0.5) / samples) * (box.east - box.west);
+      const lat = box.south + ((j + 0.5) / samples) * (box.north - box.south);
+      total += densityAt(field, lng, lat) * cellArea;
+    }
+  }
+  return total;
+}
+
+/**
+ * 由「整區預期個數」反推基礎密度 —— 讓使用者仍能用直覺的個數輸入，
+ * 同時保有帶狀結構（先算單位基礎密度下的積分，再等比縮放）。
+ */
+export function calibrateBaseDensity(
+  field: DensityField,
+  box: { west: number; east: number; south: number; north: number },
+  targetCount: number,
+): number {
+  const unit = integrateDensity({ ...field, baseDensityPerNm2: 1 }, box);
+  return unit > 0 ? Math.max(0, targetCount) / unit : 0;
+}
+
 /** 假目標環境設定 */
 export interface FalseTargetModel {
   /** 假目標密度（每平方浬的期望個數）。0 = 不考慮假目標 */

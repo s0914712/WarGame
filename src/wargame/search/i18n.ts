@@ -167,6 +167,11 @@ export interface SearchStrings {
   investigationTime: string; expectedContacts: string; contactsCi: string;
   investigationHours: string; worstCase: string; timeWithContacts: string;
   falseTargetsNote: string;
+  densityBands: string; densityBandsNote: string;
+  contactLog: string; logContact: string; logContactActive: string;
+  clearContacts: string; noContacts: string; contactHint: string;
+  checkFirst: string; contactP: string; contactDelta: string; contactGamma: string;
+  rankingNote: string; integratedCount: string;
 }
 
 const ZH: SearchStrings = {
@@ -268,6 +273,18 @@ const ZH: SearchStrings = {
   worstCase: "最壞情況（95% 上緣）",
   timeWithContacts: "含查證後每架時數",
   falseTargetsNote: "假目標與真目標偵測函數相同 —— 搜得再久也濾不掉，只能逐一查證。Stone §6：進入查證階段必須先終止廣域搜索，對無人機而言就是從滯空時數裡扣。",
+  densityBands: "假目標密度分帶（航道 / 漂流帶）",
+  densityBandsNote: "同樣的總數重新分配到航道與輻合帶。總量不變，但接觸的查證優先順序會變。",
+  contactLog: "接觸記錄",
+  logContact: "點地圖記錄接觸",
+  logContactActive: "點地圖新增接觸 · 再按一次結束",
+  clearContacts: "清空",
+  noContacts: "尚無接觸記錄",
+  contactHint: "記錄搜索中發現、尚待查證的接觸；系統依 Stone 式(5) 排出先查順序",
+  checkFirst: "優先查證順序",
+  contactP: "p(格)", contactDelta: "δ(格)", contactGamma: "是目標的機率 γ",
+  rankingNote: "γ 正比於 p(j)/δ(j) —— 目標機率相對假目標密度高的接觸才值得先查。航道上的接觸即使機率不低也會被往後排。",
+  integratedCount: "區內假目標期望總數",
 };
 
 const EN: SearchStrings = {
@@ -369,6 +386,18 @@ const EN: SearchStrings = {
   worstCase: "Worst case (95th percentile)",
   timeWithContacts: "Hours per aircraft incl. investigation",
   falseTargetsNote: "False targets share the target's detection function — searching longer will not filter them out, each must be checked. Stone §6: entering the investigation phase requires terminating broad search; for a UAV that comes straight out of endurance.",
+  densityBands: "Spatial density bands (lanes / drift zones)",
+  densityBandsNote: "Redistributes the same total across shipping lanes and convergence zones. The total is unchanged, but the investigation order changes.",
+  contactLog: "Contact log",
+  logContact: "Log contacts on map",
+  logContactActive: "Tap the map to add · press again to finish",
+  clearContacts: "Clear",
+  noContacts: "No contacts logged",
+  contactHint: "Log contacts found but not yet investigated; ranked by Stone Eq. (5)",
+  checkFirst: "Investigate in this order",
+  contactP: "p(cell)", contactDelta: "δ(cell)", contactGamma: "P(is target) γ",
+  rankingNote: "γ is proportional to p(j)/δ(j) — only contacts whose target probability is high relative to the local false-target density are worth checking first. A contact in a shipping lane gets demoted even if its probability is decent.",
+  integratedCount: "Expected false targets in area",
 };
 
 export function searchStrings(lang: SearchLang): SearchStrings {
