@@ -95,25 +95,13 @@ export function podForDisplay(pod: number): number {
  */
 export const CHART_COVERAGE_LIMIT = 2.0;
 
-/** 覆蓋因子的規劃評語（供 UI 直接顯示） */
-export function coverageVerdict(C: number): {
-  level: "poor" | "minimum" | "good" | "ideal" | "excess"; note: string;
-} {
-  if (C < MIN_RECOMMENDED_COVERAGE) {
-    return { level: "poor", note: `覆蓋因子低於 0.5 —— 文件六(六)不建議；應縮小航跡間距或增加載具` };
-  }
-  if (C < 0.8) {
-    return { level: "minimum", note: `達文件建議下限 0.5，適用於載具有限之長時間重複搜索` };
-  }
-  if (C < IDEAL_COVERAGE) {
-    return { level: "good", note: `覆蓋良好；接近文件六(一)之理想值 S = W` };
-  }
-  if (C <= CHART_COVERAGE_LIMIT) {
-    return { level: "ideal", note: `S ≤ W，符合文件六(一)理想值；注意 C = 1.0 不等於 POD 100%（七(四)5）` };
-  }
-  return {
-    level: "excess",
-    note: `C = ${C.toFixed(2)} 已超出文件 POD 圖範圍（約 0–2），POD 屬曲線外推值；`
-      + `航跡間距遠小於掃掠寬度代表重複掃掠同一片海面，可考慮放寬 S 以擴大搜索面積`,
-  };
+export type CoverageLevel = "poor" | "minimum" | "good" | "ideal" | "excess";
+
+/** 覆蓋因子的規劃評語等級（文字由 i18n 層產生） */
+export function coverageVerdict(C: number): CoverageLevel {
+  if (C < MIN_RECOMMENDED_COVERAGE) return "poor";      // 六(六)：不建議低於 0.5
+  if (C < 0.8) return "minimum";                        // 達建議下限
+  if (C < IDEAL_COVERAGE) return "good";                // 接近六(一)理想值 S = W
+  if (C <= CHART_COVERAGE_LIMIT) return "ideal";        // S ≤ W
+  return "excess";                                      // 超出文件 POD 圖範圍，屬外推
 }
