@@ -10,5 +10,8 @@ export * from "./patterns";
 export * from "./planner";
 export * from "./tracks";
 export * from "./monteCarlo";
+export * from "./detection";
+export * from "./optimalRectangle";
+export * from "./targetDistribution";
 export * from "./i18n";
 export * from "./searchPlannerStore";

@@ -43,6 +43,9 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
   const tracks = searchPlannerStore.getTracks();
   const assigned = searchPlannerStore.getAssignedUnitIds();
   const mc = searchPlannerStore.getMonteCarlo();
+  const scenarios = searchPlannerStore.getScenarios();
+  const sortiePos = searchPlannerStore.getSortiePos();
+  const eff = searchPlannerStore.getSearchEffectiveness();
   const sol = solve();
   const units = eligibleSearchUnits();
 
@@ -206,6 +209,16 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
               onChange={(e) => patch({ corrections: { ...inputs.corrections, fatigued: e.target.checked } })} />
             {t.fatigued}
           </label>
+          <label style={checkRow}>
+            <input type="checkbox" checked={inputs.sensorTested}
+              onChange={(e) => patch({ sensorTested: e.target.checked })} />
+            {t.sensorTested}
+          </label>
+          {!inputs.sensorTested && (
+            <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5, paddingLeft: 22 }}>
+              {t.sensorTestedNote}
+            </div>
+          )}
         </Section>
 
         {/* ④ 機隊性能 */}
@@ -268,6 +281,10 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
               <option value="random_search">{t.podModelRandom}</option>
             </select>
           </Row>
+          <NumField label={t.navError} value={inputs.navErrorSigmaNm} min={0} max={5} step={0.05} unit="nm"
+            onChange={(v) => patch({ navErrorSigmaNm: v })} />
+          <NumField label={t.sweepSpread} value={Math.round(inputs.sweepWidthSpread * 100)} min={0} max={80} step={5} unit="%"
+            onChange={(v) => patch({ sweepWidthSpread: v / 100 })} />
           <NumField label={t.datumUncertainty} value={inputs.datumUncertaintyNm} min={0} max={40} step={0.5} unit="nm"
             onChange={(v) => patch({ datumUncertaintyNm: v })} />
           <label style={checkRow}>
@@ -301,6 +318,7 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
                     ? `${fwd.sortiesPerDrone} ${t.sorties} ${t.perAircraft} · ${t.onStationPerSortie} ${fmtHr(fwd.onStationHr)}`
                     : `${t.onStationPerSortie} ${fmtHr(fwd.onStationHr)}`} />
                 <KV k={t.pod} v={fmtPod(fwd.pod)} big highlight note={t.podCapNote} />
+                <BoundsRow t={t} b={fwd.bounds} fmtPod={fmtPod} />
                 <KV k={t.cumulativePod}
                   v={[2, 3].map((x) => `${x}× ${fmtPod(1 - Math.pow(1 - fwd.pod, x))}`).join("  ·  ")} />
                 <KV k={t.totalTrack} v={`${fwd.totalTrackNm.toFixed(0)} nm`}
@@ -316,6 +334,7 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
                 <KV k={t.reason} v={patternReason(inv.patternReasonCode, inv.patternMultiAssetNote, lang)} wrap />
                 <KV k={t.achievedPod} v={fmtPod(inv.achievedPod)}
                   note={`${t.ofTarget} ${(inputs.targetPod * 100).toFixed(0)}% · ${t.requiredCoverage} ${inv.requiredCoverage.toFixed(2)}`} />
+                <BoundsRow t={t} b={inv.bounds} fmtPod={fmtPod} />
                 <KV k={t.actualTime} v={fmtHr(inv.actualTimeHr)}
                   note={inv.sortiesPerDrone > 1 ? `${inv.sortiesPerDrone} ${t.sorties} ${t.perAircraft}` : undefined} />
                 {inv.fallback && (
@@ -326,6 +345,36 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
                   </div>
                 )}
               </>
+            )}
+
+            {sol.rectangle && sol.stats && (
+              <div style={{ ...patternCard, borderColor: "rgba(74,222,128,0.35)", background: "rgba(74,222,128,0.06)" }}>
+                <div style={{ fontWeight: 700, color: "#bbf7d0", marginBottom: 6 }}>{t.optimalRect}</div>
+                <PatRow k={t.priorStats}
+                  v={`σ ${sol.stats.sigmaEastNm.toFixed(1)} × ${sol.stats.sigmaNorthNm.toFixed(1)} nm · ${t.majorAxis} ${sol.stats.majorAxisBearingDeg.toFixed(0)}°`} />
+                <PatRow k={t.optimalRectSize}
+                  v={`${sol.rectangle.best.length1Nm.toFixed(1)} × ${sol.rectangle.best.length2Nm.toFixed(1)} nm (K*=${sol.rectangle.best.K.toFixed(2)}) → P_D ${fmtPod(sol.rectangle.best.pod)}`} />
+                <PatRow k=""
+                  v={`${t.containment} ${(sol.rectangle.best.containment * 100).toFixed(0)}% × ${t.conditionalDetect} ${(sol.rectangle.best.conditionalDetection * 100).toFixed(0)}%`} />
+                {sol.rectangle.userPlan && (
+                  <>
+                    <PatRow k={t.yourBox}
+                      v={`${sol.area.longSideNm.toFixed(1)} × ${sol.area.shortSideNm.toFixed(1)} nm → P_D ${fmtPod(sol.rectangle.userPlan.pod)}`} />
+                    <div style={{
+                      marginTop: 6, padding: "6px 8px", borderRadius: 4, fontSize: 14,
+                      background: sol.rectangle.userPlan.lossFraction > 0.1 ? "rgba(251,146,60,0.14)" : "rgba(74,222,128,0.12)",
+                      color: sol.rectangle.userPlan.lossFraction > 0.1 ? "#fed7aa" : "#bbf7d0",
+                    }}>
+                      {t.rectLoss}: <b>{(sol.rectangle.userPlan.lossFraction * 100).toFixed(1)}%</b>
+                      {sol.rectangle.userPlan.lossFraction <= 0.05 && ` — ${t.rectLossNone}`}
+                    </div>
+                    <button className="wg-btn" style={{ ...smallBtn, marginTop: 6 }}
+                      onClick={() => searchPlannerStore.applyOptimalRectangle()}>
+                      {t.applyOptimalRect}
+                    </button>
+                  </>
+                )}
+              </div>
             )}
 
             {ptext && info && (
@@ -478,8 +527,120 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
           </Section>
         )}
 
+        {/* ⑧ 目標機率分布（Stone §2） */}
+        <Section title={t.secPrior}>
+          <label style={checkRow}>
+            <input type="checkbox" checked={inputs.bayesEnabled}
+              onChange={(e) => patch({ bayesEnabled: e.target.checked })} />
+            {t.bayesEnable}
+          </label>
+          {inputs.bayesEnabled && (
+            <>
+              <NumField label={t.particleCount} value={inputs.particleCount} min={500} max={20000} step={500} unit=""
+                onChange={(v) => patch({ particleCount: v })} />
+              <NumField label={t.elapsedHr} value={inputs.elapsedHr} min={0} max={72} step={0.5} unit="hr"
+                onChange={(v) => patch({ elapsedHr: v })} />
+              <div style={{ fontSize: 15, color: "#94a3b8", marginTop: 4 }}>{t.scenarios}</div>
+              {scenarios.map((sc) => (
+                <div key={sc.id} style={{
+                  padding: 8, borderRadius: 4, marginTop: 4,
+                  background: "rgba(30,41,59,0.5)", border: "1px solid rgba(148,163,184,0.2)",
+                }}>
+                  <div style={{ fontSize: 15, color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>
+                    {lang === "en" ? (sc.labelEn ?? sc.label) : sc.label}
+                  </div>
+                  <MiniField label={t.scenarioWeight} value={sc.weight} min={0} max={1} step={0.05} unit=""
+                    onChange={(v) => searchPlannerStore.updateScenario(sc.id, { weight: v })} />
+                  <MiniField label={t.scenarioSigma} value={sc.positionSigmaNm} min={0.5} max={40} step={0.5} unit="nm"
+                    onChange={(v) => searchPlannerStore.updateScenario(sc.id, { positionSigmaNm: v })} />
+                  <MiniField label={t.scenarioDrift} value={sc.driftSpeedKn} min={0} max={6} step={0.1} unit="kn"
+                    onChange={(v) => searchPlannerStore.updateScenario(sc.id, { driftSpeedKn: v })} />
+                  <MiniField label={t.scenarioCourse} value={sc.driftCourseDeg} min={0} max={359} step={5} unit="°"
+                    onChange={(v) => searchPlannerStore.updateScenario(sc.id, { driftCourseDeg: v })} />
+                </div>
+              ))}
+              <button className="wg-btn" style={{ ...smallBtn, marginTop: 6 }}
+                onClick={() => searchPlannerStore.rebuildDistribution()}>
+                <RotateCcw size={12} /> {t.rebuildPrior}
+              </button>
+            </>
+          )}
+        </Section>
+
+        {/* ⑨ 搜索歷程與停止準則（Stone §6/§7） */}
+        {inputs.bayesEnabled && (
+          <Section title={t.secSorties}>
+            {tracks.length === 0 ? (
+              <div style={warnBox}>{t.needTracksForSortie}</div>
+            ) : (
+              <button className="wg-btn" style={primaryBtn}
+                onClick={() => searchPlannerStore.recordUnsuccessfulSortie()}>
+                <Play size={13} /> {t.recordFailure}
+              </button>
+            )}
+            {eff.sorties > 0 && (
+              <>
+                <div style={{ ...resultBox, marginTop: 8, marginBottom: 0 }}>
+                  <KV k={t.sortieN} v={`${eff.sorties}`} />
+                  <KV k={t.posThisSortie}
+                    v={sortiePos.map((p) => `${(p * 100).toFixed(0)}%`).join(" → ")} />
+                  <KV k={t.cumulativePos} v={fmtPod(eff.cumulativePos)} big highlight />
+                  <div style={{
+                    padding: "7px 9px", borderRadius: 4, fontSize: 15, lineHeight: 1.5,
+                    background: eff.advice === "exhausted" ? "rgba(74,222,128,0.14)"
+                      : eff.advice === "consider_stopping" ? "rgba(251,146,60,0.12)" : "rgba(30,41,59,0.6)",
+                    color: eff.advice === "exhausted" ? "#bbf7d0"
+                      : eff.advice === "consider_stopping" ? "#fed7aa" : "#cbd5e1",
+                  }}>
+                    <b>{eff.advice === "exhausted" ? t.adviceExhausted
+                      : eff.advice === "consider_stopping" ? t.adviceConsider : t.adviceContinue}</b>
+                    {eff.advice === "exhausted" && (
+                      <div style={{ fontSize: 13, marginTop: 4, opacity: 0.9 }}>{t.adviceExhaustedNote}</div>
+                    )}
+                  </div>
+                </div>
+                <NumField label={t.stopThreshold} value={Math.round(inputs.stopThreshold * 100)} min={50} max={99} step={1} unit="%"
+                  onChange={(v) => patch({ stopThreshold: v / 100 })} />
+                <button className="wg-btn" style={smallBtn}
+                  onClick={() => searchPlannerStore.resetSearchHistory()}>
+                  <Trash2 size={12} /> {t.resetHistory}
+                </button>
+              </>
+            )}
+          </Section>
+        )}
+
         <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6, paddingTop: 4 }}>{t.footer}</div>
       </div>
+    </div>
+  );
+}
+
+/** Stone §4：POD 以區間呈現（定距上界 / 標稱 / 指數下界）+ σ/W */
+function BoundsRow({ t, b, fmtPod }: {
+  t: ReturnType<typeof searchStrings>;
+  b: { upper: number; nominal: number; lower: number; sigmaOverW: number; sweepWidthUncertain: boolean };
+  fmtPod: (p: number) => string;
+}) {
+  return (
+    <div style={{
+      marginTop: -2, marginBottom: 8, padding: "7px 9px", borderRadius: 4,
+      background: "rgba(30,41,59,0.5)", fontSize: 14, lineHeight: 1.6,
+    }}>
+      <div style={{ color: "#94a3b8" }}>{t.podRange}</div>
+      <div style={{ fontFamily: "ui-monospace, monospace", color: "#e2e8f0" }}>
+        {fmtPod(b.lower)} <span style={{ color: "#64748b" }}>({t.podLower})</span>
+        {"  …  "}
+        {fmtPod(b.upper)} <span style={{ color: "#64748b" }}>({t.podUpper})</span>
+      </div>
+      <div style={{ color: "#94a3b8", marginTop: 3 }}>
+        {t.sigmaOverW} = {b.sigmaOverW.toFixed(2)} → {t.podNominal} <b style={{ color: "#e2e8f0" }}>{fmtPod(b.nominal)}</b>
+      </div>
+      <div style={{ color: "#64748b", fontSize: 13, marginTop: 2 }}>{t.sigmaOverWNote}</div>
+      <div style={{ color: "#64748b", fontSize: 13 }}>{t.eInvFloor}</div>
+      {b.sweepWidthUncertain && (
+        <div style={{ color: "#64748b", fontSize: 13 }}>{t.sweepUncertainOn}</div>
+      )}
     </div>
   );
 }
@@ -548,6 +709,25 @@ function NumField(props: {
         onChange={(e) => props.onChange(Number(e.target.value))} style={numInput} />
       <span style={{ fontSize: 14, color: "#94a3b8", width: 24 }}>{props.unit}</span>
     </Row>
+  );
+}
+
+/** 情境參數用的緊湊數字列 */
+function MiniField(props: {
+  label: string; value: number; min: number; max: number; step: number; unit: string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+      <span style={{ fontSize: 13, color: "#94a3b8", width: 84, flexShrink: 0 }}>{props.label}</span>
+      <input type="range" min={props.min} max={props.max} step={props.step} value={props.value}
+        onChange={(e) => props.onChange(Number(e.target.value))}
+        style={{ flex: 1, accentColor: "#4ade80", minWidth: 0 }} />
+      <span style={{
+        fontSize: 13, color: "#e2e8f0", width: 52, textAlign: "right",
+        fontFamily: "ui-monospace, monospace",
+      }}>{props.value}{props.unit}</span>
+    </div>
   );
 }
 

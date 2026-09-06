@@ -80,6 +80,25 @@ export function uncorrectedSweepWidthNm(args: {
 }
 
 /** 掃掠寬度修正因子。未提供者一律視為 1.0（無修正） */
+/**
+ * 感測器實戰效能折扣 —— Stone (1983) §3，引 Koopman [1980] p.21。
+ *
+ * 「搜索感測器常未經測試。此時規劃者只能依感測器的設計規格估計橫向距離
+ *  函數，但應知道**這些估計通常偏樂觀**。事實上 Koopman 指出，二戰經驗
+ *  顯示系統在實戰情境下的表現，典型只有設計能力的 60–70%。」
+ *
+ * 本規劃器的 Wu 查表就是規格／測試條件下的值，原本只套天候 / 速度 / 疲勞
+ * 三項修正，等於預設感測器能發揮 100% 設計能力。加入此折扣讓預設偏保守。
+ */
+export const OPERATIONAL_DEGRADATION = {
+  /** 感測器已在近似條件下實測過 → 不折扣 */
+  tested: 1.0,
+  /** 未實測、僅有設計規格 → 取 Koopman 區間中值 0.65 */
+  untested: 0.65,
+  /** Koopman 區間上下界，供 UI 顯示範圍 */
+  koopmanRange: [0.6, 0.7] as const,
+} as const;
+
 export interface SweepWidthCorrections {
   /** Fw／Wx 天候修正因子（風 / 浪 / 海況惡化 → < 1） */
   weather: number;
@@ -87,6 +106,11 @@ export interface SweepWidthCorrections {
   speed: number;
   /** 是否套用疲勞修正 Ff = 0.9（文件五(二)：過度疲勞時掃掠寬減 10%） */
   fatigued: boolean;
+  /**
+   * 實戰效能折扣（Stone §3 / Koopman [1980]）。省略 = 1.0（不折扣）。
+   * 感測器未在近似條件下實測時，建議用 OPERATIONAL_DEGRADATION.untested。
+   */
+  operational?: number;
 }
 
 /** 疲勞修正因子（文件明訂 0.9） */
@@ -98,10 +122,11 @@ export const DEFAULT_CORRECTIONS: SweepWidthCorrections = {
   fatigued: false,
 };
 
-/** 修正後掃掠寬度 W = Wu × Fw × Fv × Ff（浬） */
+/** 修正後掃掠寬度 W = Wu × Fw × Fv × Ff × Fo（浬） */
 export function correctedSweepWidthNm(uncorrectedNm: number, c: SweepWidthCorrections): number {
   const ff = c.fatigued ? FATIGUE_FACTOR : 1;
-  return Math.max(0, uncorrectedNm * c.weather * c.speed * ff);
+  const fo = c.operational ?? 1;
+  return Math.max(0, uncorrectedNm * c.weather * c.speed * ff * fo);
 }
 
 /**

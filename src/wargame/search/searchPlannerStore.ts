@@ -24,6 +24,13 @@ import type { PodModel } from "./pod";
 import type { SearchPatternId } from "./patterns";
 import { boxFromCorners, generateSearchTracks, measureBox, type DroneTrack } from "./tracks";
 import { runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
+import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
+import { optimalRectangle, searchEffortNm2, type OptimalRectangleResult } from "./optimalRectangle";
+import {
+  cumulativeSuccess, distributionStats, propagate, rasterize, sampleParticles,
+  stopAdvice, updateForUnsuccessfulSearch,
+  type DistributionStats, type Particle, type ProbabilityCell, type SearchScenario, type StopAdvice,
+} from "./targetDistribution";
 
 type Listener = () => void;
 
@@ -68,6 +75,18 @@ export interface PlannerInputs {
   mcDistributionKind: "uniform" | "gaussian";
   mcSigmaNm: number;
   mcSeed: number;
+  // ── Stone §3：感測器實戰效能折扣 ──
+  sensorTested: boolean;
+  // ── Stone §4：航跡放置誤差 σ 與掃掠寬度不確定性 ──
+  navErrorSigmaNm: number;
+  sweepWidthSpread: number;
+  // ── Stone §2/§6：事前分布與貝氏更新 ──
+  bayesEnabled: boolean;
+  particleCount: number;
+  /** 規劃時刻相對基準點時間的小時數（Stone §5：取搜索期中點） */
+  elapsedHr: number;
+  /** Stone §7 的停止門檻 */
+  stopThreshold: number;
 }
 
 /** 只影響蒙地卡羅、不影響航線幾何的參數 */
@@ -76,6 +95,11 @@ const MC_ONLY_KEYS = new Set<keyof PlannerInputs>([
   "mcNavErrorSigmaNm", "mcSensorAvailability",
   "mcDistributionKind", "mcSigmaNm", "mcSeed",
 ] as (keyof PlannerInputs)[]) as Set<string>;
+
+/** 變動後需要重建事前分布的參數 */
+const DISTRIBUTION_KEYS = new Set<string>([
+  "bayesEnabled", "particleCount", "elapsedHr", "mcSeed",
+]);
 
 const DEFAULT_INPUTS: PlannerInputs = {
   direction: "given_assets",
@@ -106,7 +130,30 @@ const DEFAULT_INPUTS: PlannerInputs = {
   mcDistributionKind: "uniform",
   mcSigmaNm: 5,
   mcSeed: 20260906,
+  sensorTested: false,
+  navErrorSigmaNm: 0,
+  sweepWidthSpread: 0,
+  bayesEnabled: false,
+  particleCount: 5000,
+  elapsedHr: 0,
+  stopThreshold: 0.9,
 };
+
+/** 預設情境 —— Stone §2 的範例形狀（回報位置 + 漂流） */
+export const DEFAULT_SCENARIOS: SearchScenario[] = [
+  {
+    id: "adrift", label: "失去動力漂流", labelEn: "Adrift, lost propulsion", weight: 0.7,
+    datum: [120.0, 23.6], positionSigmaNm: 8.5,
+    driftSpeedKn: 2, driftSpeedSigmaKn: 1,
+    driftCourseDeg: 180, driftCourseSigmaDeg: 20,
+  },
+  {
+    id: "off_track", label: "偏離航路後失聯", labelEn: "Lost contact off intended route", weight: 0.3,
+    datum: [120.15, 23.75], positionSigmaNm: 14,
+    driftSpeedKn: 1.2, driftSpeedSigmaKn: 0.8,
+    driftCourseDeg: 200, driftCourseSigmaDeg: 45,
+  },
+];
 
 let open = false;
 /** 是否正在地圖上框選搜索區（面板暫時收合） */
@@ -117,6 +164,11 @@ let inputs: PlannerInputs = { ...DEFAULT_INPUTS };
 let tracks: DroneTrack[] = [];
 let assignedUnitIds: UnitId[] = [];
 let mcResult: MonteCarloResult | null = null;
+let scenarios: SearchScenario[] = DEFAULT_SCENARIOS.map((x) => ({ ...x }));
+/** 目前的目標機率分布（粒子）；bayesEnabled 才建立 */
+let particles: Particle[] = [];
+/** 各趟搜索的 POS（Stone §7 的累積成功機率用） */
+let sortiePos: number[] = [];
 
 const listeners = new Set<Listener>();
 
@@ -161,7 +213,15 @@ function sensor(): SensorConditions {
     targetClass: inputs.targetClass,
     visibilityKm: inputs.visibilityKm,
     altitudeFt: inputs.altitudeFt,
-    corrections: inputs.corrections,
+    corrections: {
+      ...inputs.corrections,
+      // Stone §3 / Koopman [1980]：未實測的感測器規格通常偏樂觀
+      operational: inputs.sensorTested
+        ? OPERATIONAL_DEGRADATION.tested
+        : OPERATIONAL_DEGRADATION.untested,
+    },
+    navErrorSigmaNm: inputs.navErrorSigmaNm,
+    sweepWidthSpread: inputs.sweepWidthSpread,
   };
 }
 
@@ -175,6 +235,10 @@ function asset(): AssetProfile {
 
 export interface PlannerSolution {
   area: SearchAreaGeometry;
+  /** Stone §5：由目標分布算出的最佳搜索矩形（bayesEnabled 且有粒子時才有） */
+  rectangle?: OptimalRectangleResult;
+  /** 目前粒子雲的統計量 */
+  stats?: DistributionStats;
   forward?: SolveForTimeResult;
   inverse?: SolveForAssetsResult;
   /** 實際用於產生航線的圖形與參數 */
@@ -184,6 +248,22 @@ export interface PlannerSolution {
 }
 
 /** 解算當前輸入；區域未框選時回 null */
+/**
+ * Stone §5：由目標分布 + 可投入努力算最佳搜索矩形，並與使用者實際畫的框比較。
+ * 需要 bayesEnabled 且已建立粒子。
+ */
+function rectanglePlan(area: SearchAreaGeometry, W: number, totalAircraftHours: number) {
+  const st = distributionStats(particles);
+  if (!st || !(W > 0) || !(totalAircraftHours > 0)) return { rectangle: undefined, stats: st ?? undefined };
+  const E = searchEffortNm2(W, inputs.speedKn, totalAircraftHours);
+  // 軸對齊矩形 → 用邊際標準差（工具只能畫正矩形；主軸方位另外回報給使用者）
+  const rect = optimalRectangle(
+    { sigma1Nm: st.sigmaEastNm, sigma2Nm: st.sigmaNorthNm, effortNm2: E },
+    area.areaNm2,
+  );
+  return { rectangle: rect, stats: st };
+}
+
 export function solve(): PlannerSolution | null {
   const area = geometry();
   if (!area) return null;
@@ -213,12 +293,15 @@ export function solve(): PlannerSolution | null {
         hasKnownTrackLine: inputs.hasKnownTrackLine,
       },
     });
+    const n = Math.max(1, Math.floor(inputs.droneCount));
+    const rp = rectanglePlan(area, forward.sweepWidth.correctedNm, forward.timeHr * n);
     return {
       area,
       forward,
       pattern: inputs.patternOverride ?? rec.pattern,
       trackSpacingNm: forward.trackSpacingNm,
-      droneCount: Math.max(1, Math.floor(inputs.droneCount)),
+      droneCount: n,
+      ...rp,
     };
   }
 
@@ -236,12 +319,16 @@ export function solve(): PlannerSolution | null {
       hasKnownTrackLine: inputs.hasKnownTrackLine,
     },
   });
+  const rp = rectanglePlan(
+    area, inverse.sweepWidth.correctedNm, inputs.availableHr * inverse.recommendedDrones,
+  );
   return {
     area,
     inverse,
     pattern: inputs.patternOverride ?? inverse.pattern,
     trackSpacingNm: inverse.trackSpacingNm,
     droneCount: inverse.recommendedDrones,
+    ...rp,
   };
 }
 
@@ -254,6 +341,9 @@ export const searchPlannerStore = {
   getInputs: () => inputs,
   getTracks: () => tracks,
   getMonteCarlo: () => mcResult,
+  getScenarios: () => scenarios,
+  getParticles: () => particles,
+  getSortiePos: () => sortiePos,
   getAssignedUnitIds: () => assignedUnitIds,
 
   setOpen(v: boolean): void {
@@ -309,13 +399,26 @@ export const searchPlannerStore = {
     // 否則使用者一勾「啟用蒙地卡羅」就把剛產生的航線洗掉。
     if (Object.keys(p).some((k) => !MC_ONLY_KEYS.has(k))) tracks = [];
     mcResult = null;
+    // 影響事前分布的參數變動 → 重建粒子（並清掉搜索歷程）
+    if (Object.keys(p).some((k) => DISTRIBUTION_KEYS.has(k))) {
+      if (inputs.bayesEnabled) {
+        particles = sampleParticles(scenarios, inputs.particleCount, inputs.mcSeed);
+        if (inputs.elapsedHr > 0) particles = propagate(particles, inputs.elapsedHr);
+      } else {
+        particles = [];
+      }
+      sortiePos = [];
+    }
     notify();
   },
 
   reset(): void {
     inputs = { ...DEFAULT_INPUTS };
+    scenarios = DEFAULT_SCENARIOS.map((x) => ({ ...x }));
     tracks = [];
     mcResult = null;
+    particles = [];
+    sortiePos = [];
     notify();
   },
 
@@ -364,6 +467,85 @@ export const searchPlannerStore = {
     });
     notify();
     return mcResult;
+  },
+
+  // ── Stone §2/§6/§7：事前分布、貝氏更新、停止準則 ─────────
+  /** 情境權重 / 參數編輯（任一變動都重建粒子） */
+  setScenarios(next: SearchScenario[]): void {
+    scenarios = next;
+    if (inputs.bayesEnabled) this.rebuildDistribution();
+    else notify();
+  },
+
+  updateScenario(id: string, patch: Partial<SearchScenario>): void {
+    scenarios = scenarios.map((x) => (x.id === id ? { ...x, ...patch } : x));
+    if (inputs.bayesEnabled) this.rebuildDistribution();
+    else notify();
+  },
+
+  /**
+   * 依情境重新抽樣事前分布，並推進到規劃時刻。
+   * Stone §5：移動目標的常見實務做法是取「搜索期中點」的分布，
+   * 當成靜止目標問題來規劃 —— elapsedHr 即該時刻。
+   */
+  rebuildDistribution(): void {
+    particles = sampleParticles(scenarios, inputs.particleCount, inputs.mcSeed);
+    if (inputs.elapsedHr > 0) particles = propagate(particles, inputs.elapsedHr);
+    sortiePos = [];
+    notify();
+  },
+
+  /** 清空搜索歷程（回到事前分布） */
+  resetSearchHistory(): void {
+    this.rebuildDistribution();
+  },
+
+  /**
+   * 記錄一趟「沒找到」的搜索：套 Stone §6 式 (2) 更新粒子權重。
+   * 機率質量會從已搜區流向未搜區，下一趟的最佳矩形也會跟著移動。
+   */
+  recordUnsuccessfulSortie(): { pos: number; unsearchedMass: number } | null {
+    const sol = solve();
+    if (!sol || particles.length === 0 || tracks.length === 0) return null;
+    const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
+    if (!(W > 0)) return null;
+    const r = updateForUnsuccessfulSearch({ particles, tracks, sweepWidthNm: W });
+    particles = r.particles;
+    sortiePos = [...sortiePos, r.pos];
+    notify();
+    return { pos: r.pos, unsearchedMass: r.unsearchedMass };
+  },
+
+  /** Stone §7：累積成功機率與停止建議 */
+  getSearchEffectiveness(): { cumulativePos: number; advice: StopAdvice; sorties: number } {
+    const cp = cumulativeSuccess(sortiePos);
+    return { cumulativePos: cp, advice: stopAdvice(cp, inputs.stopThreshold), sorties: sortiePos.length };
+  },
+
+  /** 機率圖柵格（供地圖層畫熱區） */
+  getProbabilityCells(cellSizeNm = 3): ProbabilityCell[] {
+    if (particles.length === 0) return [];
+    return rasterize(particles, cellSizeNm);
+  },
+
+  /**
+   * 把搜索區換成 Stone §5 算出的最佳矩形（以分布均值為中心、軸對齊）。
+   * 這是「工具告訴你框該畫多大」的落地動作。
+   */
+  applyOptimalRectangle(): boolean {
+    const sol = solve();
+    if (!sol?.rectangle || !sol.stats) return false;
+    const [cLng, cLat] = sol.stats.meanLngLat;
+    const halfLatNm = sol.rectangle.best.length2Nm / 2;
+    const halfLngNm = sol.rectangle.best.length1Nm / 2;
+    const dLat = (halfLatNm * 1.852) / 111.32;
+    const dLng = (halfLngNm * 1.852) / (111.32 * Math.cos((cLat * Math.PI) / 180));
+    cornerA = [cLng - dLng, cLat - dLat];
+    cornerB = [cLng + dLng, cLat + dLat];
+    tracks = [];
+    mcResult = null;
+    notify();
+    return true;
   },
 
   setAssignedUnitIds(ids: UnitId[]): void {

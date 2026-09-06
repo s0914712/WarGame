@@ -24,6 +24,10 @@ import {
   KM_PER_NM, recommendPattern, SEARCH_PATTERNS, trackSpacingCeilingNm,
   type PatternReasonCode, type SearchPatternId,
 } from "./patterns";
+import {
+  certainSweepWidth, expectedDetectionBounds, threePointSweepWidth,
+  type DetectionBounds,
+} from "./detection";
 
 /**
  * 規劃提示 — 結構化代碼 + 參數，文字由 i18n 層（./i18n.ts）產生，
@@ -61,6 +65,16 @@ export interface SensorConditions {
   visibilityKm: number;
   altitudeFt: number;
   corrections: SweepWidthCorrections;
+  /**
+   * 航跡放置誤差 1σ（浬）—— Stone §4 Figure 7：σ/W 決定實際偵測函數
+   * 落在「定距上界」與「指數下界」之間何處。省略 = 0（導航完美）。
+   */
+  navErrorSigmaNm?: number;
+  /**
+   * 掃掠寬度不確定性（相對比例，0 = 確定）。Stone §4：W 不確定時應對它
+   * 給分布並取 b̄ = Σβᵢ B(ωᵢ)。0.4 表示悲觀 60% / 樂觀 140%。
+   */
+  sweepWidthSpread?: number;
 }
 
 /** 無人機性能 */
@@ -77,6 +91,21 @@ export interface SweepWidthBreakdown {
   uncorrectedNm: number;
   correctedNm: number;
   corrections: SweepWidthCorrections;
+}
+
+/** 依 Stone §4 算出的偵測機率上下界（供 UI 以區間呈現，而非單點） */
+export interface DetectionBoundsResult extends DetectionBounds {
+  /** 掃掠寬度是否被當成不確定量處理 */
+  sweepWidthUncertain: boolean;
+}
+
+function boundsFor(
+  sensor: SensorConditions, correctedW: number, trackSpacingNm: number,
+): DetectionBoundsResult {
+  const spread = sensor.sweepWidthSpread ?? 0;
+  const dist = spread > 0 ? threePointSweepWidth(correctedW, spread) : certainSweepWidth(correctedW);
+  const b = expectedDetectionBounds(dist, trackSpacingNm, sensor.navErrorSigmaNm ?? 0);
+  return { ...b, sweepWidthUncertain: spread > 0 };
 }
 
 function computeSweepWidth(cond: SensorConditions): SweepWidthBreakdown {
@@ -119,8 +148,10 @@ export interface SolveForTimeResult {
   /** 覆蓋因子 C = W / S */
   coverage: number;
   coverageLevel: CoverageLevel;
-  /** 單次搜索 POD */
+  /** 單次搜索 POD（IAMSAR 曲線） */
   pod: number;
+  /** Stone §4 的偵測機率上下界 —— POD 應以區間呈現 */
+  bounds: DetectionBoundsResult;
   /** 掃完全區所需時間（hr）—— A = T×N×P×S 解 T */
   timeHr: number;
   /** 全隊總航跡里程（浬） */
@@ -196,6 +227,7 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
     coverage: C,
     coverageLevel: verdict,
     pod: podFromCoverage(C, input.podModel),
+    bounds: boundsFor(input.sensor, W, S),
     timeHr,
     totalTrackNm,
     trackPerDroneNm,
@@ -235,6 +267,8 @@ export interface SolveForAssetsResult {
   /** 夾限後實際可達的覆蓋因子與 POD */
   achievedCoverage: number;
   achievedPod: number;
+  /** Stone §4 的偵測機率上下界 */
+  bounds: DetectionBoundsResult;
   /** 建議無人機數量（已向上取整） */
   recommendedDrones: number;
   /** 未取整的理論值 —— 讓使用者看到離下一架有多遠 */
@@ -338,6 +372,7 @@ export function solveForAssets(input: SolveForAssetsInput): SolveForAssetsResult
     spacingCeiling: ceiling,
     achievedCoverage,
     achievedPod,
+    bounds: boundsFor(input.sensor, W, S),
     recommendedDrones,
     exactDrones,
     actualTimeHr,

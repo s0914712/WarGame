@@ -115,6 +115,9 @@
 | `planner.ts` | 兩個解算方向：`solveForTime()`（給架數→時間/POD）、`solveForAssets()`（給時間→架數/圖形） |
 | `tracks.ts` | 圖形 → 每架無人機的 waypoint 陣列（PS/CS/SS/VS/TS；等高線不自動產生） |
 | `monteCarlo.ts` | 蒙地卡羅：Koopman 反立方律感測器 + 漂流 / 導航誤差 / 感測器妥善率 → 經驗 POD、Wilson CI、發現時間分布 |
+| `detection.ts` | Stone §4 偵測函數：定距上界 / 指數下界、σ/W 插值、掃掠寬度不確定性混合 |
+| `optimalRectangle.ts` | Stone §5 最佳搜索矩形 P_D(K)：告訴使用者「框該畫多大」 |
+| `targetDistribution.ts` | Stone §2/§6/§7：加權粒子事前分布、漂流推進、失敗搜索貝氏更新、累積成功機率與停止準則 |
 | `i18n.ts` | 中／英文字層（引擎只回代碼，字串在此產生） |
 | `searchPlannerStore.ts` | external store：搜索區、參數、產生的航線、模擬結果、指派到單位 |
 | `index.ts` | 對外 barrel |

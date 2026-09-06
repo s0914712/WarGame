@@ -15,10 +15,14 @@ import { langStore } from "../wargame/i18n/lang";
 import { searchStrings } from "../wargame/search/i18n";
 import { podForDisplay, POD_DISPLAY_CAP } from "../wargame/search/pod";
 
+const SRC_PROB = "wg-search-prob-src";
+const SRC_OPT = "wg-search-opt-src";
 const SRC_BOX = "wg-search-box-src";
 const SRC_SWEEP = "wg-search-sweep-src";
 const SRC_TRACKS = "wg-search-tracks-src";
 
+const LAYER_PROB = "wg-search-prob";
+const LAYER_OPT = "wg-search-opt";
 const LAYER_SWEEP = "wg-search-sweep";
 const LAYER_BOX = "wg-search-box";
 const LAYER_TRACKS = "wg-search-tracks";
@@ -105,14 +109,78 @@ function buildSweep(): GeoJSON.FeatureCollection {
   };
 }
 
-export function attachWargameSearchLayer(map: MapboxMap): () => void {
-  const all = [LAYER_LABEL, LAYER_TRACK_PTS, LAYER_TRACKS, LAYER_BOX, LAYER_SWEEP];
-  for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
-  for (const id of [SRC_TRACKS, SRC_BOX, SRC_SWEEP]) if (map.getSource(id)) map.removeSource(id);
+/** 目標機率圖熱區（粒子柵格化）—— Stone §2 的 probability map */
+function buildProbability(): GeoJSON.FeatureCollection {
+  const cells = searchPlannerStore.getProbabilityCells(3);
+  if (cells.length === 0) return EMPTY;
+  const max = cells[0]?.probability ?? 1;
+  if (!(max > 0)) return EMPTY;
+  const dLat = (3 * 1.852) / 111.32;
+  return {
+    type: "FeatureCollection",
+    features: cells.slice(0, 1200).map((c) => {
+      const dLng = (3 * 1.852) / (111.32 * Math.cos((c.lat * Math.PI) / 180));
+      const h = dLat / 2, w = dLng / 2;
+      return {
+        type: "Feature" as const,
+        properties: { intensity: c.probability / max },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [[
+            [c.lng - w, c.lat - h], [c.lng + w, c.lat - h],
+            [c.lng + w, c.lat + h], [c.lng - w, c.lat + h], [c.lng - w, c.lat - h],
+          ]],
+        },
+      };
+    }),
+  };
+}
 
+/** Stone §5 的最佳搜索矩形（與使用者畫的框並列，看得出差多少） */
+function buildOptimalRect(): GeoJSON.FeatureCollection {
+  const sol = solve();
+  if (!sol?.rectangle || !sol.stats) return EMPTY;
+  const [cLng, cLat] = sol.stats.meanLngLat;
+  const dLat = (sol.rectangle.best.length2Nm / 2 * 1.852) / 111.32;
+  const dLng = (sol.rectangle.best.length1Nm / 2 * 1.852) / (111.32 * Math.cos((cLat * Math.PI) / 180));
+  return {
+    type: "FeatureCollection",
+    features: [{
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [cLng - dLng, cLat - dLat], [cLng + dLng, cLat - dLat],
+          [cLng + dLng, cLat + dLat], [cLng - dLng, cLat + dLat], [cLng - dLng, cLat - dLat],
+        ],
+      },
+    }],
+  };
+}
+
+export function attachWargameSearchLayer(map: MapboxMap): () => void {
+  const all = [LAYER_LABEL, LAYER_TRACK_PTS, LAYER_TRACKS, LAYER_OPT, LAYER_BOX, LAYER_SWEEP, LAYER_PROB];
+  for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
+  for (const id of [SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_PROB]) if (map.getSource(id)) map.removeSource(id);
+
+  map.addSource(SRC_PROB, { type: "geojson", data: buildProbability() });
+  map.addSource(SRC_OPT, { type: "geojson", data: buildOptimalRect() });
   map.addSource(SRC_SWEEP, { type: "geojson", data: buildSweep() });
   map.addSource(SRC_BOX, { type: "geojson", data: buildBox() });
   map.addSource(SRC_TRACKS, { type: "geojson", data: buildTracks() });
+
+  // 目標機率圖熱區（畫在最底層）
+  map.addLayer({
+    id: LAYER_PROB, type: "fill", source: SRC_PROB,
+    paint: {
+      "fill-color": [
+        "interpolate", ["linear"], ["get", "intensity"],
+        0, "#1e3a8a", 0.35, "#7c3aed", 0.7, "#f59e0b", 1, "#fca5a5",
+      ],
+      "fill-opacity": ["interpolate", ["linear"], ["get", "intensity"], 0, 0.05, 1, 0.45],
+    },
+  });
 
   // 掃掠帶 — 用 W（浬）換算成螢幕寬度：1 浬 ≈ 1852 m，line-width 隨 zoom 內插
   map.addLayer({
@@ -134,6 +202,12 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   map.addLayer({
     id: LAYER_BOX, type: "line", source: SRC_BOX,
     paint: { "line-color": "#facc15", "line-width": 2, "line-dasharray": [3, 2], "line-opacity": 0.95 },
+  });
+
+  // Stone §5 最佳搜索矩形（綠色虛線，與使用者黃框對照）
+  map.addLayer({
+    id: LAYER_OPT, type: "line", source: SRC_OPT,
+    paint: { "line-color": "#4ade80", "line-width": 2, "line-dasharray": [1.5, 1.5], "line-opacity": 0.9 },
   });
 
   // 搜索航線
@@ -167,6 +241,8 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   });
 
   const refresh = () => {
+    (map.getSource(SRC_PROB) as mapboxgl.GeoJSONSource | undefined)?.setData(buildProbability());
+    (map.getSource(SRC_OPT) as mapboxgl.GeoJSONSource | undefined)?.setData(buildOptimalRect());
     (map.getSource(SRC_SWEEP) as mapboxgl.GeoJSONSource | undefined)?.setData(buildSweep());
     (map.getSource(SRC_BOX) as mapboxgl.GeoJSONSource | undefined)?.setData(buildBox());
     (map.getSource(SRC_TRACKS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildTracks());
@@ -177,6 +253,6 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   return () => {
     unsub(); unsubLang();
     for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
-    for (const id of [SRC_TRACKS, SRC_BOX, SRC_SWEEP]) if (map.getSource(id)) map.removeSource(id);
+    for (const id of [SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_PROB]) if (map.getSource(id)) map.removeSource(id);
   };
 }
