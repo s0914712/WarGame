@@ -11,6 +11,8 @@ import type { LngLat } from "../wargame/types";
 import { searchPlannerStore, solve } from "../wargame/search/searchPlannerStore";
 import { measureBox, boxFromCorners, TRACK_COLORS } from "../wargame/search/tracks";
 import { SEARCH_PATTERNS } from "../wargame/search/patterns";
+import { langStore } from "../wargame/i18n/lang";
+import { searchStrings } from "../wargame/search/i18n";
 import { podForDisplay, POD_DISPLAY_CAP } from "../wargame/search/pod";
 
 const SRC_BOX = "wg-search-box-src";
@@ -25,13 +27,15 @@ const LAYER_LABEL = "wg-search-label";
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
+const lang = (): "zh" | "en" => (langStore.get() === "en" ? "en" : "zh");
+
 function buildBox(): GeoJSON.FeatureCollection {
   const { a, b } = searchPlannerStore.getCorners();
   if (!a) return EMPTY;
   if (!b) {
     // 只點了第一角 → 畫一個標記點
     return { type: "FeatureCollection", features: [
-      { type: "Feature", properties: { label: "搜索區起角 — 再點一次定對角" }, geometry: { type: "Point", coordinates: a } },
+      { type: "Feature", properties: { label: searchStrings(lang()).pickSecondCorner }, geometry: { type: "Point", coordinates: a } },
     ] };
   }
   const box = boxFromCorners(a, b);
@@ -42,12 +46,13 @@ function buildBox(): GeoJSON.FeatureCollection {
   const m = measureBox(box);
   const sol = solve();
 
-  let label = `搜索區 ${m.widthNm.toFixed(1)}×${m.heightNm.toFixed(1)} nm · ${m.areaNm2.toFixed(0)} nm²`;
+  const t = searchStrings(lang());
+  let label = `${t.secArea.replace(/^[①1][. ]*/, "")} ${m.widthNm.toFixed(1)}×${m.heightNm.toFixed(1)} nm · ${m.areaNm2.toFixed(0)} nm²`;
   if (sol) {
-    const pat = SEARCH_PATTERNS[sol.pattern];
+    const pat = SEARCH_PATTERNS[sol.pattern][lang()];
     const pod = sol.forward ? sol.forward.pod : sol.inverse?.achievedPod ?? 0;
     const hrs = sol.forward ? sol.forward.timeHr : sol.inverse?.actualTimeHr ?? 0;
-    label += `\n${pat.name} · ${sol.droneCount} 架 · S=${sol.trackSpacingNm.toFixed(2)} nm`;
+    label += `\n${pat.name} · ${sol.droneCount}× · S=${sol.trackSpacingNm.toFixed(2)} nm`;
     const shown = podForDisplay(pod);
     label += `\n${hrs.toFixed(1)} hr · POD ${shown >= POD_DISPLAY_CAP ? ">99.9" : (shown * 100).toFixed(0)}%`;
   }
@@ -167,9 +172,10 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
     (map.getSource(SRC_TRACKS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildTracks());
   };
   const unsub = searchPlannerStore.subscribe(refresh);
+  const unsubLang = langStore.subscribe(refresh);
 
   return () => {
-    unsub();
+    unsub(); unsubLang();
     for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
     for (const id of [SRC_TRACKS, SRC_BOX, SRC_SWEEP]) if (map.getSource(id)) map.removeSource(id);
   };

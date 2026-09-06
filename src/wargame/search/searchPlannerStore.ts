@@ -23,6 +23,7 @@ import type { SearchTargetClass, SweepWidthCorrections } from "./sweepWidth";
 import type { PodModel } from "./pod";
 import type { SearchPatternId } from "./patterns";
 import { boxFromCorners, generateSearchTracks, measureBox, type DroneTrack } from "./tracks";
+import { runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
 
 type Listener = () => void;
 
@@ -56,7 +57,25 @@ export interface PlannerInputs {
   datumUncertaintyNm: number;
   targetBiasedToOneEnd: boolean;
   hasKnownTrackLine: boolean;
+  // 蒙地卡羅
+  mcEnabled: boolean;
+  mcTrials: number;
+  mcDriftKn: number;
+  /** null = 每次試驗隨機取向 */
+  mcDriftBearingDeg: number | null;
+  mcNavErrorSigmaNm: number;
+  mcSensorAvailability: number;
+  mcDistributionKind: "uniform" | "gaussian";
+  mcSigmaNm: number;
+  mcSeed: number;
 }
+
+/** 只影響蒙地卡羅、不影響航線幾何的參數 */
+const MC_ONLY_KEYS = new Set<keyof PlannerInputs>([
+  "mcEnabled", "mcTrials", "mcDriftKn", "mcDriftBearingDeg",
+  "mcNavErrorSigmaNm", "mcSensorAvailability",
+  "mcDistributionKind", "mcSigmaNm", "mcSeed",
+] as (keyof PlannerInputs)[]) as Set<string>;
 
 const DEFAULT_INPUTS: PlannerInputs = {
   direction: "given_assets",
@@ -78,6 +97,15 @@ const DEFAULT_INPUTS: PlannerInputs = {
   datumUncertaintyNm: 0,
   targetBiasedToOneEnd: false,
   hasKnownTrackLine: false,
+  mcEnabled: false,
+  mcTrials: 2000,
+  mcDriftKn: 0,
+  mcDriftBearingDeg: null,
+  mcNavErrorSigmaNm: 0,
+  mcSensorAvailability: 1,
+  mcDistributionKind: "uniform",
+  mcSigmaNm: 5,
+  mcSeed: 20260906,
 };
 
 let open = false;
@@ -88,9 +116,19 @@ let cornerB: LngLat | null = null;
 let inputs: PlannerInputs = { ...DEFAULT_INPUTS };
 let tracks: DroneTrack[] = [];
 let assignedUnitIds: UnitId[] = [];
+let mcResult: MonteCarloResult | null = null;
 
 const listeners = new Set<Listener>();
-function notify() { for (const cb of listeners) cb(); }
+
+/**
+ * 變更版本號 —— useSyncExternalStore 的 snapshot。
+ *
+ * 不能拿 inputs 當 snapshot：框選搜索區、產生航線、蒙地卡羅結果都不會動到
+ * inputs 的物件參照，React 會判定「沒變」而跳過 re-render，面板就整個不更新。
+ * 改用每次 notify 遞增的數字，任何狀態變動都保證觸發重繪。
+ */
+let version = 0;
+function notify() { version++; for (const cb of listeners) cb(); }
 
 /** 可執行搜索的單位：當前 POV 陣營的空中載台 */
 export function eligibleSearchUnits(): Unit[] {
@@ -208,11 +246,14 @@ export function solve(): PlannerSolution | null {
 }
 
 export const searchPlannerStore = {
+  /** useSyncExternalStore 的 snapshot —— 每次狀態變動都會遞增 */
+  getVersion: () => version,
   isOpen: () => open,
   isPicking: () => picking,
   getCorners: () => ({ a: cornerA, b: cornerB }),
   getInputs: () => inputs,
   getTracks: () => tracks,
+  getMonteCarlo: () => mcResult,
   getAssignedUnitIds: () => assignedUnitIds,
 
   setOpen(v: boolean): void {
@@ -228,6 +269,7 @@ export const searchPlannerStore = {
     cornerA = null;
     cornerB = null;
     tracks = [];
+    mcResult = null;
     wargameClock.pause();
     notify();
   },
@@ -243,6 +285,7 @@ export const searchPlannerStore = {
       picking = false;              // 兩角齊 → 自動回到面板
     }
     tracks = [];
+    mcResult = null;
     notify();
   },
 
@@ -255,25 +298,31 @@ export const searchPlannerStore = {
     cornerA = null;
     cornerB = null;
     tracks = [];
+    mcResult = null;
     notify();
   },
 
   patch(p: Partial<PlannerInputs>): void {
     inputs = { ...inputs, ...p };
-    tracks = [];                    // 參數變動 → 既有航線失效
+    // 只有影響「解算 / 幾何」的參數才會讓既有航線失效；
+    // 純蒙地卡羅參數（漂流、導航誤差…）不動航線，只清模擬結果，
+    // 否則使用者一勾「啟用蒙地卡羅」就把剛產生的航線洗掉。
+    if (Object.keys(p).some((k) => !MC_ONLY_KEYS.has(k))) tracks = [];
+    mcResult = null;
     notify();
   },
 
   reset(): void {
     inputs = { ...DEFAULT_INPUTS };
     tracks = [];
+    mcResult = null;
     notify();
   },
 
   /** 依當前解算結果產生搜索航線 */
   generateTracks(): DroneTrack[] {
     const sol = solve();
-    if (!sol || !cornerA || !cornerB) { tracks = []; notify(); return tracks; }
+    if (!sol || !cornerA || !cornerB) { tracks = []; mcResult = null; notify(); return tracks; }
     const box = boxFromCorners(cornerA, cornerB);
     const m = measureBox(box);
     tracks = generateSearchTracks({
@@ -283,8 +332,38 @@ export const searchPlannerStore = {
       droneCount: sol.droneCount,
       radiusNm: Math.min(m.shortSideNm / 2, sol.pattern === "VS" ? 5 : m.shortSideNm / 2),
     });
+    mcResult = null;
     notify();
     return tracks;
+  },
+
+  /**
+   * 對當前航線跑蒙地卡羅模擬。需先 generateTracks()。
+   * 同步執行（2000 次試驗約數十毫秒），回傳結果並存進 store。
+   */
+  runMonteCarlo(): MonteCarloResult | null {
+    const sol = solve();
+    if (!sol || tracks.length === 0 || !cornerA || !cornerB) return null;
+    const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
+    const box = boxFromCorners(cornerA, cornerB);
+    const centre = measureBox(box).centre;
+    const distribution: TargetDistribution = inputs.mcDistributionKind === "gaussian"
+      ? { kind: "gaussian", datum: centre, sigmaNm: inputs.mcSigmaNm }
+      : { kind: "uniform" };
+    mcResult = runMonteCarlo({
+      box, tracks,
+      sweepWidthNm: W,
+      speedKn: inputs.speedKn,
+      distribution,
+      driftKn: inputs.mcDriftKn,
+      driftBearingDeg: inputs.mcDriftBearingDeg,
+      navErrorSigmaNm: inputs.mcNavErrorSigmaNm,
+      sensorAvailability: inputs.mcSensorAvailability,
+      trials: inputs.mcTrials,
+      seed: inputs.mcSeed,
+    });
+    notify();
+    return mcResult;
   },
 
   setAssignedUnitIds(ids: UnitId[]): void {

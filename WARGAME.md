@@ -114,10 +114,16 @@
 | `patterns.ts` | 六大圖形 metadata + 擴展方形航段表（表 4-3）+ 航跡間距上限 + 圖形建議 |
 | `planner.ts` | 兩個解算方向：`solveForTime()`（給架數→時間/POD）、`solveForAssets()`（給時間→架數/圖形） |
 | `tracks.ts` | 圖形 → 每架無人機的 waypoint 陣列（PS/CS/SS/VS/TS；等高線不自動產生） |
-| `searchPlannerStore.ts` | external store：搜索區、參數、產生的航線、指派到單位 |
+| `monteCarlo.ts` | 蒙地卡羅：Koopman 反立方律感測器 + 漂流 / 導航誤差 / 感測器妥善率 → 經驗 POD、Wilson CI、發現時間分布 |
+| `i18n.ts` | 中／英文字層（引擎只回代碼，字串在此產生） |
+| `searchPlannerStore.ts` | external store：搜索區、參數、產生的航線、模擬結果、指派到單位 |
+| `index.ts` | 對外 barrel |
 
 搜索五要素 `A = T × N × P × S`。產生的航線經 `enqueueCommand({ kind: "set_waypoints" })`
 下達，engine 仍是 units 的唯一 mutator。
+
+可獨立於兵推使用：`?mode=search` → `src/SearchPlannerApp.tsx`（左面板 + 右地圖，
+不載入場景 / 不跑模擬引擎；未設 Mapbox token 時改以經緯度輸入框定義搜索區）。
 
 ### `src/wargame/llm/` — LLM 介接
 | 檔 | 用途 |

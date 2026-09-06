@@ -16,13 +16,33 @@ import {
 } from "./sweepWidth";
 import {
   coverageFactor, coverageForPod, coverageVerdict, cumulativePodRepeated,
-  podFromCoverage, MIN_RECOMMENDED_COVERAGE, IDEAL_COVERAGE, type PodModel,
+  podFromCoverage, MIN_RECOMMENDED_COVERAGE, IDEAL_COVERAGE,
+  type CoverageLevel, type PodModel,
 } from "./pod";
 export { podForDisplay, POD_DISPLAY_CAP, CHART_COVERAGE_LIMIT } from "./pod";
 import {
   KM_PER_NM, recommendPattern, SEARCH_PATTERNS, trackSpacingCeilingNm,
-  type SearchPatternId,
+  type PatternReasonCode, type SearchPatternId,
 } from "./patterns";
+
+/**
+ * 規劃提示 — 結構化代碼 + 參數，文字由 i18n 層（./i18n.ts）產生，
+ * 讓引擎保持語言中立。
+ */
+export type NoticeCode =
+  | "zero_sweep_width"        // 掃掠寬度為 0（能見度過低）
+  | "spacing_over_ceiling"    // 使用者指定的 S 超過條件上限
+  | "spacing_clamped"         // 理論 S 被夾限到條件上限
+  | "coverage_poor"           // C < 0.5，文件六(六)不建議
+  | "coverage_excess"         // C 超出文件 POD 圖範圍，屬外推
+  | "sorties_required"        // 單架次滯空不足，需輪替
+  | "transit_exceeds_endurance"; // 往返已超過滯空時數
+
+export interface PlannerNotice {
+  code: NoticeCode;
+  severity: "info" | "warning";
+  params: Record<string, number | string>;
+}
 
 export const kmToNm = (km: number) => km / KM_PER_NM;
 export const nmToKm = (nm: number) => nm * KM_PER_NM;
@@ -98,7 +118,7 @@ export interface SolveForTimeResult {
   spacingCeiling: ReturnType<typeof trackSpacingCeilingNm>;
   /** 覆蓋因子 C = W / S */
   coverage: number;
-  coverageVerdict: ReturnType<typeof coverageVerdict>;
+  coverageLevel: CoverageLevel;
   /** 單次搜索 POD */
   pod: number;
   /** 掃完全區所需時間（hr）—— A = T×N×P×S 解 T */
@@ -113,11 +133,11 @@ export interface SolveForTimeResult {
   sortiesPerDrone: number;
   /** 含輪替後的實際歷時（hr）—— 架次之間需返場整補 */
   elapsedHrWithSorties: number;
-  warnings: string[];
+  notices: PlannerNotice[];
 }
 
 export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
-  const warnings: string[] = [];
+  const notices: PlannerNotice[] = [];
   const sweepWidth = computeSweepWidth(input.sensor);
   const W = sweepWidth.correctedNm;
 
@@ -126,15 +146,19 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
   let S = input.trackSpacingNm ?? Math.min(W, ceiling.ceilingNm);
   if (!(S > 0)) {
     S = 0.1;
-    warnings.push("掃掠寬度為 0（能見度過低）—— 航跡間距以 0.1 浬保底，結果僅供參考");
+    notices.push({ code: "zero_sweep_width", severity: "warning", params: {} });
   }
   if (input.trackSpacingNm !== undefined && input.trackSpacingNm > ceiling.ceilingNm) {
-    warnings.push(`航跡間距 ${input.trackSpacingNm.toFixed(2)} 浬超過${ceiling.condition === "good" ? "良好" : "不良"}條件建議上限 ${ceiling.ceilingNm} 浬`);
+    notices.push({
+      code: "spacing_over_ceiling", severity: "warning",
+      params: { spacing: input.trackSpacingNm, ceiling: ceiling.ceilingNm, condition: ceiling.condition },
+    });
   }
 
   const C = coverageFactor(W, S);
   const verdict = coverageVerdict(C);
-  if (verdict.level === "poor" || verdict.level === "excess") warnings.push(verdict.note);
+  if (verdict === "poor") notices.push({ code: "coverage_poor", severity: "warning", params: { coverage: C } });
+  if (verdict === "excess") notices.push({ code: "coverage_excess", severity: "warning", params: { coverage: C } });
 
   const N = Math.max(1, Math.floor(input.droneCount));
   const P = Math.max(0.1, input.asset.speedKn);
@@ -149,14 +173,17 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
   let elapsedHrWithSorties = timeHr;
   if (Number.isFinite(onStationHr)) {
     if (onStationHr <= 0) {
-      warnings.push("往返進場時間已超過滯空時數 —— 此機型無法抵達該區域執行搜索");
+      notices.push({ code: "transit_exceeds_endurance", severity: "warning", params: {} });
       sortiesPerDrone = Infinity;
       elapsedHrWithSorties = Infinity;
     } else if (timeHr > onStationHr) {
       sortiesPerDrone = Math.ceil(timeHr / onStationHr);
       // 每個架次都要多飛一趟往返
       elapsedHrWithSorties = timeHr + sortiesPerDrone * 2 * input.asset.transitHrOneWay;
-      warnings.push(`單架次滯空 ${onStationHr.toFixed(1)} hr 不足以飛完 ${timeHr.toFixed(1)} hr 的航線，每架需 ${sortiesPerDrone} 個架次輪替`);
+      notices.push({
+        code: "sorties_required", severity: "warning",
+        params: { onStation: onStationHr, needed: timeHr, sorties: sortiesPerDrone },
+      });
     } else {
       elapsedHrWithSorties = timeHr + 2 * input.asset.transitHrOneWay;
     }
@@ -167,7 +194,7 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
     trackSpacingNm: S,
     spacingCeiling: ceiling,
     coverage: C,
-    coverageVerdict: verdict,
+    coverageLevel: verdict,
     pod: podFromCoverage(C, input.podModel),
     timeHr,
     totalTrackNm,
@@ -175,7 +202,7 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
     onStationHr,
     sortiesPerDrone,
     elapsedHrWithSorties,
-    warnings,
+    notices,
   };
 }
 
@@ -218,7 +245,8 @@ export interface SolveForAssetsResult {
   sortiesPerDrone: number;
   /** 建議搜索圖形 */
   pattern: SearchPatternId;
-  patternReason: string;
+  patternReasonCode: PatternReasonCode;
+  patternMultiAssetNote: boolean;
   patternAlternatives: SearchPatternId[];
   /** 若時間 / 架數受限而無法達標，提供的替代方案 */
   fallback?: {
@@ -226,13 +254,15 @@ export interface SolveForAssetsResult {
     bestPod: number;
     /** 改採重複搜索達標所需次數（文件七(三)累積 POD） */
     repeatsForTarget: number;
-    note: string;
+    /** 重複該次數後的累積 POD */
+    cumulativePod: number;
   };
-  warnings: string[];
+  coverageLevel: CoverageLevel;
+  notices: PlannerNotice[];
 }
 
 export function solveForAssets(input: SolveForAssetsInput): SolveForAssetsResult {
-  const warnings: string[] = [];
+  const notices: PlannerNotice[] = [];
   const sweepWidth = computeSweepWidth(input.sensor);
   const W = sweepWidth.correctedNm;
   const ceiling = trackSpacingCeilingNm(input.windKn, input.sensor.visibilityKm);
@@ -242,19 +272,21 @@ export function solveForAssets(input: SolveForAssetsInput): SolveForAssetsResult
   let S = W > 0 ? W / requiredCoverage : 0.1;
   if (S > ceiling.ceilingNm) {
     S = ceiling.ceilingNm;
-    warnings.push(`理論航跡間距超過${ceiling.condition === "good" ? "良好" : "不良"}條件上限，已夾限為 ${ceiling.ceilingNm} 浬（${ceiling.note}）`);
+    notices.push({
+      code: "spacing_clamped", severity: "warning",
+      params: { ceiling: ceiling.ceilingNm, condition: ceiling.condition },
+    });
   }
   if (!(S > 0)) {
     S = 0.1;
-    warnings.push("掃掠寬度為 0（能見度過低）—— 航跡間距以 0.1 浬保底");
+    notices.push({ code: "zero_sweep_width", severity: "warning", params: {} });
   }
 
   const achievedCoverage = coverageFactor(W, S);
   const achievedPod = podFromCoverage(achievedCoverage, input.podModel);
-  const achievedVerdict = coverageVerdict(achievedCoverage);
-  if (achievedVerdict.level === "poor" || achievedVerdict.level === "excess") {
-    warnings.push(achievedVerdict.note);
-  }
+  const achievedLevel = coverageVerdict(achievedCoverage);
+  if (achievedLevel === "poor") notices.push({ code: "coverage_poor", severity: "warning", params: { coverage: achievedCoverage } });
+  if (achievedLevel === "excess") notices.push({ code: "coverage_excess", severity: "warning", params: { coverage: achievedCoverage } });
 
   // 可用於實際搜索的時間：扣掉往返進場
   const onStation = onStationHoursPerSortie(input.asset);
@@ -269,9 +301,12 @@ export function solveForAssets(input: SolveForAssetsInput): SolveForAssetsResult
   let sortiesPerDrone = 1;
   if (Number.isFinite(onStation) && onStation > 0 && actualTimeHr > onStation) {
     sortiesPerDrone = Math.ceil(actualTimeHr / onStation);
-    warnings.push(`單架次滯空 ${onStation.toFixed(1)} hr（已扣往返 ${(2 * input.asset.transitHrOneWay).toFixed(1)} hr）不足 ${actualTimeHr.toFixed(1)} hr，每架需 ${sortiesPerDrone} 架次輪替`);
+    notices.push({
+      code: "sorties_required", severity: "warning",
+      params: { onStation, needed: actualTimeHr, sorties: sortiesPerDrone },
+    });
   } else if (Number.isFinite(onStation) && onStation <= 0) {
-    warnings.push("往返進場時間已超過滯空時數 —— 此機型無法抵達該區域執行搜索");
+    notices.push({ code: "transit_exceeds_endurance", severity: "warning", params: {} });
   }
 
   const aspectRatio = input.area.shortSideNm > 0 ? input.area.longSideNm / input.area.shortSideNm : 1;
@@ -292,9 +327,7 @@ export function solveForAssets(input: SolveForAssetsInput): SolveForAssetsResult
     fallback = {
       bestPod: achievedPod,
       repeatsForTarget: repeats,
-      note: `單次搜索受條件上限限制只能達到 ${(achievedPod * 100).toFixed(1)}% POD；`
-        + `依文件七(三)以相同覆蓋重複搜索 ${repeats} 次，累積 POD 可達 `
-        + `${(cumulativePodRepeated(achievedCoverage, repeats, input.podModel) * 100).toFixed(1)}%`,
+      cumulativePod: cumulativePodRepeated(achievedCoverage, repeats, input.podModel),
     };
   }
 
@@ -310,10 +343,12 @@ export function solveForAssets(input: SolveForAssetsInput): SolveForAssetsResult
     actualTimeHr,
     sortiesPerDrone,
     pattern: rec.pattern,
-    patternReason: rec.reason,
+    patternReasonCode: rec.reasonCode,
+    patternMultiAssetNote: rec.multiAssetNote,
     patternAlternatives: rec.alternatives,
     fallback,
-    warnings,
+    coverageLevel: achievedLevel,
+    notices,
   };
 }
 
