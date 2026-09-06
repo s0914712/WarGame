@@ -13,7 +13,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play } from "lucide-react";
 import {
-  searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit,
+  searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
@@ -540,6 +540,9 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
                 onChange={(v) => patch({ particleCount: v })} />
               <NumField label={t.elapsedHr} value={inputs.elapsedHr} min={0} max={72} step={0.5} unit="hr"
                 onChange={(v) => patch({ elapsedHr: v })} />
+              <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                {t.midSearchNote} → T+{midSearchElapsedHr().toFixed(1)} hr
+              </div>
               <div style={{ fontSize: 15, color: "#94a3b8", marginTop: 4 }}>{t.scenarios}</div>
               {scenarios.map((sc) => (
                 <div key={sc.id} style={{

@@ -83,22 +83,40 @@ export interface PlannerInputs {
   // ── Stone §2/§6：事前分布與貝氏更新 ──
   bayesEnabled: boolean;
   particleCount: number;
-  /** 規劃時刻相對基準點時間的小時數（Stone §5：取搜索期中點） */
+  /**
+   * 從基準點（事發／最後已知位置）到**抵達搜索區**的時數。
+   * 實際推進分布時會再自動加上「掃區時間的一半」，以符合 Stone §5 的
+   * 搜索期中點慣例 —— 見 midSearchElapsedHr()。
+   */
   elapsedHr: number;
   /** Stone §7 的停止門檻 */
   stopThreshold: number;
 }
 
-/** 只影響蒙地卡羅、不影響航線幾何的參數 */
-const MC_ONLY_KEYS = new Set<keyof PlannerInputs>([
-  "mcEnabled", "mcTrials", "mcDriftKn", "mcDriftBearingDeg",
-  "mcNavErrorSigmaNm", "mcSensorAvailability",
-  "mcDistributionKind", "mcSigmaNm", "mcSeed",
-] as (keyof PlannerInputs)[]) as Set<string>;
+/**
+ * 會改變「產生出來的航線幾何」的參數 —— 只有這些變動才需要作廢既有航線。
+ *
+ * 用白名單而非黑名單：先前用黑名單（列出「不影響」的 key）漏掉了 6 個參數，
+ * 導致調整導航誤差、掃掠寬不確定性、粒子數、停止門檻，甚至只是「啟用事前分布」
+ * 都會把剛產生的航線洗掉 —— 而啟用事前分布正是使用者接著要記錄搜索趟次的
+ * 前一步，等於把功能鎖死。新增參數時若忘了加進白名單，最壞情況只是航線該作廢
+ * 卻沒作廢（畫面看得出來），比靜默清空溫和。
+ */
+const GEOMETRY_KEYS = new Set<string>([
+  // 解算方向與資產數 → 決定航線條數
+  "direction", "droneCount", "availableHr", "targetPod", "speedKn",
+  // 影響掃掠寬 W → 影響自動航跡間距 S
+  "targetClass", "visibilityKm", "altitudeFt", "corrections", "sensorTested", "windKn",
+  // 直接決定 S / 圖形
+  "trackSpacingOverrideNm", "patternOverride", "podModel",
+  "datumUncertaintyNm", "targetBiasedToOneEnd", "hasKnownTrackLine",
+]);
 
 /** 變動後需要重建事前分布的參數 */
 const DISTRIBUTION_KEYS = new Set<string>([
   "bayesEnabled", "particleCount", "elapsedHr", "mcSeed",
+  // 幾何參數會改掃區時間 → 改變 Stone §5 的搜索期中點 → 分布要重推
+  ...GEOMETRY_KEYS,
 ]);
 
 const DEFAULT_INPUTS: PlannerInputs = {
@@ -223,6 +241,49 @@ function sensor(): SensorConditions {
     navErrorSigmaNm: inputs.navErrorSigmaNm,
     sweepWidthSpread: inputs.sweepWidthSpread,
   };
+}
+
+/**
+ * Stone §5 的搜索期中點慣例。
+ *
+ * 「這是個移動目標問題……但為保持討論簡單，我們把它當成靜止目標問題處理：
+ *  計算目標在**航空器搜索期中點**的分布，然後照那個分布規劃。這是實務上
+ *  處理搜索的常見做法。」（論文範例：遇險呼叫後 10 hr 開始搜、搜 3 hr，
+ *  故取 T = 11.5 hr。）
+ *
+ * 因此實際推進時距 = 抵達現場時距 + 掃區時間 ÷ 2。
+ */
+export function midSearchElapsedHr(): number {
+  const sweepHr = currentSweepHours();
+  return inputs.elapsedHr + (Number.isFinite(sweepHr) ? sweepHr / 2 : 0);
+}
+
+/** 掃完全區所需時數（不依賴粒子，故可安全地在重建分布時呼叫） */
+function currentSweepHours(): number {
+  const area = geometry();
+  if (!area) return 0;
+  const base = {
+    area, asset: asset(), sensor: sensor(),
+    windKn: inputs.windKn, podModel: inputs.podModel,
+  };
+  if (inputs.direction === "given_assets") {
+    return solveForTime({
+      ...base,
+      droneCount: inputs.droneCount,
+      trackSpacingNm: inputs.trackSpacingOverrideNm ?? undefined,
+    }).timeHr;
+  }
+  const inv = solveForAssets({
+    ...base,
+    availableHr: inputs.availableHr,
+    targetPod: inputs.targetPod,
+    context: {
+      datumUncertaintyNm: inputs.datumUncertaintyNm,
+      targetBiasedToOneEnd: inputs.targetBiasedToOneEnd,
+      hasKnownTrackLine: inputs.hasKnownTrackLine,
+    },
+  });
+  return inv.actualTimeHr;
 }
 
 function asset(): AssetProfile {
@@ -394,16 +455,15 @@ export const searchPlannerStore = {
 
   patch(p: Partial<PlannerInputs>): void {
     inputs = { ...inputs, ...p };
-    // 只有影響「解算 / 幾何」的參數才會讓既有航線失效；
-    // 純蒙地卡羅參數（漂流、導航誤差…）不動航線，只清模擬結果，
-    // 否則使用者一勾「啟用蒙地卡羅」就把剛產生的航線洗掉。
-    if (Object.keys(p).some((k) => !MC_ONLY_KEYS.has(k))) tracks = [];
+    // 只有真正改變航線幾何的參數才作廢既有航線（見 GEOMETRY_KEYS 的說明）
+    if (Object.keys(p).some((k) => GEOMETRY_KEYS.has(k))) tracks = [];
     mcResult = null;
     // 影響事前分布的參數變動 → 重建粒子（並清掉搜索歷程）
     if (Object.keys(p).some((k) => DISTRIBUTION_KEYS.has(k))) {
       if (inputs.bayesEnabled) {
         particles = sampleParticles(scenarios, inputs.particleCount, inputs.mcSeed);
-        if (inputs.elapsedHr > 0) particles = propagate(particles, inputs.elapsedHr);
+        const t = midSearchElapsedHr();
+        if (t > 0) particles = propagate(particles, t);
       } else {
         particles = [];
       }
@@ -490,7 +550,8 @@ export const searchPlannerStore = {
    */
   rebuildDistribution(): void {
     particles = sampleParticles(scenarios, inputs.particleCount, inputs.mcSeed);
-    if (inputs.elapsedHr > 0) particles = propagate(particles, inputs.elapsedHr);
+    const t = midSearchElapsedHr();
+    if (t > 0) particles = propagate(particles, t);
     sortiePos = [];
     notify();
   },

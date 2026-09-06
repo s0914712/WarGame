@@ -154,6 +154,7 @@ export interface SearchStrings {
   adviceContinue: string; adviceConsider: string; adviceExhausted: string;
   adviceExhaustedNote: string;
   needBayes: string; needTracksForSortie: string;
+  midSearchNote: string;
 }
 
 const ZH: SearchStrings = {
@@ -217,7 +218,7 @@ const ZH: SearchStrings = {
   secPrior: "⑧ 目標機率分布（Stone §2）",
   bayesEnable: "啟用事前分布與貝氏更新",
   particleCount: "粒子數",
-  elapsedHr: "距基準點時間",
+  elapsedHr: "基準點→抵達現場",
   scenarios: "情境（權重會自動正規化）",
   scenarioWeight: "可信度", scenarioSigma: "位置誤差 σ",
   scenarioDrift: "漂流速度", scenarioCourse: "漂流航向",
@@ -244,6 +245,7 @@ const ZH: SearchStrings = {
   adviceExhaustedNote: "Stone §7：累積機率已達門檻，代表在既有假設下重複同樣搜索多半早已找到。失敗更可能是運氣或假設有誤，而非規劃不當 —— 若無新情報就該停。",
   needBayes: "需先啟用事前分布",
   needTracksForSortie: "需先產生搜索航線",
+  midSearchNote: "分布實際推進到「抵達現場 + 掃區時間÷2」的搜索期中點（Stone §5 的實務慣例）",
 };
 
 const EN: SearchStrings = {
@@ -307,7 +309,7 @@ const EN: SearchStrings = {
   secPrior: "8. Target probability distribution (Stone §2)",
   bayesEnable: "Enable prior distribution and Bayesian update",
   particleCount: "Particles",
-  elapsedHr: "Time since datum",
+  elapsedHr: "Datum → on scene",
   scenarios: "Scenarios (weights are normalised)",
   scenarioWeight: "Credence", scenarioSigma: "Position error σ",
   scenarioDrift: "Drift speed", scenarioCourse: "Drift course",
@@ -334,6 +336,7 @@ const EN: SearchStrings = {
   adviceExhaustedNote: "Stone §7: the cumulative probability has reached the threshold, meaning repeating this search under the same assumptions would usually have found the target by now. Failure is more likely bad luck or a faulty assumption than poor planning — with no new information, stop.",
   needBayes: "Enable the prior distribution first",
   needTracksForSortie: "Generate search tracks first",
+  midSearchNote: "The distribution is advanced to on-scene + half the sweep time — the mid-search instant (Stone §5's practical convention)",
 };
 
 export function searchStrings(lang: SearchLang): SearchStrings {
