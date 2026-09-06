@@ -93,6 +93,7 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
   const actualHr = actualTrackNm > 0 && sol
     ? actualTrackNm / Math.max(1, sol.droneCount) / Math.max(0.1, inputs.speedKn)
     : 0;
+  const contactLoad = fwd?.contacts ?? inv?.contacts ?? null;
   const analyticPod = sol
     ? (fwd?.pod ?? inv?.achievedPod ?? podFromCoverage(sol.trackSpacingNm > 0 ? (W?.correctedNm ?? 0) / sol.trackSpacingNm : 0, inputs.podModel))
     : 0;
@@ -313,6 +314,10 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
               <>
                 <KV k={t.sweepTime} v={fmtHr(fwd.timeHr)} big
                   note={`${sol.droneCount} × ${inputs.speedKn} kn × S ${sol.trackSpacingNm.toFixed(2)} nm  (A = T×N×P×S)`} />
+                {inputs.falseTargetsEnabled && fwd.contacts.expectedContacts > 0 && (
+                  <KV k={t.timeWithContacts} v={fmtHr(fwd.timeWithContactsHr)}
+                    note={`${t.investigationHours} ${fwd.contacts.investigationHours.toFixed(1)} hr (${(fwd.contacts.timeShare * 100).toFixed(0)}%)`} />
+                )}
                 <KV k={t.elapsedTime} v={fmtHr(fwd.elapsedHrWithSorties)}
                   note={fwd.sortiesPerDrone > 1
                     ? `${fwd.sortiesPerDrone} ${t.sorties} ${t.perAircraft} · ${t.onStationPerSortie} ${fmtHr(fwd.onStationHr)}`
@@ -612,6 +617,34 @@ export function SearchPlannerPanel({ standalone = false }: { standalone?: boolea
             )}
           </Section>
         )}
+
+        {/* ⑩ 假目標與接觸查證（Stone §6） */}
+        <Section title={t.secFalseTargets}>
+          <label style={checkRow}>
+            <input type="checkbox" checked={inputs.falseTargetsEnabled}
+              onChange={(e) => patch({ falseTargetsEnabled: e.target.checked })} />
+            {t.falseEnable}
+          </label>
+          {inputs.falseTargetsEnabled && (
+            <>
+              <NumField label={t.falseCount} value={inputs.expectedFalseTargetsInArea} min={0} max={200} step={1} unit=""
+                onChange={(v) => patch({ expectedFalseTargetsInArea: v })} />
+              <NumField label={t.investigationTime} value={inputs.investigationHr} min={0} max={2} step={0.05} unit="hr"
+                onChange={(v) => patch({ investigationHr: v })} />
+              {contactLoad && (
+                <div style={{ ...resultBox, marginTop: 8, marginBottom: 0, background: "rgba(251,146,60,0.06)", borderColor: "rgba(251,146,60,0.28)" }}>
+                  <KV k={t.expectedContacts} v={contactLoad.expectedContacts.toFixed(1)} big
+                    note={`${t.contactsCi} ${contactLoad.contacts95[0]}–${contactLoad.contacts95[1]}`} />
+                  <KV k={t.investigationHours} v={`${contactLoad.investigationHours.toFixed(1)} hr`}
+                    note={`${(contactLoad.timeShare * 100).toFixed(0)}% · ${t.worstCase} ${contactLoad.worstCaseInvestigationHours.toFixed(1)} hr`} />
+                </div>
+              )}
+              <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.55, marginTop: 6 }}>
+                {t.falseTargetsNote}
+              </div>
+            </>
+          )}
+        </Section>
 
         <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6, paddingTop: 4 }}>{t.footer}</div>
       </div>

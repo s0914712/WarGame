@@ -37,6 +37,10 @@ function noticeZh(x: PlannerNotice): string {
       return `單架次滯空 ${n(p.onStation, 1)} hr 不足以飛完 ${n(p.needed, 1)} hr 的航線，每架需 ${n(p.sorties)} 個架次輪替`;
     case "transit_exceeds_endurance":
       return "往返進場時間已超過滯空時數 —— 此機型無法抵達該區域執行搜索";
+    case "false_contacts":
+      return `預期 ${n(p.contacts, 1)} 個假接觸需查證（95% 區間 ${n(p.lo)}–${n(p.hi)} 個），`
+        + `吃掉 ${n(p.hours, 1)} 載具時數、佔總需求 ${n(p.share, 0)}% —— `
+        + "假目標與真目標偵測函數相同，搜得再久也濾不掉，只能逐一查證（Stone §6）";
   }
 }
 
@@ -58,6 +62,10 @@ function noticeEn(x: PlannerNotice): string {
       return `On-station endurance of ${n(p.onStation, 1)} hr cannot cover a ${n(p.needed, 1)} hr route; each aircraft needs ${n(p.sorties)} sorties`;
     case "transit_exceeds_endurance":
       return "Transit time out and back already exceeds endurance — this airframe cannot reach the area";
+    case "false_contacts":
+      return `Expect ${n(p.contacts, 1)} false contacts to investigate (95% interval ${n(p.lo)}–${n(p.hi)}), `
+        + `consuming ${n(p.hours, 1)} aircraft-hours — ${n(p.share, 0)}% of the total requirement. `
+        + "False targets share the target's detection function, so more searching will not filter them out — each must be checked (Stone §6)";
   }
 }
 
@@ -155,6 +163,10 @@ export interface SearchStrings {
   adviceExhaustedNote: string;
   needBayes: string; needTracksForSortie: string;
   midSearchNote: string;
+  secFalseTargets: string; falseEnable: string; falseCount: string;
+  investigationTime: string; expectedContacts: string; contactsCi: string;
+  investigationHours: string; worstCase: string; timeWithContacts: string;
+  falseTargetsNote: string;
 }
 
 const ZH: SearchStrings = {
@@ -246,6 +258,16 @@ const ZH: SearchStrings = {
   needBayes: "需先啟用事前分布",
   needTracksForSortie: "需先產生搜索航線",
   midSearchNote: "分布實際推進到「抵達現場 + 掃區時間÷2」的搜索期中點（Stone §5 的實務慣例）",
+  secFalseTargets: "⑩ 假目標與接觸查證（Stone §6）",
+  falseEnable: "計入假目標",
+  falseCount: "全區預期假接觸",
+  investigationTime: "每個查證耗時",
+  expectedContacts: "預期偵測到的假接觸",
+  contactsCi: "95% 區間",
+  investigationHours: "查證吃掉的載具時數",
+  worstCase: "最壞情況（95% 上緣）",
+  timeWithContacts: "含查證後每架時數",
+  falseTargetsNote: "假目標與真目標偵測函數相同 —— 搜得再久也濾不掉，只能逐一查證。Stone §6：進入查證階段必須先終止廣域搜索，對無人機而言就是從滯空時數裡扣。",
 };
 
 const EN: SearchStrings = {
@@ -337,6 +359,16 @@ const EN: SearchStrings = {
   needBayes: "Enable the prior distribution first",
   needTracksForSortie: "Generate search tracks first",
   midSearchNote: "The distribution is advanced to on-scene + half the sweep time — the mid-search instant (Stone §5's practical convention)",
+  secFalseTargets: "10. False targets and contact investigation (Stone §6)",
+  falseEnable: "Account for false targets",
+  falseCount: "Expected false contacts in area",
+  investigationTime: "Time per investigation",
+  expectedContacts: "Expected false contacts detected",
+  contactsCi: "95% interval",
+  investigationHours: "Aircraft-hours spent investigating",
+  worstCase: "Worst case (95th percentile)",
+  timeWithContacts: "Hours per aircraft incl. investigation",
+  falseTargetsNote: "False targets share the target's detection function — searching longer will not filter them out, each must be checked. Stone §6: entering the investigation phase requires terminating broad search; for a UAV that comes straight out of endurance.",
 };
 
 export function searchStrings(lang: SearchLang): SearchStrings {

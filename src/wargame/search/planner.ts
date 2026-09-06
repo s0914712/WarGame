@@ -28,6 +28,10 @@ import {
   certainSweepWidth, expectedDetectionBounds, threePointSweepWidth,
   type DetectionBounds,
 } from "./detection";
+import {
+  expectedFalseTargets, poissonInterval95,
+  NO_FALSE_TARGETS, type FalseTargetModel,
+} from "./falseTargets";
 
 /**
  * 規劃提示 — 結構化代碼 + 參數，文字由 i18n 層（./i18n.ts）產生，
@@ -40,7 +44,8 @@ export type NoticeCode =
   | "coverage_poor"           // C < 0.5，文件六(六)不建議
   | "coverage_excess"         // C 超出文件 POD 圖範圍，屬外推
   | "sorties_required"        // 單架次滯空不足，需輪替
-  | "transit_exceeds_endurance"; // 往返已超過滯空時數
+  | "transit_exceeds_endurance" // 往返已超過滯空時數
+  | "false_contacts";           // 假目標查證吃掉時間預算
 
 export interface PlannerNotice {
   code: NoticeCode;
@@ -93,6 +98,49 @@ export interface SweepWidthBreakdown {
   corrections: SweepWidthCorrections;
 }
 
+/**
+ * 假目標對時間預算的影響（Stone §6）。
+ *
+ * 廣域搜索覆蓋整區需要的載具時數是固定的（= A/(P·S)，與架數無關）；
+ * 假目標另外吃掉查證時數。故：
+ *
+ *   覆蓋率 C = W/S
+ *   預期接觸數 = δ·A·(1 − e^(−C))     假目標與真目標偵測函數相同
+ *   查證時數 = 預期接觸數 × τ
+ *   總需求時數 = 廣域時數 + 查證時數
+ *
+ * 這裡不必解不動點：廣域時數由面積與航跡間距決定，不隨架數變動。
+ * （falseTargets.contactBudget 解的是另一個問題 —— 「總時數固定時廣域佔多少」。）
+ */
+export interface ContactLoad {
+  /** 預期偵測到的假接觸數 */
+  expectedContacts: number;
+  contacts95: [number, number];
+  /** 查證吃掉的載具時數 */
+  investigationHours: number;
+  /** 若接觸數落在 95% 上緣要多花多少時數 */
+  worstCaseInvestigationHours: number;
+  /** 查證佔總需求時數的比例 */
+  timeShare: number;
+}
+
+function contactLoad(
+  model: FalseTargetModel, areaNm2: number, coverage: number, broadHours: number,
+): ContactLoad {
+  const lambdaArea = expectedFalseTargets(model, areaNm2);
+  const detected = lambdaArea * (coverage > 0 ? 1 - Math.exp(-coverage) : 0);
+  const invest = detected * Math.max(0, model.investigationHr);
+  const ci = poissonInterval95(detected);
+  const total = broadHours + invest;
+  return {
+    expectedContacts: detected,
+    contacts95: ci,
+    investigationHours: invest,
+    worstCaseInvestigationHours: ci[1] * Math.max(0, model.investigationHr),
+    timeShare: total > 0 ? invest / total : 0,
+  };
+}
+
 /** 依 Stone §4 算出的偵測機率上下界（供 UI 以區間呈現，而非單點） */
 export interface DetectionBoundsResult extends DetectionBounds {
   /** 掃掠寬度是否被當成不確定量處理 */
@@ -138,6 +186,8 @@ export interface SolveForTimeInput {
   /** 環境（決定 S 的條件上限） */
   windKn: number;
   podModel?: PodModel;
+  /** 假目標模型（Stone §6）；省略 = 不考慮 */
+  falseTargets?: FalseTargetModel;
 }
 
 export interface SolveForTimeResult {
@@ -164,6 +214,10 @@ export interface SolveForTimeResult {
   sortiesPerDrone: number;
   /** 含輪替後的實際歷時（hr）—— 架次之間需返場整補 */
   elapsedHrWithSorties: number;
+  /** 假目標查證負擔（Stone §6） */
+  contacts: ContactLoad;
+  /** 含接觸查證後、每架實際需要的時數 */
+  timeWithContactsHr: number;
   notices: PlannerNotice[];
 }
 
@@ -196,6 +250,21 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
 
   // A = T × N × P × S  →  T = A / (N × P × S)
   const timeHr = input.area.areaNm2 / (N * P * S);
+  const contacts = contactLoad(
+    input.falseTargets ?? NO_FALSE_TARGETS, input.area.areaNm2, C, timeHr * N,
+  );
+  const timeWithContactsHr = timeHr + contacts.investigationHours / N;
+  if (contacts.expectedContacts >= 1) {
+    notices.push({
+      code: "false_contacts", severity: "warning",
+      params: {
+        contacts: contacts.expectedContacts,
+        hours: contacts.investigationHours,
+        share: contacts.timeShare * 100,
+        lo: contacts.contacts95[0], hi: contacts.contacts95[1],
+      },
+    });
+  }
   const totalTrackNm = timeHr * N * P;
   const trackPerDroneNm = totalTrackNm / N;
 
@@ -207,8 +276,8 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
       notices.push({ code: "transit_exceeds_endurance", severity: "warning", params: {} });
       sortiesPerDrone = Infinity;
       elapsedHrWithSorties = Infinity;
-    } else if (timeHr > onStationHr) {
-      sortiesPerDrone = Math.ceil(timeHr / onStationHr);
+    } else if (timeWithContactsHr > onStationHr) {
+      sortiesPerDrone = Math.ceil(timeWithContactsHr / onStationHr);
       // 每個架次都要多飛一趟往返
       elapsedHrWithSorties = timeHr + sortiesPerDrone * 2 * input.asset.transitHrOneWay;
       notices.push({
@@ -234,6 +303,8 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
     onStationHr,
     sortiesPerDrone,
     elapsedHrWithSorties,
+    contacts,
+    timeWithContactsHr,
     notices,
   };
 }
@@ -249,6 +320,8 @@ export interface SolveForAssetsInput {
   targetPod: number;
   windKn: number;
   podModel?: PodModel;
+  /** 假目標模型（Stone §6）；省略 = 不考慮 */
+  falseTargets?: FalseTargetModel;
   /** 圖形建議用的情境輸入 */
   context?: {
     datumUncertaintyNm?: number;
@@ -292,6 +365,8 @@ export interface SolveForAssetsResult {
     cumulativePod: number;
   };
   coverageLevel: CoverageLevel;
+  /** 假目標查證負擔（Stone §6） */
+  contacts: ContactLoad;
   notices: PlannerNotice[];
 }
 
@@ -327,10 +402,26 @@ export function solveForAssets(input: SolveForAssetsInput): SolveForAssetsResult
   const T = Math.max(0.01, input.availableHr);
   const P = Math.max(0.1, input.asset.speedKn);
 
-  // A = T × N × P × S  →  N = A / (T × P × S)
-  const exactDrones = input.area.areaNm2 / (T * P * S);
+  // 廣域搜索所需的總載具時數（與架數無關）
+  const broadHoursTotal = input.area.areaNm2 / (P * S);
+  const contacts = contactLoad(
+    input.falseTargets ?? NO_FALSE_TARGETS, input.area.areaNm2, achievedCoverage, broadHoursTotal,
+  );
+  if (contacts.expectedContacts >= 1) {
+    notices.push({
+      code: "false_contacts", severity: "warning",
+      params: {
+        contacts: contacts.expectedContacts,
+        hours: contacts.investigationHours,
+        share: contacts.timeShare * 100,
+        lo: contacts.contacts95[0], hi: contacts.contacts95[1],
+      },
+    });
+  }
+  // A = T × N × P × S，再加上查證時數 → N = (廣域時數 + 查證時數) / T
+  const exactDrones = (broadHoursTotal + contacts.investigationHours) / T;
   const recommendedDrones = Math.max(1, Math.ceil(exactDrones - 1e-9));
-  const actualTimeHr = input.area.areaNm2 / (recommendedDrones * P * S);
+  const actualTimeHr = (broadHoursTotal + contacts.investigationHours) / recommendedDrones;
 
   let sortiesPerDrone = 1;
   if (Number.isFinite(onStation) && onStation > 0 && actualTimeHr > onStation) {
@@ -383,6 +474,7 @@ export function solveForAssets(input: SolveForAssetsInput): SolveForAssetsResult
     patternAlternatives: rec.alternatives,
     fallback,
     coverageLevel: achievedLevel,
+    contacts,
     notices,
   };
 }

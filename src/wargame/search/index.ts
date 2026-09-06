@@ -13,5 +13,6 @@ export * from "./monteCarlo";
 export * from "./detection";
 export * from "./optimalRectangle";
 export * from "./targetDistribution";
+export * from "./falseTargets";
 export * from "./i18n";
 export * from "./searchPlannerStore";

@@ -25,6 +25,7 @@ import type { SearchPatternId } from "./patterns";
 import { boxFromCorners, generateSearchTracks, measureBox, type DroneTrack } from "./tracks";
 import { runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
 import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
+import { densityFromExpectedCount, type FalseTargetModel } from "./falseTargets";
 import { optimalRectangle, searchEffortNm2, type OptimalRectangleResult } from "./optimalRectangle";
 import {
   cumulativeSuccess, distributionStats, propagate, rasterize, sampleParticles,
@@ -91,6 +92,12 @@ export interface PlannerInputs {
   elapsedHr: number;
   /** Stone §7 的停止門檻 */
   stopThreshold: number;
+  // ── Stone §6：假目標 ──
+  falseTargetsEnabled: boolean;
+  /** 整個搜索區預期會看到幾個假接觸（規劃者對「個數」比對密度有感覺） */
+  expectedFalseTargetsInArea: number;
+  /** 查證一個接觸所需時間（小時） */
+  investigationHr: number;
 }
 
 /**
@@ -110,6 +117,8 @@ const GEOMETRY_KEYS = new Set<string>([
   // 直接決定 S / 圖形
   "trackSpacingOverrideNm", "patternOverride", "podModel",
   "datumUncertaintyNm", "targetBiasedToOneEnd", "hasKnownTrackLine",
+  // 假目標吃掉時數 → 反解的建議架數改變 → 航線條數改變
+  "falseTargetsEnabled", "expectedFalseTargetsInArea", "investigationHr",
 ]);
 
 /** 變動後需要重建事前分布的參數 */
@@ -155,6 +164,9 @@ const DEFAULT_INPUTS: PlannerInputs = {
   particleCount: 5000,
   elapsedHr: 0,
   stopThreshold: 0.9,
+  falseTargetsEnabled: false,
+  expectedFalseTargetsInArea: 12,
+  investigationHr: 0.25,
 };
 
 /** 預設情境 —— Stone §2 的範例形狀（回報位置 + 漂流） */
@@ -265,6 +277,7 @@ function currentSweepHours(): number {
   const base = {
     area, asset: asset(), sensor: sensor(),
     windKn: inputs.windKn, podModel: inputs.podModel,
+    falseTargets: falseTargets(),
   };
   if (inputs.direction === "given_assets") {
     return solveForTime({
@@ -284,6 +297,16 @@ function currentSweepHours(): number {
     },
   });
   return inv.actualTimeHr;
+}
+
+/** 由「整區預期接觸數」換算成 Stone §6 的密度 δ */
+function falseTargets(): FalseTargetModel {
+  if (!inputs.falseTargetsEnabled) return { densityPerNm2: 0, investigationHr: 0 };
+  const area = geometry();
+  return {
+    densityPerNm2: densityFromExpectedCount(inputs.expectedFalseTargetsInArea, area?.areaNm2 ?? 0),
+    investigationHr: inputs.investigationHr,
+  };
 }
 
 function asset(): AssetProfile {
@@ -338,6 +361,7 @@ export function solve(): PlannerSolution | null {
       trackSpacingNm: inputs.trackSpacingOverrideNm ?? undefined,
       windKn: inputs.windKn,
       podModel: inputs.podModel,
+      falseTargets: falseTargets(),
     });
     // 正解模式也給圖形建議（供產生航線用）
     const rec = solveForAssets({
@@ -348,6 +372,7 @@ export function solve(): PlannerSolution | null {
       targetPod: inputs.targetPod,
       windKn: inputs.windKn,
       podModel: inputs.podModel,
+      falseTargets: falseTargets(),
       context: {
         datumUncertaintyNm: inputs.datumUncertaintyNm,
         targetBiasedToOneEnd: inputs.targetBiasedToOneEnd,
@@ -374,6 +399,7 @@ export function solve(): PlannerSolution | null {
     targetPod: inputs.targetPod,
     windKn: inputs.windKn,
     podModel: inputs.podModel,
+    falseTargets: falseTargets(),
     context: {
       datumUncertaintyNm: inputs.datumUncertaintyNm,
       targetBiasedToOneEnd: inputs.targetBiasedToOneEnd,
