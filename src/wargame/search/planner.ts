@@ -183,6 +183,12 @@ export interface SolveForTimeInput {
   sensor: SensorConditions;
   /** 航跡間距（浬）；省略 → 依文件六(一)取 S = W（理想值），再受條件上限夾限 */
   trackSpacingNm?: number;
+  /**
+   * 直接指定覆蓋因子 C，由 S = W / C 反推航跡間距。
+   * 規劃者常直接以 C 思考（0.75 疏、1.0 理想、1.3 密），比填 S 直觀。
+   * 優先序：trackSpacingNm > coverageFactor > 自動。
+   */
+  coverageFactor?: number;
   /** 環境（決定 S 的條件上限） */
   windKn: number;
   podModel?: PodModel;
@@ -227,16 +233,18 @@ export function solveForTime(input: SolveForTimeInput): SolveForTimeResult {
   const W = sweepWidth.correctedNm;
 
   const ceiling = trackSpacingCeilingNm(input.windKn, input.sensor.visibilityKm);
-  // 文件六(一)：情況許可時 S = W；同時不得超過條件上限
-  let S = input.trackSpacingNm ?? Math.min(W, ceiling.ceilingNm);
+  // 優先序：明寫 S > 指定覆蓋因子 C（S = W/C）> 自動（文件六(一) S = W，受條件上限夾限）
+  let S = input.trackSpacingNm
+    ?? (input.coverageFactor && input.coverageFactor > 0 ? W / input.coverageFactor : undefined)
+    ?? Math.min(W, ceiling.ceilingNm);
   if (!(S > 0)) {
     S = 0.1;
     notices.push({ code: "zero_sweep_width", severity: "warning", params: {} });
   }
-  if (input.trackSpacingNm !== undefined && input.trackSpacingNm > ceiling.ceilingNm) {
+  if (S > ceiling.ceilingNm && (input.trackSpacingNm !== undefined || input.coverageFactor !== undefined)) {
     notices.push({
       code: "spacing_over_ceiling", severity: "warning",
-      params: { spacing: input.trackSpacingNm, ceiling: ceiling.ceilingNm, condition: ceiling.condition },
+      params: { spacing: S, ceiling: ceiling.ceilingNm, condition: ceiling.condition },
     });
   }
 

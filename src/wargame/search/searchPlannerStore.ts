@@ -26,6 +26,10 @@ import { boxFromCorners, generateSearchTracks, measureBox, type DroneTrack } fro
 import { runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
 import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
 import {
+  DEFAULT_EOIR, rangeLimits, TARGET_GEOMETRY,
+  type EoIrSensor, type RangeLimits,
+} from "./sensorRange";
+import {
   calibrateBaseDensity, densityAt, integrateDensity, rankContacts,
   type ContactRanking, type DensityField, type FalseTargetModel,
 } from "./falseTargets";
@@ -61,6 +65,8 @@ export interface PlannerInputs {
   transitHrOneWay: number;
   // 航跡間距：null = 由系統依 S = W 與條件上限決定
   trackSpacingOverrideNm: number | null;
+  /** 直接指定覆蓋因子 C（S = W/C）；null = 不指定。優先序低於 trackSpacingOverrideNm */
+  coverageOverride: number | null;
   // 圖形：null = 用系統建議
   patternOverride: SearchPatternId | null;
   podModel: PodModel;
@@ -103,6 +109,8 @@ export interface PlannerInputs {
   investigationHr: number;
   /** 假目標密度是否分帶（航道 / 漂流帶）；false = 整區均勻 */
   densityBandsEnabled: boolean;
+  /** EO/IR 酬載規格 —— 決定光學解析度上限 */
+  eoir: EoIrSensor;
 }
 
 /**
@@ -118,9 +126,9 @@ const GEOMETRY_KEYS = new Set<string>([
   // 解算方向與資產數 → 決定航線條數
   "direction", "droneCount", "availableHr", "targetPod", "speedKn",
   // 影響掃掠寬 W → 影響自動航跡間距 S
-  "targetClass", "visibilityKm", "altitudeFt", "corrections", "sensorTested", "windKn",
+  "targetClass", "visibilityKm", "altitudeFt", "corrections", "sensorTested", "windKn", "eoir",
   // 直接決定 S / 圖形
-  "trackSpacingOverrideNm", "patternOverride", "podModel",
+  "trackSpacingOverrideNm", "coverageOverride", "patternOverride", "podModel",
   "datumUncertaintyNm", "targetBiasedToOneEnd", "hasKnownTrackLine",
   // 假目標吃掉時數 → 反解的建議架數改變 → 航線條數改變
   "falseTargetsEnabled", "expectedFalseTargetsInArea", "investigationHr",
@@ -148,6 +156,7 @@ const DEFAULT_INPUTS: PlannerInputs = {
   enduranceHr: 12,
   transitHrOneWay: 0.5,
   trackSpacingOverrideNm: null,
+  coverageOverride: null,
   patternOverride: null,
   podModel: "iamsar_chart",
   datumUncertaintyNm: 0,
@@ -173,6 +182,7 @@ const DEFAULT_INPUTS: PlannerInputs = {
   expectedFalseTargetsInArea: 12,
   investigationHr: 0.25,
   densityBandsEnabled: false,
+  eoir: { ...DEFAULT_EOIR },
 };
 
 /**
@@ -312,6 +322,7 @@ function currentSweepHours(): number {
       ...base,
       droneCount: inputs.droneCount,
       trackSpacingNm: inputs.trackSpacingOverrideNm ?? undefined,
+      coverageFactor: inputs.coverageOverride ?? undefined,
     }).timeHr;
   }
   const inv = solveForAssets({
@@ -331,6 +342,19 @@ function currentSweepHours(): number {
  * 假目標密度場。使用者輸入的是「整區預期幾個」，這裡反推基礎密度，
  * 使積分後恰好等於該數 —— 開啟分帶時，同樣的總數會重新分配到航道 / 輻合帶。
  */
+/**
+ * 目前高度 + 目標 + 酬載對應的理論偵測距離上限。
+ * 掃掠寬度表是載人 SAR 航空器的經驗值；這裡另外算物理天花板，
+ * 讓規劃者看得到「表上的數字在這個高度／這顆鏡頭下做不做得到」。
+ */
+export function currentRangeLimits(): RangeLimits {
+  return rangeLimits({
+    altitudeFt: inputs.altitudeFt,
+    target: TARGET_GEOMETRY[inputs.targetClass],
+    sensor: inputs.eoir,
+  });
+}
+
 export function densityField(): DensityField {
   const bands = inputs.densityBandsEnabled ? densityBands : [];
   const { a, b } = { a: cornerA, b: cornerB };
@@ -404,6 +428,7 @@ export function solve(): PlannerSolution | null {
       asset: asset(),
       sensor: sensor(),
       trackSpacingNm: inputs.trackSpacingOverrideNm ?? undefined,
+      coverageFactor: inputs.coverageOverride ?? undefined,
       windKn: inputs.windKn,
       podModel: inputs.podModel,
       falseTargets: falseTargets(),
