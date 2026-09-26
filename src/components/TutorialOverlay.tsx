@@ -28,46 +28,46 @@ const STEPS: Step[] = [
     anchor: "center",
   },
   {
-    title: { zh: "戰況總覽", en: "Situation Overview" },
-    body: { zh: "頂部中央：藍紅雙方存活 / 擊毀 / 戰役時長。數字變化會跳動提示。",
-            en: "Top-center HUD: alive/killed counts for each side and elapsed time. Numbers flash on change." },
-    anchor: "top-center",
-  },
-  {
-    title: { zh: "時鐘控制", en: "Clock Controls" },
-    body: { zh: "左上：▶ 播放、⏸ 暫停（Space）、1×~60× 速率切換（按 1234）、FoW 開關。",
-            en: "Top-left: Play/Pause (Space), 1×–60× sim rate (keys 1234), Fog of War toggle, Language switch." },
+    title: { zh: "頂部資訊列", en: "Top Bar" },
+    body: { zh: "頂部一排：左側 ▶ 播放 / ⏸ 暫停（Space）與 1×–60× 速率（按 1234）；中間藍紅雙方存活 / 擊毀。",
+            en: "One bar across the top: Play/Pause (Space) and 1×–60× rate (keys 1234) on the left; alive/killed per side in the middle." },
     anchor: "top-left",
   },
   {
-    title: { zh: "場景選單", en: "Scenario Menu" },
-    body: { zh: "右上：點場景名展開 → 切換到金門防衛、東沙空襲等其他場景。底圖樣式（衛星 / 地形）在隔壁。",
-            en: "Top-right: click scenario name to switch — Kinmen / Pratas / Bashi / Iran Hormuz / etc. Base map style switcher next to it." },
+    title: { zh: "場景 / 視角 / 選單", en: "Scenario / POV / Menu" },
+    body: { zh: "頂部列右側：切換場景、視角（POV）、FoW、語言、LLM。☰ 選單收納底圖、錄製 / 回放、Plan Mode、簡報與教學。",
+            en: "Right side of the top bar: scenario, POV, FoW, language, LLM. The ☰ menu holds base map, record/replay, Plan Mode, briefing and help." },
     anchor: "top-right",
   },
   {
-    title: { zh: "Plan Mode 擺單位", en: "Plan Mode — Place Units" },
-    body: { zh: "左側「📋 Plan Mode」→ 進入後選陣營 + 單位種類 → 點地圖放單位。完成後退出開戰。",
-            en: "Left palette \"📋 Plan Mode\": pick side + unit kind, click map to place. Exit to start the sim." },
-    anchor: "left",
+    title: { zh: "底部控制台", en: "Bottom Console" },
+    body: { zh: "左鍵點單位 → 底部中間顯示 HP / 油料 / 彈藥 / 航線。右鍵地圖＝移動、右鍵敵方＝攻擊、Shift＋右鍵＝排隊航點。",
+            en: "Left-click a unit → the console centre shows HP / fuel / ammo / route. Right-click map = move, right-click enemy = attack, Shift+right-click = queue waypoint." },
+    anchor: "bottom-center",
   },
   {
-    title: { zh: "單位編輯 / 規劃航線", en: "Unit Editor / Plan Route" },
-    body: { zh: "點任意單位 → 右側 Panel：5 個 slider 調射程 / 速率 / 偵測；按「規劃航線」連點航點。",
-            en: "Click any unit → right panel: 5 sliders for range/speed/detection; \"Plan Route\" then click waypoints." },
-    anchor: "right",
+    title: { zh: "指令卡（快捷鍵）", en: "Command Card (Hotkeys)" },
+    body: { zh: "右下指令卡，每格右側字母就是快捷鍵：R 規劃航線（Enter 套用 / Esc 取消）、C 清線、H 停止、F/T/D/G 交戰規則、S 聲納、Y 拖曳陣列、B 聲標。",
+            en: "Bottom-right command card — the letter on each button is its hotkey: R route (Enter apply / Esc cancel), C clear, H stop, F/T/D/G ROE, S sonar, Y towed array, B sonobuoys." },
+    anchor: "bottom-right",
   },
   {
-    title: { zh: "戰報 + Replay", en: "Engagement Log + Replay" },
-    body: { zh: "左下：戰報滾動每個偵測 / 開火 / 擊毀；右下：● 錄製可下載 JSON、📂 載入回放。",
-            en: "Bottom-left: scrolling engagement log for every detection/fire/kill. Bottom-right: ● Record dumps JSON, 📂 Load to replay." },
+    title: { zh: "戰報", en: "Engagement Log" },
+    body: { zh: "底部左側：每個偵測 / 開火 / 命中 / 擊毀依時間滾動。",
+            en: "Bottom-left: every detection / fire / hit / kill, scrolling in time order." },
     anchor: "bottom-left",
   },
   {
+    title: { zh: "Plan Mode 擺單位", en: "Plan Mode — Place Units" },
+    body: { zh: "☰ 選單 → Plan Mode：選陣營 + 單位種類 → 點地圖放單位；選中單位後可在控制台刪除。",
+            en: "☰ menu → Plan Mode: pick side + unit kind, click the map to place; delete a selected unit from the console." },
+    anchor: "left",
+  },
+  {
     title: { zh: "🤖 LLM 介接", en: "🤖 LLM Bridge" },
-    body: { zh: "右下角藍鈕：給 LLM 看當前狀態 / 套用 LLM 產出的指令 / 啟用自動駕駛讓 AI 操控紅方。",
-            en: "Bottom-right blue button: feed state JSON to an LLM, paste its commands back, or auto-pilot a side via Apertis (3 model presets)." },
-    anchor: "bottom-right",
+    body: { zh: "頂部列 LLM 鈕：給 LLM 看當前狀態 / 套用 LLM 產出的指令 / 啟用自動駕駛讓 AI 操控某一方。",
+            en: "LLM button in the top bar: feed state JSON to an LLM, paste its commands back, or let an AI drive a side." },
+    anchor: "top-right",
   },
 ];
 
@@ -243,14 +243,14 @@ function positionOf(anchor: Step["anchor"]): React.CSSProperties {
   const m = 80;  // margin from edge
   switch (anchor) {
     case "center":        return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
-    case "top-left":      return { top: m, left: m };
+    case "top-left":      return { top: m + 56, left: m };
     case "top-center":    return { top: 110, left: "50%", transform: "translateX(-50%)" };
-    case "top-right":     return { top: m, right: m };
+    case "top-right":     return { top: m + 56, right: m };
     case "left":          return { top: "40%", left: m };
     case "right":         return { top: "40%", right: m };
-    case "bottom-left":   return { bottom: m, left: m };
-    case "bottom-center": return { bottom: m, left: "50%", transform: "translateX(-50%)" };
-    case "bottom-right":  return { bottom: m, right: m };
+    case "bottom-left":   return { bottom: m + 196, left: m };
+    case "bottom-center": return { bottom: m + 196, left: "50%", transform: "translateX(-50%)" };
+    case "bottom-right":  return { bottom: m + 196, right: m };
   }
 }
 

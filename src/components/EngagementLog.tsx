@@ -31,7 +31,11 @@ function getSnapshot(): Snapshot {
   return cached;
 }
 
-export function EngagementLog({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * embedded：行動版 sheet 內（高度交給 sheet）
+ * fill：桌面底部控制台欄位內 — 填滿父容器高度，內部捲動
+ */
+export function EngagementLog({ embedded = false, fill = false }: { embedded?: boolean; fill?: boolean } = {}) {
   useSyncExternalStore(scenarioStore.subscribe, getSnapshot, getSnapshot);
   const [collapsed, setCollapsed] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -40,7 +44,7 @@ export function EngagementLog({ embedded = false }: { embedded?: boolean } = {})
   const recent = events.slice(-MAX_RECENT);
 
   // embedded（行動版 sheet 內）永遠展開，高度交給 sheet
-  const isCollapsed = embedded ? false : collapsed;
+  const isCollapsed = embedded || fill ? false : collapsed;
 
   useEffect(() => {
     if (!isCollapsed && bodyRef.current) {
@@ -50,7 +54,13 @@ export function EngagementLog({ embedded = false }: { embedded?: boolean } = {})
 
   return (
     <div
-      style={embedded ? {
+      style={fill ? {
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        color: "#e2e8f0",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      } : embedded ? {
         width: "100%",
         color: "#e2e8f0",
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -71,7 +81,7 @@ export function EngagementLog({ embedded = false }: { embedded?: boolean } = {})
         transition: "max-height 0.2s",
       }}
     >
-      {!embedded && (
+      {!embedded && !fill && (
       <div
         onClick={() => setCollapsed((v) => !v)}
         style={{
@@ -97,10 +107,11 @@ export function EngagementLog({ embedded = false }: { embedded?: boolean } = {})
         <div
           ref={bodyRef}
           style={{
-            maxHeight: embedded ? "none" : 296,
+            maxHeight: embedded || fill ? "none" : 296,
+            ...(fill ? { flex: 1, minHeight: 0 } : {}),
             overflowY: "auto",
-            padding: "8px 12px",
-            fontSize: 17,
+            padding: fill ? "4px 12px 8px" : "8px 12px",
+            fontSize: fill ? 14 : 17,
             lineHeight: 1.6,
           }}
         >

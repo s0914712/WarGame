@@ -8,7 +8,8 @@ import { uiStore } from "../wargame/uiStore";
 
 function getDemo(): boolean { return uiStore.isDemoMode(); }
 
-export function DemoModeToggle({ isMobile = false }: { isMobile?: boolean } = {}) {
+/** hideEntry：不渲染「進入」浮動鈕（入口改放頂部列 / 選單抽屜），只保留 demo 中的退出鈕 */
+export function DemoModeToggle({ isMobile = false, hideEntry = false }: { isMobile?: boolean; hideEntry?: boolean } = {}) {
   const demo = useSyncExternalStore(uiStore.subscribe, getDemo, getDemo);
 
   // Esc 退出 demo 模式
@@ -51,7 +52,7 @@ export function DemoModeToggle({ isMobile = false }: { isMobile?: boolean } = {}
   }
 
   // 行動版非 demo 時：入口改由選單抽屜提供，這裡不渲染浮動按鈕
-  if (isMobile) return null;
+  if (isMobile || hideEntry) return null;
 
   // 進入鈕（小，左下角）
   return (

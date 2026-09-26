@@ -26,14 +26,14 @@ import { t, useLang } from "../wargame/i18n/lang";
 import { planSonobuoyField } from "../wargame/sim/sonobuoyField";
 import { unitHasTowedArray, SUB_MAX_DEPTH_M } from "../wargame/sim/sonar";
 
-const ROE_OPTIONS: { value: RoeMode; label: string }[] = [
+export const ROE_OPTIONS: { value: RoeMode; label: string }[] = [
   { value: "weapons_free", label: "自由接戰 (Free)" },
   { value: "weapons_tight", label: "限制接戰 (Tight)" },
   { value: "defensive_only", label: "僅防禦 (Defensive)" },
   { value: "weapons_hold", label: "停止接戰 (Hold)" },
 ];
 
-const CONTACT_LABEL: Record<string, string> = {
+export const CONTACT_LABEL: Record<string, string> = {
   hidden: "未偵測",
   unknown: "未識別接觸",
   classified: "已分類（可接戰）",
@@ -42,18 +42,18 @@ const CONTACT_LABEL: Record<string, string> = {
 };
 
 // 接觸定位 / 識別品質（E21）
-const CONTACT_QUALITY_LABEL: Record<string, string> = {
+export const CONTACT_QUALITY_LABEL: Record<string, string> = {
   bearing: "未定位（僅方位）",
   acoustic: "聲學定位（匿名·可射控）",
   visual: "目視識別（完整）",
 };
-const CONTACT_QUALITY_COLOR: Record<string, string> = {
+export const CONTACT_QUALITY_COLOR: Record<string, string> = {
   bearing: "#fca5a5",
   acoustic: "#fcd34d",
   visual: "#86efac",
 };
 
-const CORE_KEYS: (keyof CoreAttributes)[] = [
+export const CORE_KEYS: (keyof CoreAttributes)[] = [
   "rangeKm",
   "speedKnots",
   "movementRangeKm",
@@ -95,7 +95,7 @@ function sonobuoyDraftSig(): string {
   return `${d.unitId ?? ""}|${d.cornerA?.join(",") ?? ""}|${d.cornerB?.join(",") ?? ""}|${d.count}`;
 }
 
-function getSnapshot(): Snapshot {
+export function getSnapshot(): Snapshot {
   const next = buildSnapshot();
   if (
     next.signature !== cached.signature ||
@@ -110,7 +110,7 @@ function getSnapshot(): Snapshot {
   return cached;
 }
 
-function subscribe(cb: () => void): () => void {
+export function subscribe(cb: () => void): () => void {
   const u1 = scenarioStore.subscribe(cb);
   const u2 = editorStore.subscribe(cb);
   return () => { u1(); u2(); };
@@ -132,27 +132,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
     ? scenarioStore.getState().units[followUnitId] ?? null
     : scenarioStore.getSelectedUnit();
 
-  // 鍵盤捷徑：Enter 套用 / Esc 取消 / Backspace 移除最後一點
-  useEffect(() => {
-    if (mode !== "planRoute" && mode !== "defineSonobuoyArea") return;
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "Enter") {
-        e.preventDefault();
-        if (mode === "defineSonobuoyArea") editorStore.commitSonobuoyField();
-        else editorStore.commit();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        editorStore.cancel();
-      } else if (e.key === "Backspace" && mode === "planRoute") {
-        e.preventDefault();
-        editorStore.removeLastWaypoint();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [mode]);
+  usePlanningHotkeys(mode);
 
   if (!targetUnit) return null;
 
@@ -705,7 +685,31 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
   );
 }
 
-function StatusBar({ label, value, max, color, unit = "" }: {
+/** 規劃航線 / 佈聲標模式的鍵盤捷徑：Enter 套用 / Esc 取消 / Backspace 移除最後一點（桌面控制台與行動版共用） */
+export function usePlanningHotkeys(mode: string) {
+  useEffect(() => {
+    if (mode !== "planRoute" && mode !== "defineSonobuoyArea") return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (mode === "defineSonobuoyArea") editorStore.commitSonobuoyField();
+        else editorStore.commit();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        editorStore.cancel();
+      } else if (e.key === "Backspace" && mode === "planRoute") {
+        e.preventDefault();
+        editorStore.removeLastWaypoint();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode]);
+}
+
+export function StatusBar({ label, value, max, color, unit = "" }: {
   label: string; value: number; max: number; color: string; unit?: string;
 }) {
   const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
@@ -732,7 +736,7 @@ function StatusBar({ label, value, max, color, unit = "" }: {
   );
 }
 
-function formatEta(seconds: number): string {
+export function formatEta(seconds: number): string {
   if (!isFinite(seconds) || seconds <= 0) return "—";
   if (seconds < 60) return `${Math.round(seconds)}s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}min`;

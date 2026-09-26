@@ -16,7 +16,8 @@ function getFowSnapshot(): boolean {
   return scenarioStore.isFogOfWar();
 }
 
-export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {}) {
+/** embedded：桌面頂部列內 inline 顯示（語言 / FoW 由頂部列另外提供） */
+export function WargameClockHUD({ isMobile = false, embedded = false }: { isMobile?: boolean; embedded?: boolean } = {}) {
   const { tPlus, rate, isPaused, toggle, setRate } = useWargameClock();
   const fogOfWar = useSyncExternalStore(scenarioStore.subscribe, getFowSnapshot, getFowSnapshot);
   const lang = useLang();
@@ -42,7 +43,14 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
 
   return (
     <div
-      style={isMobile ? {
+      style={embedded ? {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        color: "#e2e8f0",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        userSelect: "none",
+      } : isMobile ? {
         display: "flex",
         alignItems: "center",
         flexWrap: "wrap",
@@ -73,8 +81,8 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         title={(isPaused ? t("Resume") : t("Pause")) + "（Space）"}
         className="wg-btn"
         style={{
-          width: isMobile ? 36 : 42,
-          height: isMobile ? 36 : 42,
+          width: isMobile || embedded ? 36 : 42,
+          height: isMobile || embedded ? 36 : 42,
           borderRadius: 6,
           border: "1px solid rgba(148, 163, 184, 0.4)",
           background: isPaused ? "#3B82F6" : "rgba(30, 41, 59, 0.6)",
@@ -89,7 +97,7 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         }
       </button>
 
-      <div style={{ fontSize: isMobile ? 18 : 40, fontWeight: 700, letterSpacing: 1, minWidth: isMobile ? 76 : 170 }}>
+      <div style={{ fontSize: isMobile ? 18 : embedded ? 26 : 40, fontWeight: 700, letterSpacing: 1, minWidth: isMobile ? 76 : embedded ? 128 : 170 }}>
         {tPlus}
       </div>
 
@@ -100,12 +108,12 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
             onClick={() => setRate(r)}
             className="wg-btn"
             style={{
-              padding: isMobile ? "3px 7px" : "6px 12px",
+              padding: isMobile ? "3px 7px" : embedded ? "4px 9px" : "6px 12px",
               borderRadius: 4,
               border: "1px solid rgba(148, 163, 184, 0.4)",
               background: r === rate ? "#3B82F6" : "rgba(30, 41, 59, 0.4)",
               color: r === rate ? "#fff" : "#cbd5e1",
-              fontSize: isMobile ? 13 : 19,
+              fontSize: isMobile ? 13 : embedded ? 15 : 19,
               fontWeight: 600,
               cursor: "pointer",
               fontFamily: "inherit",
@@ -134,6 +142,7 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         </span>
       )}
 
+      {!embedded && <>
       {/* 語言切換 */}
       <button
         onClick={() => langStore.toggle()}
@@ -183,6 +192,7 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
         {fogOfWar ? <EyeOff size={14} /> : <Eye size={14} />}
         FoW
       </button>
+      </>}
     </div>
   );
 }

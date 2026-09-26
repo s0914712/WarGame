@@ -17,35 +17,41 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   {
-    area: "頂部",
-    items: [
-      { label: "🛡 戰況統計（中央）", desc: "雙方存活 / 擊毀 / 戰役時長。數字變化會跳動提示。" },
-      { label: "🗺 底圖切換", desc: "暗色 / 衛星 / 地形 / 街道等 7 種樣式。" },
-      { label: "⚔ 場景選單", desc: "切換 5 個場景（含美軍戰鬥群 / 巴士海峽封鎖）。" },
-      { label: "POV 切換", desc: "從藍 / 紅 / 中立 / 全局視角看戰場。切換後 FoW / 雷達 / LLM state 全跟著轉。" },
-    ],
-  },
-  {
-    area: "左上時鐘",
+    area: "頂部資訊列（左→右）",
     items: [
       { label: "▶ / ⏸ 播放暫停", desc: "鍵盤 Space。" },
       { label: "1× / 5× / 30× / 60× 速率", desc: "鍵盤 1 / 2 / 3 / 4。60× 下 1 秒 wall = 1 分鐘 sim。" },
-      { label: "FoW 開關（眼睛 icon）", desc: "ON：未偵測敵方完全隱身。OFF：淡化顯示（除錯用）。" },
+      { label: "🛡 戰況統計", desc: "雙方存活 / 擊毀。數字變化會跳動提示。" },
+      { label: "⚔ 場景選單", desc: "切換場景（多人對戰中隱藏）。" },
+      { label: "● 視角（POV）", desc: "從藍 / 紅 / 中立 / 全局視角看戰場。切換後 FoW / 雷達 / LLM state 全跟著轉。" },
+      { label: "FoW", desc: "ON：未偵測敵方完全隱身。OFF：淡化顯示（除錯用）。" },
+      { label: "中 / EN、LLM", desc: "語言切換；LLM 介接（當前狀態 / 套用指令 / Schema / AI 對手）。" },
+      { label: "☰ 選單", desc: "底圖樣式、● 錄製 / 📂 載入回放、Plan Mode、場景簡報、教學、本說明、展示模式、返回主選單。" },
     ],
   },
   {
-    area: "左側",
+    area: "底部控制台 · 左：戰報",
     items: [
-      { label: "📋 Plan Mode", desc: "展開後可選陣營 + 9 種單位 → 點地圖放單位。可匯出場景 JSON。" },
+      { label: "戰報", desc: "偵測 / 開火 / 命中 / 擊毀依時間捲動，最近 50 條。" },
     ],
   },
   {
-    area: "點地圖單位後 → 右側",
+    area: "底部控制台 · 中：選中單位",
     items: [
-      { label: "5 個屬性 slider", desc: "射程 / 速率 / 航程 / 偵測距離 / 耐損。即時調整、立刻反映到地圖（射程圈跟著縮放）。" },
-      { label: "規劃航線", desc: "進規劃模式後點地圖加 waypoint。Backspace 移除上一點、Enter 套用、Esc 取消。橘色虛線預覽 + 違規地形紅色警示。" },
-      { label: "清除航線", desc: "把目前 waypoint 清空、單位停下。" },
-      { label: "🗑 刪除單位（Plan Mode 才出現）", desc: "從場景移除該單位。" },
+      { label: "HP / 油料 / 彈藥", desc: "狀態條；下方為射程、速度、偵測、目前航線與 ETA。敵方單位顯示偵測狀態與定位品質。" },
+      { label: "規劃航線模式", desc: "橘色提示列顯示航點數、距離、ETA、剩餘油料與違規警示。" },
+      { label: "⚙ 屬性（單人）", desc: "彈出 5 個屬性 slider（射程 / 速率 / 航程 / 偵測 / 耐損），即時生效。" },
+      { label: "🗑 刪除單位（Plan Mode）", desc: "從場景移除該單位。" },
+    ],
+  },
+  {
+    area: "底部控制台 · 右：指令卡",
+    items: [
+      { label: "R 航線", desc: "進規劃模式後點地圖加航點；Backspace 移除上一點、Enter 套用、Esc 取消。" },
+      { label: "C 清線 / H 停止", desc: "清空目前航線 / 原地停止並清線。" },
+      { label: "F / T / D / G 交戰規則", desc: "自由接戰 / 限制接戰 / 僅防禦 / 停止接戰。亮框 = 目前 ROE。" },
+      { label: "S 聲納 / Y 拖曳 / B 聲標", desc: "主動聲納開關、拖曳陣列收放、佈放聲標反潛屏幕（依單位能力啟用）。" },
+      { label: "右鍵 移動 / 攻擊", desc: "右鍵地圖＝立即前往；Shift＋右鍵＝排隊航點；右鍵敵方＝接戰。" },
     ],
   },
   {
@@ -67,21 +73,6 @@ const ENTRIES: Entry[] = [
       { label: "黃色虛線", desc: "雷達 datalink → 已偵測敵方。" },
     ],
   },
-  {
-    area: "左下",
-    items: [
-      { label: "戰報", desc: "捲動式事件 log，最近 50 條。摺疊可點頂部箭頭。" },
-      { label: "🖥 Demo Mode", desc: "進入後隱藏所有控制 UI，只留地圖 + 戰況 + Esc 退出鈕。對外 demo 用。" },
-    ],
-  },
-  {
-    area: "右下",
-    items: [
-      { label: "🎓 教學重啟", desc: "重新跑 8 步 walk-through。" },
-      { label: "🤖 LLM 介接", desc: "4 分頁 modal：當前狀態 / 套用指令 / Schema / 🤖 自動駕駛（讓 LLM 控紅方）。" },
-      { label: "● REC 錄製 / 📂 載入 replay", desc: "錄製場景每 10 sim sec snapshot；可下載 JSON 跨機分享。" },
-    ],
-  },
 ];
 
 const SHORTCUTS = [
@@ -90,6 +81,9 @@ const SHORTCUTS = [
   { key: "Esc", action: "退出 Plan Mode / 規劃航線 / Demo / 教學" },
   { key: "Enter", action: "規劃航線時套用" },
   { key: "Backspace", action: "規劃航線時移除上一點" },
+  { key: "R / C / H", action: "選中單位：規劃航線 / 清線 / 停止" },
+  { key: "F / T / D / G", action: "交戰規則：自由 / 限制 / 防禦 / 停火" },
+  { key: "S / Y / B", action: "主動聲納 / 拖曳陣列 / 佈聲標" },
   { key: "→ / ←", action: "教學 / 規劃模式內 next / prev" },
 ];
 
