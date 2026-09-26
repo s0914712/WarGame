@@ -64,7 +64,13 @@ export const scenarioStore = {
   loadScenario(scenario: Scenario): void {
     const units: Record<UnitId, Unit> = {};
     for (const u of scenario.units) {
-      units[u.id] = initUnitWeapons(u, UNIT_CATALOG[u.kind].defaultLoadout);
+      const cat = UNIT_CATALOG[u.kind];
+      // catalog 的 defaultExtensions（滯空 endurance / 作戰半徑 commandRadiusKm 等）
+      // 補進場景單位；場景自己寫的值優先
+      const withExt = cat.defaultExtensions
+        ? { ...u, extensions: { ...cat.defaultExtensions, ...u.extensions } }
+        : u;
+      units[u.id] = initUnitWeapons(withExt, cat.defaultLoadout);
     }
     state = {
       scenario,

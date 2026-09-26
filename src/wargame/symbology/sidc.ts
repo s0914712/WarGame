@@ -62,6 +62,12 @@ const TEMPLATES: Record<UnitKind, SidcTemplate> = {
 
   // 反潛直升機 — Air, Military, Rotary Wing, ASW
   asw_helo: { dimension: "A", functionId: "MH----" },
+
+  // 銳鳶 UAV — Air, Military, Fixed-wing, Reconnaissance (UAV)
+  uav_ruiyuan: { dimension: "A", functionId: "MFQ---" },
+
+  // 銳穫 UAV — Air, Military, Fixed-wing, Reconnaissance (UAV)
+  uav_ruihuo: { dimension: "A", functionId: "MFQ---" },
 };
 
 export function buildSidc(kind: UnitKind, side: SideId): string {
@@ -77,6 +83,7 @@ const ALL_KINDS: UnitKind[] = [
   "submarine", "fighter", "radar_station",
   "sam_coastal", "mobile_radar", "sam_patriot",
   "supply_ship", "airbase", "asw_helo",
+  "uav_ruiyuan", "uav_ruihuo",
 ];
 
 const ALL_SIDES: SideId[] = ["blue", "red", "neutral", "us", "japan"];

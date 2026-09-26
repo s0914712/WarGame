@@ -13,13 +13,14 @@ import type { UnitCatalogEntry, UnitKind } from "../types";
 export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
   missile_launcher: {
     kind: "missile_launcher",
-    displayName: "飛彈發射車",
+    displayName: "機動飛彈車",
     domain: "land",
     defaultAltitudeM: 0,
     iconShape: "cone",
-    // 雄三 ASM 射程 150–400 km / TEL 道路 50–80 km/h / 自有感測弱
+    // 射程 70 浬 = 70 × 1.852 = 129.6 km（機動反艦飛彈車）
+    // TEL 道路 50–80 km/h / 自有感測弱（靠外部雷達給目獲）
     defaultCore: {
-      rangeKm: 250,
+      rangeKm: 129.6,
       speedKnots: 60,
       movementRangeKm: 800,
       detectionRangeKm: 30,
@@ -270,19 +271,20 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     domain: "land",
     defaultAltitudeM: 0,
     iconShape: "cone",
-    // YLC-2 / 蜂眼 / TPS-77 機動版；可移動但偵測範圍比固定雷達站小
+    // 蜂眼 / TPS-77 機動版；可移動但偵蒐範圍遠比固定雷達站小
+    // 偵蒐範圍 50 浬 = 50 × 1.852 = 92.6 km
     defaultCore: {
       rangeKm: 0,
       speedKnots: 50,
       movementRangeKm: 600,
-      detectionRangeKm: 350,
+      detectionRangeKm: 92.6,
       hpMax: 100,
     },
     uiRanges: {
       rangeKm:          { min: 0,   max: 20,     step: 5,   unit: "km" },
       speedKnots:       { min: 0,   max: 80,     step: 1,   unit: "kn" },
       movementRangeKm:  { min: 100, max: 2000,   step: 50,  unit: "km" },
-      detectionRangeKm: { min: 100, max: 600,    step: 20,  unit: "km" },
+      detectionRangeKm: { min: 20,  max: 600,    step: 10,  unit: "km" },
       hpMax:            { min: 50,  max: 300,    step: 10,  unit: "點" },
     },
     constraints: {
@@ -429,6 +431,75 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       active: { sourceLevelDb: 212 },
     },
   },
+
+  uav_ruiyuan: {
+    kind: "uav_ruiyuan",
+    displayName: "銳鳶 UAV",
+    domain: "air",
+    defaultAltitudeM: 3000,
+    iconShape: "triangle_inverted",
+    // 銳鳶（Albatross）戰術偵察 UAV：滯空 12 hr、作戰半徑 70 浬 = 129.6 km
+    // 巡航 60 kn → 12 hr 可飛 60 × 1.852 × 12 ≈ 1330 km（油料上限）
+    // 半徑 129.6 km 是資料鏈 / 管制限制，存在 extensions.commandRadiusKm，由 validatePlan 檢查
+    // 無武裝：EO/IR + 小型海面搜索雷達，只做偵蒐 / 目獲，rangeKm = 0
+    defaultCore: {
+      rangeKm: 0,
+      speedKnots: 60,
+      movementRangeKm: 1330,
+      detectionRangeKm: 120,
+      hpMax: 15,
+    },
+    defaultExtensions: {
+      endurance: 12,                   // 滯空 12 小時
+      commandRadiusKm: 129.6,          // 作戰半徑 70 浬
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 50,     step: 5,   unit: "km" },
+      speedKnots:       { min: 30,  max: 110,    step: 5,   unit: "kn" },
+      movementRangeKm:  { min: 200, max: 2000,   step: 50,  unit: "km" },
+      detectionRangeKm: { min: 20,  max: 250,    step: 10,  unit: "km" },
+      hpMax:            { min: 10,  max: 60,     step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 43200,  // 滯空 12 hr
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 0,                 // 無武裝偵察機
+  },
+
+  uav_ruihuo: {
+    kind: "uav_ruihuo",
+    displayName: "銳穫 UAV",
+    domain: "air",
+    defaultAltitudeM: 2500,
+    iconShape: "triangle_inverted",
+    // 銳穫 短程戰術 UAV：滯空 6 hr、作戰半徑 50 浬 = 92.6 km
+    // 巡航 55 kn → 6 hr 可飛 55 × 1.852 × 6 ≈ 610 km（油料上限）
+    // 比銳鳶小一號：航時 / 半徑 / 感測皆較短；同樣無武裝
+    defaultCore: {
+      rangeKm: 0,
+      speedKnots: 55,
+      movementRangeKm: 610,
+      detectionRangeKm: 80,
+      hpMax: 12,
+    },
+    defaultExtensions: {
+      endurance: 6,                    // 滯空 6 小時
+      commandRadiusKm: 92.6,           // 作戰半徑 50 浬
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 50,     step: 5,   unit: "km" },
+      speedKnots:       { min: 30,  max: 100,    step: 5,   unit: "kn" },
+      movementRangeKm:  { min: 100, max: 1200,   step: 50,  unit: "km" },
+      detectionRangeKm: { min: 20,  max: 200,    step: 10,  unit: "km" },
+      hpMax:            { min: 10,  max: 60,     step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 21600,  // 滯空 6 hr
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 0,                 // 無武裝偵察機
+  },
 };
 
 /** UI 顯示名稱對照 */
@@ -449,9 +520,9 @@ export const CORE_ATTRIBUTE_LABELS_EN: Record<keyof UnitCatalogEntry["defaultCor
   hpMax: "HP",
 };
 
-/** 11 個 unit kind 的英文 displayName — 集中在這裡比加 displayNameEn 到每個 catalog entry 簡潔 */
+/** 14 個 unit kind 的英文 displayName — 集中在這裡比加 displayNameEn 到每個 catalog entry 簡潔 */
 export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
-  missile_launcher: "Missile Launcher",
+  missile_launcher: "Mobile Missile Launcher",
   drone: "Drone",
   ship_surface: "Surface Ship",
   submarine: "Submarine",
@@ -463,4 +534,6 @@ export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
   supply_ship: "Supply Ship",
   airbase: "Airbase",
   asw_helo: "ASW Helicopter",
+  uav_ruiyuan: "Ruiyuan UAV",
+  uav_ruihuo: "Ruihuo UAV",
 };

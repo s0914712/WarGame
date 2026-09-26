@@ -23,6 +23,8 @@ interface Props {
   embedded?: boolean;
   /** 桌面頂部列內：按鈕 inline、下拉清單浮動（不撐高頂部列） */
   inBar?: boolean;
+  /** inBar 時場景名最大寬度（超出以 … 截斷） */
+  nameMaxWidth?: number;
 }
 
 function getScenarioName(): string {
@@ -35,7 +37,7 @@ export function ScenarioPicker(props: Props) {
   return mp ? null : <ScenarioPickerInner {...props} />;
 }
 
-function ScenarioPickerInner({ map, isMobile = false, embedded = false, inBar = false }: Props) {
+function ScenarioPickerInner({ map, isMobile = false, embedded = false, inBar = false, nameMaxWidth = 220 }: Props) {
   useSyncExternalStore(scenarioStore.subscribe, getScenarioName, getScenarioName);
   const lang = useLang();
   const [open, setOpen] = useState(false);
@@ -105,8 +107,13 @@ function ScenarioPickerInner({ map, isMobile = false, embedded = false, inBar = 
         }}
       >
         <Swords size={14} color="#fbbf24" />
-        <span style={{ color: "#94a3b8", fontSize: 15 }}>{t("Scenario")}</span>
-        <span style={{ fontWeight: 600 }}>{getScenarioName()}</span>
+        {!inBar && <span style={{ color: "#94a3b8", fontSize: 15 }}>{t("Scenario")}</span>}
+        <span
+          title={getScenarioName()}
+          style={inBar
+            ? { fontWeight: 600, maxWidth: nameMaxWidth, overflow: "hidden", textOverflow: "ellipsis" }
+            : { fontWeight: 600 }}
+        >{getScenarioName()}</span>
         <ChevronDown size={14} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
 

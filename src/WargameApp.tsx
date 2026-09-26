@@ -6,6 +6,7 @@ import { LLMPanel } from "./components/LLMPanel";
 import { CinemaControls } from "./components/CinemaControls";
 import { BattleStatsHud } from "./components/BattleStatsHud";
 import { UnitPalette } from "./components/UnitPalette";
+import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
 import { DemoModeToggle } from "./components/DemoModeToggle";
 import { TutorialOverlay } from "./components/TutorialOverlay";
 import { VictoryModal } from "./components/VictoryModal";
@@ -16,6 +17,8 @@ import { LandingScreen } from "./components/LandingScreen";
 import { PlayerRosterHUD } from "./components/PlayerRosterHUD";
 import { uiStore } from "./wargame/uiStore";
 import { attachWargameCombatLayer } from "./map/wargameCombatLayer";
+import { attachWargameSearchLayer } from "./map/wargameSearchLayer";
+import { searchPlannerStore } from "./wargame/search/searchPlannerStore";
 import { attachWargameRadarLayer } from "./map/wargameRadarLayer";
 import { attachWargameWrecksLayer } from "./map/wargameWrecksLayer";
 import { attachWargameSelectionLayer } from "./map/wargameSelectionLayer";
@@ -78,6 +81,7 @@ export default function WargameApp() {
       attachWargameRouteLayer(map),
       attachWargameWrecksLayer(map),
       attachWargameSonobuoyLayer(map),
+      attachWargameSearchLayer(map),
       attachWargameBearingLayer(map),
       attachWargameCombatLayer(map),
     );
@@ -106,6 +110,15 @@ export default function WargameApp() {
 
       // Click：三種模式（view / planRoute / placeUnit）
       map.on("click", (e) => {
+        // 搜索規劃器框選搜索區（與 editorStore 模式獨立，故先攔）
+        if (searchPlannerStore.isPicking()) {
+          searchPlannerStore.setCorner(e.lngLat.lng, e.lngLat.lat);
+          return;
+        }
+        if (searchPlannerStore.isLoggingContact()) {
+          searchPlannerStore.addContactAt(e.lngLat.lng, e.lngLat.lat);
+          return;
+        }
         const mode = editorStore.getMode();
         if (mode === "planRoute") {
           editorStore.appendWaypoint(e.lngLat.lng, e.lngLat.lat);
@@ -137,6 +150,7 @@ export default function WargameApp() {
       //   右鍵點空白海面 → 移動（Shift = 接續排隊航點）
       map.on("contextmenu", (e) => {
         if (editorStore.getMode() !== "view") return;   // 規劃 / 放置模式不攔右鍵
+        if (searchPlannerStore.isPicking() || searchPlannerStore.isLoggingContact()) return;
         const unitId = scenarioStore.getSelectedUnitId();
         if (!unitId) return;
         e.preventDefault();
@@ -152,9 +166,11 @@ export default function WargameApp() {
       const updateCursor = () => {
         const canvas = map.getCanvas();
         const mode = editorStore.getMode();
-        canvas.style.cursor = (mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea") ? "crosshair" : "";
+        const picking = searchPlannerStore.isPicking() || searchPlannerStore.isLoggingContact();
+        canvas.style.cursor = (picking || mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea") ? "crosshair" : "";
       };
       editorStore.subscribe(updateCursor);
+      searchPlannerStore.subscribe(updateCursor);
       map.on("mouseenter", SYMBOL_LAYER_ID, () => {
         if (editorStore.getMode() === "view") map.getCanvas().style.cursor = "pointer";
       });
@@ -253,6 +269,8 @@ export default function WargameApp() {
           />
           <UnitPalette hideLauncher />
           <CommandConsole />
+          {/* 搜索規劃器側欄：夾在頂部列與底部控制台之間；入口在頂部列「搜索」鈕 */}
+          <SearchPlannerPanel insetTop={TOP_BAR_HEIGHT} insetBottom={CONSOLE_HEIGHT} />
           <CinemaControls map={mapRef.current} bottomOffset={CONSOLE_HEIGHT} />
         </>
         )

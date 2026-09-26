@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Map as MapboxMap } from "mapbox-gl";
 import {
   Menu, Eye, EyeOff, Languages, Bot, ClipboardList, Swords, GraduationCap, HelpCircle,
-  Monitor, Home, Map as MapIcon, Film,
+  Monitor, Home, Map as MapIcon, Film, Radar,
 } from "lucide-react";
 import { WargameClockHUD } from "../WargameClockHUD";
 import { BattleStatsHud } from "../BattleStatsHud";
@@ -22,6 +22,7 @@ import { uiStore } from "../../wargame/uiStore";
 import { netStore } from "../../wargame/net/netStore";
 import { replayPlayer } from "../../wargame/replay/player";
 import { langStore, useLang } from "../../wargame/i18n/lang";
+import { searchPlannerStore } from "../../wargame/search/searchPlannerStore";
 
 export const TOP_BAR_HEIGHT = 56;
 
@@ -36,6 +37,7 @@ interface Props {
 
 function getFow() { return scenarioStore.isFogOfWar(); }
 function getReplayActive() { return replayPlayer.isActive(); }
+function getSearchOpen() { return searchPlannerStore.isOpen(); }
 
 export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBriefing, onOpenCheat }: Props) {
   const lang = useLang();
@@ -44,22 +46,27 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
   const view = useSyncExternalStore(viewStore.subscribe, viewStore.getActiveView, viewStore.getActiveView);
   const replayActive = useSyncExternalStore(replayPlayer.subscribe, getReplayActive, getReplayActive);
   const fowLocked = net.role !== "off" && view !== "spectator";
+  const searchOpen = useSyncExternalStore(searchPlannerStore.subscribe, getSearchOpen, getSearchOpen);
+  const width = useWindowWidth();
+  // 窄螢幕：右側按鈕改純圖示（文字留在 tooltip），避免擠出畫面
+  const iconOnly = width < 1600;
+  const tight = width < 1320;
 
   return (
     <>
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0, height: TOP_BAR_HEIGHT, zIndex: 30,
-        display: "flex", alignItems: "center", gap: 14, padding: "0 12px",
+        display: "flex", alignItems: "center", gap: tight ? 8 : 12, padding: "0 12px",
         background: "linear-gradient(to bottom, rgba(8, 13, 26, 0.98), rgba(15, 23, 42, 0.95))",
         borderBottom: "1px solid rgba(96, 165, 250, 0.35)",
         boxShadow: "0 6px 20px rgba(0, 0, 0, 0.4)",
         color: "#e2e8f0", fontFamily: "ui-sans-serif, system-ui, sans-serif",
       }}>
-        <WargameClockHUD embedded />
+        <WargameClockHUD embedded hidePausedBadge={tight} />
         <Divider />
-        <BattleStatsHud embedded />
+        <BattleStatsHud embedded inBar hideNames={width < 1500} />
         <div style={{ flex: 1 }} />
-        <ScenarioPicker map={map} inBar />
+        <ScenarioPicker map={map} inBar nameMaxWidth={iconOnly ? 150 : 220} />
         <PovSelect />
         <BarButton
           active={fow}
@@ -68,13 +75,18 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
           title={fowLocked ? "多人對戰中玩家強制 FoW" : fow ? "FoW 開：敵方未偵測 = 不顯示" : "FoW 關：敵方淡化顯示（除錯）"}
           onClick={() => scenarioStore.setFogOfWar(!fow)}
         >
-          {fow ? <EyeOff size={15} /> : <Eye size={15} />} FoW
+          {fow ? <EyeOff size={15} /> : <Eye size={15} />}{!iconOnly && " FoW"}
         </BarButton>
         <BarButton title={lang === "zh" ? "Switch to English" : "切換為中文"} onClick={() => langStore.toggle()}>
-          <Languages size={15} /> {lang === "zh" ? "中" : "EN"}
+          <Languages size={15} />{lang === "zh" ? " 中" : " EN"}
+        </BarButton>
+        <BarButton accent="#facc15" active={searchOpen}
+          title="搜索規劃器（掃區時間 / POD / 建議架數與搜索圖形）"
+          onClick={() => searchPlannerStore.setOpen(!searchOpen)}>
+          <Radar size={15} />{!iconOnly && " 搜索"}
         </BarButton>
         <BarButton accent="#3b82f6" active title="LLM 介接（狀態匯出 / 指令匯入 / AI 對手）" onClick={onOpenLlm}>
-          <Bot size={15} /> LLM
+          <Bot size={15} />{!iconOnly && " LLM"}
         </BarButton>
         <MainMenu
           styleId={styleId} onStyleChange={onStyleChange}
@@ -201,7 +213,7 @@ function BarButton({ children, onClick, title, active = false, accent = "#3b82f6
 }) {
   return (
     <button onClick={disabled ? undefined : onClick} title={title} className="wg-btn" disabled={disabled} style={{
-      height: 36, padding: "0 12px", borderRadius: 6,
+      height: 36, padding: "0 10px", borderRadius: 6, flexShrink: 0,
       display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
       border: `1px solid ${active ? accent : "rgba(148, 163, 184, 0.3)"}`,
       background: active ? `${accent}40` : "rgba(30, 41, 59, 0.6)",
@@ -212,6 +224,16 @@ function BarButton({ children, onClick, title, active = false, accent = "#3b82f6
       {children}
     </button>
   );
+}
+
+function useWindowWidth(): number {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return w;
 }
 
 function Divider() {

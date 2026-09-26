@@ -17,7 +17,7 @@ function getFowSnapshot(): boolean {
 }
 
 /** embedded：桌面頂部列內 inline 顯示（語言 / FoW 由頂部列另外提供） */
-export function WargameClockHUD({ isMobile = false, embedded = false }: { isMobile?: boolean; embedded?: boolean } = {}) {
+export function WargameClockHUD({ isMobile = false, embedded = false, hidePausedBadge = false }: { isMobile?: boolean; embedded?: boolean; hidePausedBadge?: boolean } = {}) {
   const { tPlus, rate, isPaused, toggle, setRate } = useWargameClock();
   const fogOfWar = useSyncExternalStore(scenarioStore.subscribe, getFowSnapshot, getFowSnapshot);
   const lang = useLang();
@@ -124,7 +124,7 @@ export function WargameClockHUD({ isMobile = false, embedded = false }: { isMobi
         ))}
       </div>
 
-      {isPaused && !isMobile && (
+      {isPaused && !isMobile && !hidePausedBadge && (
         <span
           className="wg-blink"
           style={{
@@ -136,6 +136,7 @@ export function WargameClockHUD({ isMobile = false, embedded = false }: { isMobi
             border: "1px solid rgba(251, 191, 36, 0.4)",
             fontWeight: 700,
             letterSpacing: 1,
+            whiteSpace: "nowrap",
           }}
         >
           {t("PAUSED")}
