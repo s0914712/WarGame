@@ -3,6 +3,8 @@ import { Play, Pause, Eye, EyeOff, Languages } from "lucide-react";
 import { useWargameClock } from "../hooks/useWargameClock";
 import { SIM_RATE_PRESETS } from "../wargame/clock";
 import { scenarioStore } from "../wargame/scenarioStore";
+import { netStore } from "../wargame/net/netStore";
+import { viewStore } from "../wargame/viewStore";
 import { langStore, useLang, t } from "../wargame/i18n/lang";
 
 /**
@@ -157,7 +159,11 @@ export function WargameClockHUD({ isMobile = false }: { isMobile?: boolean } = {
 
       {/* 戰爭迷霧切換 */}
       <button
-        onClick={() => scenarioStore.setFogOfWar(!fogOfWar)}
+        onClick={() => {
+          // 多人模式玩家不可關 FoW（等同看穿敵方）；旁觀者可以
+          if (netStore.isMultiplayer() && !viewStore.isSpectator()) return;
+          scenarioStore.setFogOfWar(!fogOfWar);
+        }}
         title={fogOfWar ? "FoW 開：敵方未偵測 = 不顯示" : "FoW 關：敵方淡化顯示（除錯）"}
         className="wg-btn"
         style={{

@@ -33,6 +33,10 @@ export interface ApplyOptions {
   pauseFirst?: boolean;
   /** 限制只能命令指定陣營的單位（AI loop 用，避免越權） */
   sideFilter?: SideId;
+  /** 指令出口；預設 scenarioStore.enqueueCommand。多人玩家端傳 commandBus.submitCommand */
+  enqueue?: (cmd: Command) => void;
+  /** 禁止 update_attributes（多人模式：直接改屬性等同作弊，且 client 改了也會被 host 覆寫） */
+  forbidAttributeEdits?: boolean;
 }
 
 export function applyLlmCommands(
@@ -60,7 +64,9 @@ export function applyLlmCommands(
   if (pauseFirst) wargameClock.pause();
 
   // ── 2. 逐條套用 ──
-  const results: LlmCommandResultEntry[] = doc.commands.map((cmd, i) => applyOne(cmd, i, sideFilter));
+  const enqueue = opts.enqueue ?? ((c: Command) => scenarioStore.enqueueCommand(c));
+  const results: LlmCommandResultEntry[] = doc.commands.map((cmd, i) =>
+    applyOne(cmd, i, sideFilter, enqueue, opts.forbidAttributeEdits ?? false));
 
   const applied = results.filter((r) => r.status === "applied").length;
   const rejected = results.filter((r) => r.status === "rejected").length;
@@ -80,7 +86,10 @@ function errResult(results: LlmCommandResultEntry[], submitted: number): LlmComm
   };
 }
 
-function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmCommandResultEntry {
+function applyOne(
+  cmd: LlmCommand, index: number, sideFilter: SideId | undefined,
+  enqueue: (cmd: Command) => void, forbidAttributeEdits: boolean,
+): LlmCommandResultEntry {
   if (!cmd || typeof cmd !== "object" || !("kind" in cmd)) {
     return { index, status: "rejected", reason: "Command missing 'kind'" };
   }
@@ -136,7 +145,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
         waypoints: cmd.waypoints,
         mustCompleteBySimSec: cmd.mustCompleteBySimSec,
       };
-      scenarioStore.enqueueCommand(queueCmd);
+      enqueue(queueCmd);
       const warnings = validation.issues.filter((x) => x.severity === "warning").map((x) => x.message);
       return warnings.length > 0
         ? { index, status: "applied", commandId: id, warnings }
@@ -151,7 +160,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
       const range = UNIT_CATALOG[unit.kind].uiRanges.speedKnots;
       const clamped = clamp(cmd.speedKnots, range.min, range.max);
       const id = makeCmdId();
-      scenarioStore.enqueueCommand({
+      enqueue({
         id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_speed", speedKnots: clamped,
       });
       const warnings = clamped !== cmd.speedKnots
@@ -169,7 +178,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
         return { index, status: "rejected", reason: `Unknown targetUnitId "${cmd.targetUnitId}"` };
       }
       const id = makeCmdId();
-      scenarioStore.enqueueCommand({
+      enqueue({
         id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "engage", targetUnitId: cmd.targetUnitId,
       });
       return { index, status: "applied", commandId: id };
@@ -178,7 +187,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
     // ── hold ──
     case "hold": {
       const id = makeCmdId();
-      scenarioStore.enqueueCommand({ id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "hold" });
+      enqueue({ id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "hold" });
       return { index, status: "applied", commandId: id };
     }
 
@@ -191,7 +200,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
         };
       }
       const id = makeCmdId();
-      scenarioStore.enqueueCommand({
+      enqueue({
         id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_roe", roe: cmd.roe,
       });
       return { index, status: "applied", commandId: id };
@@ -203,7 +212,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
         return { index, status: "rejected", reason: "'on' must be a boolean" };
       }
       const id = makeCmdId();
-      scenarioStore.enqueueCommand({
+      enqueue({
         id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_active_sonar", on: cmd.on,
       });
       return { index, status: "applied", commandId: id };
@@ -215,7 +224,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
         return { index, status: "rejected", reason: "'on' must be a boolean" };
       }
       const id = makeCmdId();
-      scenarioStore.enqueueCommand({
+      enqueue({
         id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_towed_array", on: cmd.on,
       });
       return { index, status: "applied", commandId: id };
@@ -231,7 +240,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
       }
       const clamped = clamp(cmd.depthM, 0, SUB_MAX_DEPTH_M);
       const id = makeCmdId();
-      scenarioStore.enqueueCommand({
+      enqueue({
         id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "set_depth", depthM: clamped,
       });
       const warnings = clamped !== cmd.depthM
@@ -251,7 +260,7 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
         return { index, status: "rejected", reason: "'count' must be a positive number" };
       }
       const id = makeCmdId();
-      scenarioStore.enqueueCommand({
+      enqueue({
         id, unitId: cmd.unitId, simAtSec: execSimSec, kind: "deploy_sonobuoys",
         cornerA: cmd.cornerA, cornerB: cmd.cornerB,
         count: Math.min(64, Math.round(cmd.count)),
@@ -263,6 +272,9 @@ function applyOne(cmd: LlmCommand, index: number, sideFilter?: SideId): LlmComma
 
     // ── update_attributes（直接寫，不走指令佇列）──
     case "update_attributes": {
+      if (forbidAttributeEdits) {
+        return { index, status: "rejected", reason: "update_attributes is disabled in multiplayer" };
+      }
       if (!cmd.core || typeof cmd.core !== "object") {
         return { index, status: "rejected", reason: "'core' must be an object" };
       }

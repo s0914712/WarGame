@@ -14,6 +14,9 @@ import { recorderStore } from "../wargame/replay/recorder";
 import { replayPlayer, loadRecordingFromFile } from "../wargame/replay/player";
 import { formatTPlus } from "../wargame/clock";
 import { t, useLang } from "../wargame/i18n/lang";
+import { netStore } from "../wargame/net/netStore";
+
+function isMultiplayer() { return netStore.isMultiplayer(); }
 
 interface Snapshot {
   isRecording: boolean;
@@ -60,7 +63,13 @@ function subscribe(cb: () => void): () => void {
   return () => { u1(); u2(); window.clearInterval(t); };
 }
 
-export function ReplayPanel({ embedded = false }: { embedded?: boolean } = {}) {
+/** 多人模式隱藏（換場景 / 放單位 / replay seek 會破壞 host 權威同步） */
+export function ReplayPanel(props: { embedded?: boolean } = {}) {
+  const mp = useSyncExternalStore(netStore.subscribe, isMultiplayer, isMultiplayer);
+  return mp ? null : <ReplayPanelInner {...props} />;
+}
+
+function ReplayPanelInner({ embedded = false }: { embedded?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   useLang();
   const s = getSnapshot();

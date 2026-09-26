@@ -13,6 +13,9 @@ import { scenarioStore } from "../wargame/scenarioStore";
 import { wargameClock } from "../wargame/clock";
 import { SCENARIO_REGISTRY, findScenario } from "../wargame/scenarios/registry";
 import { t, useLang } from "../wargame/i18n/lang";
+import { netStore } from "../wargame/net/netStore";
+
+function isMultiplayer() { return netStore.isMultiplayer(); }
 
 interface Props {
   map: MapboxMap | null;
@@ -24,7 +27,13 @@ function getScenarioName(): string {
   return scenarioStore.getState().scenario.displayName;
 }
 
-export function ScenarioPicker({ map, isMobile = false, embedded = false }: Props) {
+/** 多人模式隱藏（換場景 / 放單位 / replay seek 會破壞 host 權威同步） */
+export function ScenarioPicker(props: Props) {
+  const mp = useSyncExternalStore(netStore.subscribe, isMultiplayer, isMultiplayer);
+  return mp ? null : <ScenarioPickerInner {...props} />;
+}
+
+function ScenarioPickerInner({ map, isMobile = false, embedded = false }: Props) {
   useSyncExternalStore(scenarioStore.subscribe, getScenarioName, getScenarioName);
   const lang = useLang();
   const [open, setOpen] = useState(false);

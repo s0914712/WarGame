@@ -19,6 +19,8 @@ import { viewStore } from "../wargame/viewStore";
 import { editorStore } from "../wargame/editor/editorStore";
 import { UNIT_CATALOG, CORE_ATTRIBUTE_LABELS, CORE_ATTRIBUTE_LABELS_EN, UNIT_KIND_DISPLAY_EN } from "../wargame/catalog/units";
 import { wargameClock } from "../wargame/clock";
+import { submitCommand } from "../wargame/net/commandBus";
+import { netStore } from "../wargame/net/netStore";
 import { validatePlan } from "../wargame/sim/validate";
 import { t, useLang } from "../wargame/i18n/lang";
 import { planSonobuoyField } from "../wargame/sim/sonobuoyField";
@@ -160,7 +162,8 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
 
   // ROE / 偵測狀態（相對於當前 POV）
   const activeSide = viewStore.getActiveSideId();
-  const isOwnUnit = activeSide == null || targetUnit.sideId === activeSide;
+  const isOwnUnit = (activeSide == null || targetUnit.sideId === activeSide)
+    && netStore.canControlSide(targetUnit.sideId);
   const effectiveRoe: RoeMode = targetUnit.roe ?? side?.roe ?? "weapons_free";
   const contactState = (activeSide && targetUnit.sideId !== activeSide && (side?.isHostileTo?.length ?? 0) >= 0)
     ? (targetUnit.detectedBy[activeSide] ?? "hidden")
@@ -169,7 +172,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
     ? targetUnit.contactQuality?.[activeSide]
     : undefined;
   const setRoe = (roe: RoeMode) => {
-    scenarioStore.enqueueCommand({
+    submitCommand({
       id: `ui-roe-${Date.now()}`,
       unitId: targetUnit.id,
       simAtSec: wargameClock.getSimTime(),
@@ -181,7 +184,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
   const canPing = UNIT_CATALOG[targetUnit.kind].acoustics?.active != null;
   const sonarOn = targetUnit.activeSonar === true;
   const toggleSonar = () => {
-    scenarioStore.enqueueCommand({
+    submitCommand({
       id: `ui-sonar-${Date.now()}`,
       unitId: targetUnit.id,
       simAtSec: wargameClock.getSimTime(),
@@ -196,7 +199,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
   const towedLimit = UNIT_CATALOG[targetUnit.kind].acoustics?.towedArray?.speedLimitKn ?? 0;
   const towedTooFast = targetUnit.position.speedKnots > towedLimit;
   const toggleTowed = () => {
-    scenarioStore.enqueueCommand({
+    submitCommand({
       id: `ui-towed-${Date.now()}`,
       unitId: targetUnit.id,
       simAtSec: wargameClock.getSimTime(),
@@ -213,7 +216,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
   const curDepthM = Math.round(Math.max(0, -targetUnit.position.altMeters));
   const layerM = scenarioStore.getState().scenario.sonarLayerDepthM ?? 60;
   const setDepth = (depthM: number) => {
-    scenarioStore.enqueueCommand({
+    submitCommand({
       id: `ui-depth-${Date.now()}`,
       unitId: targetUnit.id,
       simAtSec: wargameClock.getSimTime(),
@@ -239,6 +242,8 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
   const pending = editorStore.getPendingWaypoints();
   const isPlanning = mode === "planRoute";
   const isPlanningThis = isPlanning && planningUnitId === targetUnit.id;
+  // 多人模式禁止直接改屬性（等同作弊；client 改了也會被 host 覆寫）
+  const attrLocked = isPlanningThis || netStore.isMultiplayer();
 
   // 統一驗證入口（規劃中用 pending，否則用 current）
   const route = isPlanningThis ? pending : targetUnit.waypoints;
@@ -636,7 +641,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
               </div>
               <input
                 type="range"
-                disabled={isPlanningThis}
+                disabled={attrLocked}
                 min={range.min}
                 max={range.max}
                 step={range.step}
@@ -644,7 +649,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
                 onChange={(e) =>
                   scenarioStore.updateUnitAttribute(targetUnit.id, key, Number(e.target.value))
                 }
-                style={{ width: "100%", accentColor: sideColor, cursor: isPlanningThis ? "not-allowed" : "pointer" }}
+                style={{ width: "100%", accentColor: sideColor, cursor: attrLocked ? "not-allowed" : "pointer" }}
               />
             </div>
           );

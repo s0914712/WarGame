@@ -39,6 +39,9 @@ jobs:
           # 在 repo Settings → Secrets and variables → Actions → Variables 設 BASE_PATH
           VITE_BASE_PATH: ${{ vars.BASE_PATH || format('/{0}/', github.event.repository.name) }}
           # ⚠ 不要設 VITE_LLM_API_KEY — 會曝光在 client bundle
+          # 選填：兵棋多人對戰（publishable key，可公開）；未設則多人入口顯示未設定
+          VITE_WG_SUPABASE_URL: ${{ secrets.VITE_WG_SUPABASE_URL }}
+          VITE_WG_SUPABASE_ANON_KEY: ${{ secrets.VITE_WG_SUPABASE_ANON_KEY }}
         run: npm run build
 
       - name: Setup Pages

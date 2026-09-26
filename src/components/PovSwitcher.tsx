@@ -11,6 +11,7 @@ import { useSyncExternalStore } from "react";
 import { Globe } from "lucide-react";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { viewStore, type ActiveView } from "../wargame/viewStore";
+import { netStore } from "../wargame/net/netStore";
 
 interface Snapshot {
   active: ActiveView;
@@ -44,11 +45,14 @@ function subscribe(cb: () => void): () => void {
 
 export function PovSwitcher({ embedded = false }: { embedded?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const net = useSyncExternalStore(netStore.subscribe, netStore.get, netStore.get);
+  // 多人模式的陣營玩家鎖定己方視角；旁觀者（未認領陣營）可自由切換
+  const lockedSide = net.role !== "off" ? net.mySideId : null;
 
   const sides = scenarioStore.getState().scenario.sides;
   const active = viewStore.getActiveView();
 
-  const options: { id: ActiveView; label: string; color: string }[] = [
+  const allOptions: { id: ActiveView; label: string; color: string }[] = [
     ...sides.map((s) => ({
       id: s.id as ActiveView,
       label: s.displayName,
@@ -56,6 +60,7 @@ export function PovSwitcher({ embedded = false }: { embedded?: boolean } = {}) {
     })),
     { id: "spectator", label: "全局觀察", color: "#94a3b8" },
   ];
+  const options = lockedSide ? allOptions.filter((o) => o.id === lockedSide) : allOptions;
 
   return (
     <div

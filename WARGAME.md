@@ -248,10 +248,42 @@ units[id].waypoints / speed / engagingTargetId 改寫
 - 例如：「敵方 < 100km → 退；自己彈藥充足 + 敵方未偵測自己 → 接近」
 - 跑相同的 useAiSideLoop pattern，只是換成 local function
 
-### Phase 7d — 雙人對戰（網路）
-- 需要：authoritative server + deterministic engine + 命令同步
-- 既有 deterministic RNG（rng.ts）+ pure engine.tick 已具雛形
-- 工作量：~1 週，先 PoC：WebRTC P2P + lockstep simulation
+### Phase 7d — 多人線上對戰（✅ 已實作：Supabase host 權威制）
+
+Landing →「多人對戰（線上）」→ 登入（Email magic link / Google）→ 建房或輸入 6 碼房間碼 → 認領陣營 + 準備 → 房主開始。
+
+```
+玩家 ──insert──▶ wg_commands（RLS：只能下自己陣營）──postgres_changes──▶ Host
+Host：本機跑 engine → 每 500ms broadcast snapshot（wg:room:<id>:state，只有 host 能送）
+Client：不跑 engine，收 snapshot 後對單位 / 飛彈位置插值（延遲一個週期換平滑）
+Presence（wg:room:<id>:presence）：在線名單、房主斷線偵測
+```
+
+| 檔案 | 職責 |
+|---|---|
+| `src/wargame/net/wgSupabase.ts` | 兵棋專用 client（`VITE_WG_SUPABASE_URL` / `VITE_WG_SUPABASE_ANON_KEY`，與民用 gis-platform 不同 project） |
+| `src/wargame/net/authStore.ts` | 登入狀態 store |
+| `src/wargame/net/netStore.ts` | `role: off / host / client`、房間、玩家、在線；`canControlSide()` / `canControlClock()` |
+| `src/wargame/net/session.ts` | 房間生命週期：建房 / 加入 / 認領 / 開始、host 廣播 loop、client 訂閱、重連 |
+| `src/wargame/net/snapshot.ts` | 快照格式（`epoch` + `seq`、events 增量 + 每 20 則 keyframe）、client 插值套用 |
+| `src/wargame/net/commandBus.ts` | `submitCommand()` — 所有 UI / LLM 面板指令唯一出口 |
+| `src/components/{AuthPanel, MultiplayerLobby, PlayerRosterHUD}.tsx` | 登入、大廳、遊戲內名單 |
+| `supabase/migrations/20260926*.sql` | `wg_*` 表 + RLS + Realtime authorization（已套用到 project `fyvaqwqnwgfutwfaaeei`） |
+
+**多人模式規則**
+- 單位指令一律走 `submitCommand()`，不要直接 `scenarioStore.enqueueCommand`（AI loop / 場景腳本只在 host 跑，例外）。
+- 只有 host 能暫停 / 調速；editor 規劃航線時不暫停（`pauseForPlanning()`）。
+- 多人模式隱藏 ScenarioPicker / UnitPalette / ReplayPanel，屬性 slider 與 LLM `update_attributes` 停用。
+- 陣營玩家強制 FoW、POV 鎖定己方；旁觀者可切換。
+- AI loop 只在 host 跑，且跳過被玩家認領的陣營。
+- Host 每 30 秒及每次暫停時把快照寫進 `wg_room_snapshots`；重新整理後由「回到房間」還原（新 `epoch`，client 自動重置）。
+- supabase-js 查詢 builder 是 lazy thenable：`void client.from(...).upsert(...)` **不會送出**，必須 `await` 或 `.then()`。
+- 已知限制：v1 所有 client 都持有完整 state（FoW 只在渲染時過濾），可從 devtools 作弊；之後可改成 host 依陣營分別送出過濾後的快照。
+
+**一次性設定**
+1. Supabase Dashboard → Auth → URL Configuration → Redirect URLs：加 `http://localhost:5173/**` 與 GitHub Pages 網址。
+2. Google OAuth：Google Cloud Console 建 OAuth client，redirect URI 填 `https://fyvaqwqnwgfutwfaaeei.supabase.co/auth/v1/callback`，client id / secret 填進 Supabase → Auth → Providers → Google。
+3. GitHub repo secrets 加 `VITE_WG_SUPABASE_URL` / `VITE_WG_SUPABASE_ANON_KEY`（publishable key，可公開）。
 
 ### Phase 7e — Replay 系統
 - `src/wargame/replay/recorder.ts` — 每 10 sim-sec 寫 SimulationState snapshot + 所有 enqueueCommand

@@ -24,6 +24,7 @@ import { SCHEMA_DOC } from "../wargame/llm/schemaDoc";
 import { runScriptedAiTick } from "../wargame/ai/scriptedAi";
 import { runScriptedAiV2Tick } from "../wargame/ai/scriptedAiV2";
 import type { LlmCommandResult } from "../wargame/llm/schema";
+import { netStore } from "../wargame/net/netStore";
 
 const CHECK_INTERVAL_MS = 1000;  // 每秒檢查一次條件，不必每幀
 
@@ -36,6 +37,9 @@ export function useAiSideLoop() {
     const tick = async () => {
       const cfg = aiConfigStore.getConfig();
       if (!cfg.enabled || inFlight) return;
+      // 多人：AI 只在 host 跑，且不操作已被玩家認領的陣營
+      if (netStore.isClient()) return;
+      if (netStore.isHost() && netStore.claimedSides().includes(cfg.sideId)) return;
       if (cfg.mode === "llm" && !cfg.apiKey.trim()) return;
       if (wargameClock.isPaused()) return;
       const simSec = wargameClock.getSimTime();
