@@ -77,12 +77,13 @@ const KIND_OPTIONS: { kind: UnitKind; Icon: LucideIcon }[] = [
 ];
 
 /** 多人模式隱藏（換場景 / 放單位 / replay seek 會破壞 host 權威同步） */
-export function UnitPalette(props: { embedded?: boolean } = {}) {
+export function UnitPalette(props: { embedded?: boolean; hideLauncher?: boolean } = {}) {
   const mp = useSyncExternalStore(netStore.subscribe, isMultiplayer, isMultiplayer);
   return mp ? null : <UnitPaletteInner {...props} />;
 }
 
-function UnitPaletteInner({ embedded = false }: { embedded?: boolean } = {}) {
+/** hideLauncher：不顯示浮動「Plan Mode」入口鈕（桌面入口改在頂部列 ☰ 選單） */
+function UnitPaletteInner({ embedded = false, hideLauncher = false }: { embedded?: boolean; hideLauncher?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const s = getSnapshot();
   const isPlanning = s.mode === "placeUnit";
@@ -99,6 +100,7 @@ function UnitPaletteInner({ embedded = false }: { embedded?: boolean } = {}) {
     URL.revokeObjectURL(url);
   };
 
+  if (!embedded && !isPlanning && hideLauncher) return null;
   if (!embedded && !isPlanning) {
     // 摺疊狀態：只顯示一顆「進 Plan Mode」按鈕
     return (
@@ -235,7 +237,7 @@ const containerCollapsed: React.CSSProperties = {
 
 const containerExpanded: React.CSSProperties = {
   position: "absolute",
-  top: 220,
+  top: 68,                 // 桌面頂部列下方
   left: 16,
   zIndex: 22,
   width: 260,

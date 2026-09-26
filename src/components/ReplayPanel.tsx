@@ -97,8 +97,9 @@ function ReplayPanelInner({ embedded = false }: { embedded?: boolean } = {}) {
         width: "100%",
       } : {
         position: "absolute",
-        bottom: 72,                 // 自成一列（replay 展開會變寬，往左長）
-        right: 16,
+        top: 68,                    // 桌面：頂部列下方（回放進行中才浮出；入口在頂部列選單）
+        left: "50%",
+        transform: "translateX(-50%)",
         zIndex: 25,
         padding: "8px 12px",
         background: "rgba(15, 23, 42, 0.92)",

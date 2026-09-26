@@ -49,7 +49,8 @@ function subscribe(cb: () => void): () => void {
   return () => { unsubA(); unsubB(); };
 }
 
-export function CinemaControls({ map }: { map: MapboxMap | null }) {
+/** bottomOffset：桌面底部控制台高度，按鈕與字幕往上避開 */
+export function CinemaControls({ map, bottomOffset = 0 }: { map: MapboxMap | null; bottomOffset?: number }) {
   const snap = useSyncExternalStore(subscribe, getSnapshot);
 
   if (!snap.active && !snap.hasStoryboard) return null;
@@ -62,7 +63,7 @@ export function CinemaControls({ map }: { map: MapboxMap | null }) {
         className="wg-btn"
         title={snap.active ? "退出紀錄片模式" : "紀錄片模式（自走運鏡 + 旁白）"}
         style={{
-          position: "absolute", bottom: 120, right: 16, zIndex: 25,
+          position: "absolute", bottom: bottomOffset ? bottomOffset + 16 : 120, right: 16, zIndex: 25,
           padding: "10px 16px",
           background: snap.active ? "rgba(217, 119, 87, 0.95)" : "rgba(15, 23, 42, 0.85)",
           color: snap.active ? "#fff" : "#cbd5e1",
@@ -77,13 +78,13 @@ export function CinemaControls({ map }: { map: MapboxMap | null }) {
       </button>
 
       {snap.active && snap.caption && (
-        <CaptionHUD caption={snap.caption} />
+        <CaptionHUD caption={snap.caption} bottom={bottomOffset ? bottomOffset + 70 : 110} />
       )}
     </>
   );
 }
 
-function CaptionHUD({ caption }: { caption: CinemaCaption }) {
+function CaptionHUD({ caption, bottom }: { caption: CinemaCaption; bottom: number }) {
   const { lang } = caption;
   const showZh = lang === "both" || lang === "zh";
   const showEn = lang === "both" || lang === "en";
@@ -92,7 +93,7 @@ function CaptionHUD({ caption }: { caption: CinemaCaption }) {
   return (
     <div
       style={{
-        position: "absolute", left: "50%", bottom: 110,
+        position: "absolute", left: "50%", bottom,
         transform: "translateX(-50%)",
         width: "min(880px, 92vw)", zIndex: 24,
         background: "linear-gradient(to top, rgba(2,6,23,0.92), rgba(2,6,23,0.72))",

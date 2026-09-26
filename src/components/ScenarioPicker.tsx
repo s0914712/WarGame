@@ -21,6 +21,10 @@ interface Props {
   map: MapboxMap | null;
   isMobile?: boolean;
   embedded?: boolean;
+  /** 桌面頂部列內：按鈕 inline、下拉清單浮動（不撐高頂部列） */
+  inBar?: boolean;
+  /** inBar 時場景名最大寬度（超出以 … 截斷） */
+  nameMaxWidth?: number;
 }
 
 function getScenarioName(): string {
@@ -33,7 +37,7 @@ export function ScenarioPicker(props: Props) {
   return mp ? null : <ScenarioPickerInner {...props} />;
 }
 
-function ScenarioPickerInner({ map, isMobile = false, embedded = false }: Props) {
+function ScenarioPickerInner({ map, isMobile = false, embedded = false, inBar = false, nameMaxWidth = 220 }: Props) {
   useSyncExternalStore(scenarioStore.subscribe, getScenarioName, getScenarioName);
   const lang = useLang();
   const [open, setOpen] = useState(false);
@@ -72,7 +76,9 @@ function ScenarioPickerInner({ map, isMobile = false, embedded = false }: Props)
   return (
     <div
       ref={ref}
-      style={embedded ? {
+      style={inBar ? {
+        position: "relative",
+      } : embedded ? {
         position: "relative",
         width: "100%",
       } : {
@@ -86,22 +92,28 @@ function ScenarioPickerInner({ map, isMobile = false, embedded = false }: Props)
         onClick={() => setOpen((v) => !v)}
         className="wg-btn"
         style={{
-          padding: "8px 14px",
-          background: "rgba(15, 23, 42, 0.92)",
+          padding: inBar ? "6px 12px" : "8px 14px",
+          background: inBar ? "rgba(30, 41, 59, 0.6)" : "rgba(15, 23, 42, 0.92)",
           backdropFilter: "blur(6px)",
           border: "1px solid rgba(148, 163, 184, 0.3)",
           borderRadius: 8,
           color: "#e2e8f0",
           fontFamily: "ui-sans-serif, system-ui, sans-serif",
-          fontSize: 17,
+          fontSize: inBar ? 15 : 17,
+          whiteSpace: "nowrap",
           cursor: "pointer",
           display: "flex", alignItems: "center", gap: 8,
           width: embedded ? "100%" : undefined,
         }}
       >
         <Swords size={14} color="#fbbf24" />
-        <span style={{ color: "#94a3b8", fontSize: 15 }}>{t("Scenario")}</span>
-        <span style={{ fontWeight: 600 }}>{getScenarioName()}</span>
+        {!inBar && <span style={{ color: "#94a3b8", fontSize: 15 }}>{t("Scenario")}</span>}
+        <span
+          title={getScenarioName()}
+          style={inBar
+            ? { fontWeight: 600, maxWidth: nameMaxWidth, overflow: "hidden", textOverflow: "ellipsis" }
+            : { fontWeight: 600 }}
+        >{getScenarioName()}</span>
         <ChevronDown size={14} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
 
@@ -109,7 +121,7 @@ function ScenarioPickerInner({ map, isMobile = false, embedded = false }: Props)
         <div
           className="wg-fade-in"
           style={{
-            marginTop: 6,
+            ...(inBar ? { position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 40 } : { marginTop: 6 }),
             width: isMobile ? "min(320px, 80vw)" : 320,
             maxHeight: isMobile ? "60vh" : undefined,
             overflowY: isMobile ? "auto" : undefined,

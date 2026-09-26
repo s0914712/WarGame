@@ -35,7 +35,11 @@ const getVersion = () => searchPlannerStore.getVersion();
  * @param embedded    嵌在行動版 dock 分頁裡（無外框、無標題列、由 dock 提供捲動）
  */
 export function SearchPlannerPanel(
-  { standalone = false, embedded = false }: { standalone?: boolean; embedded?: boolean } = {},
+  { standalone = false, embedded = false, insetTop = 0, insetBottom = 0 }: {
+    standalone?: boolean; embedded?: boolean;
+    /** 桌面頂部列 / 底部控制台高度：側欄與框選提示列避開 */
+    insetTop?: number; insetBottom?: number;
+  } = {},
 ) {
   useSyncExternalStore(subscribe, getVersion, getVersion);
   const langRaw = useLang();
@@ -74,7 +78,7 @@ export function SearchPlannerPanel(
 
   if (picking) {
     return (
-      <div style={embedded ? pickBarInline : pickBar}>
+      <div style={embedded ? pickBarInline : { ...pickBar, top: pickBar.top as number + insetTop }}>
         <Crosshair size={16} color="#facc15" />
         <span style={{ color: "#fef9c3", fontWeight: 600 }}>
           {a ? t.pickSecondCorner : t.pickFirstCorner}
@@ -122,7 +126,7 @@ export function SearchPlannerPanel(
   };
 
   return (
-    <div style={embedded ? rootEmbedded : standalone ? rootStandalone : root}>
+    <div style={embedded ? rootEmbedded : standalone ? rootStandalone : { ...root, top: insetTop, bottom: insetBottom }}>
       {!embedded && (
       <div style={header}>
         <div>

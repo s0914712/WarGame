@@ -53,3 +53,9 @@ button.wg-btn:hover {
 button.wg-btn:active {
   transform: scale(0.96);
 }
+
+/* 桌面頂部列 (56px) + 底部控制台 (196px)：Mapbox 內建控制項 / 版權列移到可視區內 */
+.wg-desktop-chrome .mapboxgl-ctrl-top-left,
+.wg-desktop-chrome .mapboxgl-ctrl-top-right { top: 56px; }
+.wg-desktop-chrome .mapboxgl-ctrl-bottom-left,
+.wg-desktop-chrome .mapboxgl-ctrl-bottom-right { bottom: 196px; }

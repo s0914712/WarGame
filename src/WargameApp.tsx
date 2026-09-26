@@ -2,28 +2,19 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import "./wargame/styles.css";
-import { Bot, GraduationCap, Radar, Swords } from "lucide-react";
-import { WargameClockHUD } from "./components/WargameClockHUD";
-import { UnitEditorPanel } from "./components/UnitEditorPanel";
 import { LLMPanel } from "./components/LLMPanel";
-import { EngagementLog } from "./components/EngagementLog";
-import { PovSwitcher } from "./components/PovSwitcher";
-import { ReplayPanel } from "./components/ReplayPanel";
 import { CinemaControls } from "./components/CinemaControls";
 import { BattleStatsHud } from "./components/BattleStatsHud";
 import { UnitPalette } from "./components/UnitPalette";
 import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
-import { MapStyleSwitcher } from "./components/MapStyleSwitcher";
-import { ScenarioPicker } from "./components/ScenarioPicker";
 import { DemoModeToggle } from "./components/DemoModeToggle";
-import { TutorialOverlay, launchTutorial } from "./components/TutorialOverlay";
+import { TutorialOverlay } from "./components/TutorialOverlay";
 import { VictoryModal } from "./components/VictoryModal";
 import { ScenarioBriefingModal } from "./components/ScenarioBriefingModal";
 import { AcousticEnvironmentConfigModal } from "./components/AcousticEnvironmentConfigModal";
 import { UICheatSheet } from "./components/UICheatSheet";
 import { LandingScreen } from "./components/LandingScreen";
 import { PlayerRosterHUD } from "./components/PlayerRosterHUD";
-import { HelpCircle, Menu } from "lucide-react";
 import { uiStore } from "./wargame/uiStore";
 import { attachWargameCombatLayer } from "./map/wargameCombatLayer";
 import { attachWargameSearchLayer } from "./map/wargameSearchLayer";
@@ -46,6 +37,8 @@ import { useAiSideLoop } from "./hooks/useAiSideLoop";
 import { DEFAULT_STYLE_ID, getStyleById } from "./wargame/mapStyles";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { WargameMobileLayout } from "./components/wargame/WargameMobileLayout";
+import { DesktopTopBar, TOP_BAR_HEIGHT } from "./components/wargame/DesktopTopBar";
+import { CommandConsole, CONSOLE_HEIGHT } from "./components/wargame/CommandConsole";
 
 /**
  * 兵推模式頂層 app。
@@ -196,6 +189,16 @@ export default function WargameApp() {
     };
   }, []);
 
+  // 桌面頂部列 + 底部控制台會蓋住地圖上下緣 → 鏡頭 padding 讓 flyTo / 置中落在可視區
+  const desktopChrome = !isMobile && !demoMode;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    map.setPadding(desktopChrome
+      ? { top: TOP_BAR_HEIGHT, bottom: CONSOLE_HEIGHT, left: 0, right: 0 }
+      : { top: 0, bottom: 0, left: 0, right: 0 });
+  }, [desktopChrome, mapReady]);
+
   // 處理底圖切換：detach → setStyle → 等 load 事件 → re-mount
   useEffect(() => {
     const map = mapRef.current;
@@ -215,13 +218,17 @@ export default function WargameApp() {
   }, [styleId, mapReady]);
 
   return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh", background: "#020617" }}>
+    <div
+      className={desktopChrome ? "wg-desktop-chrome" : undefined}
+      style={{ position: "relative", width: "100vw", height: "100vh", background: "#020617" }}
+    >
       <div ref={mapContainerRef} style={{ position: "absolute", inset: 0 }} />
 
       {/* Demo Mode 永遠保留：戰況 + Demo 退出鈕。
           行動版正常模式時戰況改由頂部列渲染，故這裡只在桌面或 demo 時掛 */}
-      {(!isMobile || demoMode) && <BattleStatsHud isMobile={isMobile} />}
-      <DemoModeToggle isMobile={isMobile} />
+      {demoMode && <BattleStatsHud isMobile={isMobile} />}
+      {/* 非 demo 時入口在頂部列 ☰ 選單（桌面）/ 選單抽屜（行動），這裡只負責退出鈕 */}
+      <DemoModeToggle isMobile={isMobile} hideEntry />
       <TutorialOverlay />
       <VictoryModal />
       {/* 場景 briefing 等地圖載完才掛，避免首次 race 顯示空場景 */}
@@ -233,7 +240,7 @@ export default function WargameApp() {
       <UICheatSheet open={cheatOpen} onClose={() => setCheatOpen(false)} />
       <AcousticEnvironmentConfigModal />
       <LandingScreen map={mapRef.current} />
-      <PlayerRosterHUD isMobile={isMobile} />
+      <PlayerRosterHUD isMobile={isMobile} top={isMobile ? undefined : TOP_BAR_HEIGHT + 12} />
       {/* LLM 面板：桌面 / 行動版共用（行動版由選單抽屜開啟），故移出 !demoMode 分支 */}
       <LLMPanel open={llmOpen} onClose={() => setLlmOpen(false)} />
 
@@ -251,99 +258,20 @@ export default function WargameApp() {
           />
         ) : (
         <>
-          <WargameClockHUD />
-          <MapStyleSwitcher selectedId={styleId} onChange={setStyleId} />
-          <ScenarioPicker map={mapRef.current} />
-          <PovSwitcher />
-          <UnitPalette />
-          <UnitEditorPanel />
-          <SearchPlannerPanel />
-          <EngagementLog />
-          <ReplayPanel />
-          <CinemaControls map={mapRef.current} />
-
-          <button
-            onClick={() => setLlmOpen(true)}
-            className="wg-btn"
-            style={{
-              position: "absolute", bottom: 16, right: 16, zIndex: 25,
-              padding: "10px 16px",
-              background: "rgba(59, 130, 246, 0.9)", color: "#fff",
-              border: "1px solid rgba(147, 197, 253, 0.5)", borderRadius: 8,
-              fontSize: 19, fontWeight: 600, cursor: "pointer",
-              fontFamily: "ui-sans-serif, system-ui, sans-serif",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-              display: "flex", alignItems: "center", gap: 6,
-            }}
-          >
-            <Bot size={16} /> LLM 介接
-          </button>
-
-          {/* 返回主選單 + 場景簡報 / 教學 / 介面說明 — 在 LLM 鈕左邊 */}
-          <div style={{
-            position: "absolute", bottom: 16, right: 156, zIndex: 25,
-            display: "flex", gap: 6,
-          }}>
-            <button
-              onClick={() => searchPlannerStore.setOpen(!searchPlannerStore.isOpen())}
-              title="搜索規劃器（掃區時間 / POD / 建議架數與搜索圖形）"
-              className="wg-btn"
-              style={iconBtn}
-            >
-              <Radar size={16} />
-            </button>
-            <button
-              onClick={() => uiStore.setLandingOpen(true)}
-              title="返回主選單"
-              className="wg-btn"
-              style={iconBtn}
-            >
-              <Menu size={16} />
-            </button>
-            <button
-              onClick={() => setBriefingOpen(true)}
-              title="場景簡報（briefing + 兵力 + 勝負條件）"
-              className="wg-btn"
-              style={iconBtn}
-            >
-              <Swords size={16} />
-            </button>
-            <button
-              onClick={launchTutorial}
-              title="UI 教學導覽（8 步 walkthrough）"
-              className="wg-btn"
-              style={iconBtn}
-            >
-              <GraduationCap size={16} />
-            </button>
-            <button
-              onClick={() => setCheatOpen(true)}
-              title="介面說明速查表"
-              className="wg-btn"
-              style={iconBtn}
-            >
-              <HelpCircle size={16} />
-            </button>
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              bottom: 16,
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 20,
-              padding: "6px 12px",
-              background: "rgba(15, 23, 42, 0.7)",
-              border: "1px solid rgba(148, 163, 184, 0.2)",
-              borderRadius: 6,
-              color: "#94a3b8",
-              fontSize: 15,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            }}
-          >
-            Space: 暫停/繼續 · 1/2/3/4: 速率 · 點符號編輯 · Enter 套用航線
-          </div>
+          {/* 桌面：頂部資訊列 + 星海式底部控制台（戰報 | 單位 | 指令卡），地圖中央淨空 */}
+          <DesktopTopBar
+            map={mapRef.current}
+            styleId={styleId}
+            onStyleChange={setStyleId}
+            onOpenLlm={() => setLlmOpen(true)}
+            onOpenBriefing={() => setBriefingOpen(true)}
+            onOpenCheat={() => setCheatOpen(true)}
+          />
+          <UnitPalette hideLauncher />
+          <CommandConsole />
+          {/* 搜索規劃器側欄：夾在頂部列與底部控制台之間；入口在頂部列「搜索」鈕 */}
+          <SearchPlannerPanel insetTop={TOP_BAR_HEIGHT} insetBottom={CONSOLE_HEIGHT} />
+          <CinemaControls map={mapRef.current} bottomOffset={CONSOLE_HEIGHT} />
         </>
         )
       )}
@@ -367,13 +295,3 @@ export default function WargameApp() {
     </div>
   );
 }
-
-const iconBtn: React.CSSProperties = {
-  width: 38, height: 38,
-  borderRadius: 8,
-  background: "rgba(15, 23, 42, 0.85)",
-  color: "#cbd5e1",
-  border: "1px solid rgba(148, 163, 184, 0.3)",
-  cursor: "pointer",
-  display: "flex", alignItems: "center", justifyContent: "center",
-};

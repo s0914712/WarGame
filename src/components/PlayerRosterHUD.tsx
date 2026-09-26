@@ -9,7 +9,7 @@ import { roomSession } from "../wargame/net/session";
 import { uiStore } from "../wargame/uiStore";
 import { SIDE_COLORS } from "../wargame/symbology/sideColors";
 
-export function PlayerRosterHUD({ isMobile = false }: { isMobile?: boolean }) {
+export function PlayerRosterHUD({ isMobile = false, top }: { isMobile?: boolean; top?: number }) {
   const net = useSyncExternalStore(netStore.subscribe, netStore.get, netStore.get);
   if (net.role === "off" || !net.room || net.room.status === "lobby") return null;
 
@@ -19,7 +19,7 @@ export function PlayerRosterHUD({ isMobile = false }: { isMobile?: boolean }) {
   return (
     <div style={{
       position: "absolute",
-      top: isMobile ? 56 : 76, left: isMobile ? 8 : 16,
+      top: top ?? (isMobile ? 56 : 76), left: isMobile ? 8 : 16,
       zIndex: 21,
       padding: isMobile ? "6px 8px" : "8px 12px",
       background: "rgba(15, 23, 42, 0.88)",
