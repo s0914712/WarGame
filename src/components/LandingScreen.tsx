@@ -11,8 +11,12 @@ import type { Map as MapboxMap } from "mapbox-gl";
 import { useIsMobile } from "../hooks/useIsMobile";
 import {
   Swords, ClipboardList, GraduationCap, ChevronRight, Globe,
-  ArrowLeft, Play, Clapperboard,
+  ArrowLeft, Play, Clapperboard, Users,
 } from "lucide-react";
+import type { Scenario } from "../wargame/types";
+import { netStore } from "../wargame/net/netStore";
+import { roomSession } from "../wargame/net/session";
+import { MultiplayerLobby } from "./MultiplayerLobby";
 import { uiStore } from "../wargame/uiStore";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { viewStore, type ActiveView } from "../wargame/viewStore";
@@ -29,7 +33,12 @@ interface Props {
   map: MapboxMap | null;
 }
 
-type Pane = "main" | "campaign";
+type Pane = "main" | "campaign" | "multiplayer";
+
+/** 從多人房間切回單人玩法前先離開房間 */
+function leaveMultiplayerIfAny() {
+  if (netStore.isMultiplayer()) void roomSession.leaveRoom();
+}
 
 function isOpen() { return uiStore.isLandingOpen(); }
 
@@ -43,8 +52,16 @@ export function LandingScreen({ map }: Props) {
 
   if (!open) return null;
 
+  // ── 多人：房間開打 → 關選單、飛鏡頭；host 設定聲學環境（client 由 snapshot 同步） ──
+  const onMatchStart = (scenario: Scenario, isHost: boolean) => {
+    flyToScenario(map, scenario);
+    uiStore.setLandingOpen(false);
+    if (isHost && scenario.acousticModel) uiStore.setAcousticConfigOpen(true);
+  };
+
   // ── 進入戰役 ──
   const startCampaign = () => {
+    leaveMultiplayerIfAny();
     const entry = SCENARIO_REGISTRY.find((e) => e.scenario.id === selectedScenarioId);
     if (!entry) return;
     wargameClock.reset();
@@ -61,6 +78,7 @@ export function LandingScreen({ map }: Props) {
 
   // ── 進入 Plan Mode ──
   const startPlanMode = () => {
+    leaveMultiplayerIfAny();
     wargameClock.reset();
     scenarioStore.loadScenario(EMPTY_SCENARIO);
     viewStore.setActiveView("blue");
@@ -79,6 +97,7 @@ export function LandingScreen({ map }: Props) {
   const startDocumentary = () => {
     const entry = SCENARIO_REGISTRY.find((e) => e.scenario.id === "kinmen_823_1958");
     if (!entry) return;
+    leaveMultiplayerIfAny();
     uiStore.setSuppressBriefingOnce();
     wargameClock.reset();
     scenarioStore.loadScenario(entry.scenario);
@@ -154,9 +173,17 @@ export function LandingScreen({ map }: Props) {
             <MainPane
               isMobile={isMobile}
               onCampaign={() => setPane("campaign")}
+              onMultiplayer={() => setPane("multiplayer")}
               onPlanMode={startPlanMode}
               onTutorial={startTutorial}
               onDocumentary={startDocumentary}
+            />
+          )}
+          {pane === "multiplayer" && (
+            <MultiplayerLobby
+              isMobile={isMobile}
+              onBack={() => setPane("main")}
+              onMatchStart={onMatchStart}
             />
           )}
           {pane === "campaign" && (
@@ -177,9 +204,9 @@ export function LandingScreen({ map }: Props) {
 }
 
 // ── 主選單 ──
-function MainPane({ isMobile, onCampaign, onPlanMode, onTutorial, onDocumentary }: {
-  isMobile: boolean; onCampaign: () => void; onPlanMode: () => void; onTutorial: () => void;
-  onDocumentary: () => void;
+function MainPane({ isMobile, onCampaign, onMultiplayer, onPlanMode, onTutorial, onDocumentary }: {
+  isMobile: boolean; onCampaign: () => void; onMultiplayer: () => void; onPlanMode: () => void;
+  onTutorial: () => void; onDocumentary: () => void;
 }) {
   const lang = useLang();
   const iconSize = isMobile ? 28 : 56;
@@ -207,6 +234,16 @@ function MainPane({ isMobile, onCampaign, onPlanMode, onTutorial, onDocumentary 
           : "挑選 9 個預設場景之一，選擇扮演的陣營（藍方 ROC / 紅方 PLA / 全局觀察），進入推演。"}
         accent="#fbbf24"
         onClick={onCampaign}
+      />
+      <BigChoice
+        isMobile={isMobile}
+        icon={<Users size={iconSize} color="#22c55e" />}
+        title={lang === "en" ? "Multiplayer (online)" : "多人對戰（線上）"}
+        desc={lang === "en"
+          ? "Log in, create or join a room by code, each player commands one side. Host runs the simulation; others can spectate."
+          : "登入後建立房間或以房間碼加入，每位玩家指揮一個陣營；房主主持推演，其他人可觀戰。"}
+        accent="#22c55e"
+        onClick={onMultiplayer}
       />
       <BigChoice
         isMobile={isMobile}

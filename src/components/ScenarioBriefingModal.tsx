@@ -20,6 +20,7 @@ import { UNIT_CATALOG, UNIT_KIND_DISPLAY_EN } from "../wargame/catalog/units";
 import { launchTutorial } from "./TutorialOverlay";
 import type { SideId, VictoryCondition } from "../wargame/types";
 import { t, useLang } from "../wargame/i18n/lang";
+import { netStore } from "../wargame/net/netStore";
 
 function getScenarioId(): string {
   return scenarioStore.getState().scenario.id;
@@ -45,7 +46,8 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
       // 紀錄片直入：跳過 briefing，不暫停（讓運鏡自動播）
       if (uiStore.peekAndClearBriefingSuppress()) return;
       setAutoOpen(true);
-      wargameClock.pause();
+      // 多人 client 不可本地暫停（時鐘由 host 控制）
+      if (netStore.canControlClock()) wargameClock.pause();
     }
   }, [scenarioId]);
 

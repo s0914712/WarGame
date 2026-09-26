@@ -12,6 +12,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { wargameClock } from "../wargame/clock";
 import { timeStore } from "../state/timeStore";
+import { netStore } from "../wargame/net/netStore";
 
 const UI_THROTTLE_MS = 250;
 
@@ -80,13 +81,15 @@ export function useWargameClock() {
   useWargameRaf();
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
+  // 多人模式：只有 host 能控時鐘；client 的按鈕 / 快捷鍵一律 no-op（HUD 另外顯示鎖定）
+  const can = () => netStore.canControlClock();
   return {
     ...snapshot,
-    pause: () => wargameClock.pause(),
-    resume: () => wargameClock.resume(),
-    toggle: () => wargameClock.toggle(),
-    setRate: (r: number) => wargameClock.setRate(r),
-    seek: (sec: number) => wargameClock.seek(sec),
-    reset: () => wargameClock.reset(),
+    pause: () => { if (can()) wargameClock.pause(); },
+    resume: () => { if (can()) wargameClock.resume(); },
+    toggle: () => { if (can()) wargameClock.toggle(); },
+    setRate: (r: number) => { if (can()) wargameClock.setRate(r); },
+    seek: (sec: number) => { if (can()) wargameClock.seek(sec); },
+    reset: () => { if (can()) wargameClock.reset(); },
   };
 }

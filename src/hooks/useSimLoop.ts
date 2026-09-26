@@ -14,23 +14,31 @@ import { wargameClock } from "../wargame/clock";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { step } from "../wargame/sim/engine";
 import { replayPlayer } from "../wargame/replay/player";
+import { netStore } from "../wargame/net/netStore";
 
 export function useSimLoop() {
   useEffect(() => {
     let raf = 0;
     let lastSimTime = wargameClock.getSimTime();
+    // 上次 step 產出的 state 時間；若 state 被外部整個換掉（loadScenario / 多人重連還原），
+    // 以當下時鐘重新對基準，避免把 seek 造成的時鐘跳動當成 dt 再推進一次
+    let lastProducedSimSec: number | null = null;
 
     const loop = () => {
       const now = wargameClock.getSimTime();
+      const stateSec = scenarioStore.getState().simTimeSec;
+      if (lastProducedSimSec !== null && stateSec !== lastProducedSimSec) lastSimTime = now;
       const dt = now - lastSimTime;
       lastSimTime = now;
 
       // Replay 模式時跳過 engine.tick，state 完全由 replayPlayer 控制
-      if (dt > 0 && !replayPlayer.isActive()) {
+      // 多人 client 不跑 engine：state 由 host snapshot（net/snapshot.ts clientApplier）寫入
+      if (dt > 0 && !replayPlayer.isActive() && !netStore.isClient()) {
         const cur = scenarioStore.getState();
         const next = step(cur, dt);
         if (next !== cur) scenarioStore.setState(next);
       }
+      lastProducedSimSec = scenarioStore.getState().simTimeSec;
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

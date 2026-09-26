@@ -14,6 +14,9 @@ import { editorStore } from "../wargame/editor/editorStore";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
 import type { SideId, UnitKind } from "../wargame/types";
+import { netStore } from "../wargame/net/netStore";
+
+function isMultiplayer() { return netStore.isMultiplayer(); }
 
 interface Snapshot {
   mode: string;
@@ -71,7 +74,13 @@ const KIND_OPTIONS: { kind: UnitKind; Icon: LucideIcon }[] = [
   { kind: "asw_helo",         Icon: Wind },
 ];
 
-export function UnitPalette({ embedded = false }: { embedded?: boolean } = {}) {
+/** 多人模式隱藏（換場景 / 放單位 / replay seek 會破壞 host 權威同步） */
+export function UnitPalette(props: { embedded?: boolean } = {}) {
+  const mp = useSyncExternalStore(netStore.subscribe, isMultiplayer, isMultiplayer);
+  return mp ? null : <UnitPaletteInner {...props} />;
+}
+
+function UnitPaletteInner({ embedded = false }: { embedded?: boolean } = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const s = getSnapshot();
   const isPlanning = s.mode === "placeUnit";

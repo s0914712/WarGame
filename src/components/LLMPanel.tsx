@@ -7,6 +7,8 @@
 import { useState, useSyncExternalStore } from "react";
 import { buildStateExport } from "../wargame/llm/exportState";
 import { applyLlmCommands } from "../wargame/llm/applyCommands";
+import { netStore } from "../wargame/net/netStore";
+import { submitCommand } from "../wargame/net/commandBus";
 import type { LlmCommandResult } from "../wargame/llm/schema";
 import { SCHEMA_DOC } from "../wargame/llm/schemaDoc";
 import { aiConfigStore, isUsingEnvDefaults, DEFAULT_V2_PARAMS, type ScriptedV2Params } from "../wargame/llm/aiConfig";
@@ -49,7 +51,16 @@ export function LLMPanel({ open, onClose }: Props) {
       setParseError(`JSON parse error: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
-    setResult(applyLlmCommands(parsed));
+    // 多人模式：只能指揮自己陣營、走 commandBus、不暫停、不可直接改屬性
+    const net = netStore.get();
+    setResult(net.role === "off"
+      ? applyLlmCommands(parsed)
+      : applyLlmCommands(parsed, {
+          pauseFirst: false,
+          sideFilter: net.mySideId ?? undefined,
+          enqueue: (c) => { submitCommand(c); },
+          forbidAttributeEdits: true,
+        }));
   };
 
   const copy = async (text: string) => {

@@ -17,6 +17,17 @@ import { viewStore } from "../viewStore";
 import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
 import { DEFAULT_MDR_KM } from "../sim/sonobuoyField";
+import { submitCommand } from "../net/commandBus";
+import { netStore } from "../net/netStore";
+
+/** 規劃時暫停時鐘 — 多人模式不可本地暫停（會跟 host 不同步），改為邊跑邊規劃 */
+function pauseForPlanning(): boolean {
+  if (netStore.isMultiplayer()) return false;
+  const wasRunning = !wargameClock.isPaused();
+  wargameClock.pause();
+  return wasRunning;
+}
+
 
 type Listener = () => void;
 
@@ -76,9 +87,9 @@ export const editorStore = {
   /** 進入 Plan Mode（放置單位） */
   enterPlaceMode(): void {
     if (mode === "placeUnit") return;
+    if (netStore.isMultiplayer()) return;   // 多人模式不可放置單位
     mode = "placeUnit";
-    wasRunningBeforePlan = !wargameClock.isPaused();
-    wargameClock.pause();
+    wasRunningBeforePlan = pauseForPlanning();
     notify();
   },
 
@@ -125,11 +136,12 @@ export const editorStore = {
 
   startPlanRoute(unitId: UnitId): void {
     if (mode === "planRoute" && planningUnitId === unitId) return;
+    const u = scenarioStore.getState().units[unitId];
+    if (u && !netStore.canControlSide(u.sideId)) return;
     mode = "planRoute";
     planningUnitId = unitId;
     pendingWaypoints = [];
-    wasRunningBeforePlan = !wargameClock.isPaused();
-    wargameClock.pause();
+    wasRunningBeforePlan = pauseForPlanning();
     notify();
   },
 
@@ -155,7 +167,7 @@ export const editorStore = {
     if (mode !== "planRoute" || !planningUnitId) return;
     if (pendingWaypoints.length > 0) {
       // 寫入指令佇列（engine 下一個 tick 就會套用）
-      scenarioStore.enqueueCommand({
+      submitCommand({
         id: makeCmdId(),
         unitId: planningUnitId,
         simAtSec: wargameClock.getSimTime(),
@@ -182,12 +194,13 @@ export const editorStore = {
   },
 
   startSonobuoyArea(unitId: UnitId): void {
+    const u = scenarioStore.getState().units[unitId];
+    if (u && !netStore.canControlSide(u.sideId)) return;
     mode = "defineSonobuoyArea";
     sonobuoyUnitId = unitId;
     sonobuoyCornerA = null;
     sonobuoyCornerB = null;
-    wasRunningBeforePlan = !wargameClock.isPaused();
-    wargameClock.pause();
+    wasRunningBeforePlan = pauseForPlanning();
     notify();
   },
 
@@ -213,7 +226,7 @@ export const editorStore = {
   commitSonobuoyField(): void {
     if (mode !== "defineSonobuoyArea" || !sonobuoyUnitId) return;
     if (sonobuoyCornerA && sonobuoyCornerB) {
-      scenarioStore.enqueueCommand({
+      submitCommand({
         id: makeCmdId(),
         unitId: sonobuoyUnitId,
         simAtSec: wargameClock.getSimTime(),
@@ -251,7 +264,7 @@ export const editorStore = {
   quickMove(unitId: UnitId, lng: number, lat: number, additive: boolean): void {
     const state = scenarioStore.getState();
     const unit = state.units[unitId];
-    if (!unit) return;
+    if (!unit || !netStore.canControlSide(unit.sideId)) return;
     let base: LngLat[] = [];
     if (additive) {
       // 以最近一筆對此單位待套用的 set_waypoints 為基底，否則用單位現有航線（連點才會累積）
@@ -263,10 +276,10 @@ export const editorStore = {
     }
     const waypoints: LngLat[] = [...base, [lng, lat]];
     const simAtSec = wargameClock.getSimTime();
-    scenarioStore.enqueueCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_waypoints", waypoints });
+    submitCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_waypoints", waypoints });
     if (unit.position.speedKnots <= 0) {
       const cruise = Math.max(1, Math.round(unit.core.speedKnots * 0.6));
-      scenarioStore.enqueueCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_speed", speedKnots: cruise });
+      submitCommand({ id: makeCmdId(), unitId, simAtSec, kind: "set_speed", speedKnots: cruise });
     }
   },
 
@@ -285,6 +298,7 @@ export const editorStore = {
     // 只能命令己方單位（spectator 視角不限）
     const activeSide = viewStore.getActiveSideId();
     if (activeSide && attacker.sideId !== activeSide) return false;
+    if (!netStore.canControlSide(attacker.sideId)) return false;
     // 目標必須與攻方敵對
     const sides = state.scenario.sides;
     const atkSide = sides.find((s) => s.id === attacker.sideId);
@@ -292,7 +306,7 @@ export const editorStore = {
     const hostile = (atkSide?.isHostileTo.includes(target.sideId) ?? false)
       || (tgtSide?.isHostileTo.includes(attacker.sideId) ?? false);
     if (!hostile) return false;
-    scenarioStore.enqueueCommand({
+    submitCommand({
       id: makeCmdId(),
       unitId: attackerId,
       simAtSec: wargameClock.getSimTime(),
@@ -304,7 +318,7 @@ export const editorStore = {
 
   /** 清掉某個單位「目前已套用」的 waypoint（不是 pending）。 */
   clearUnitWaypoints(unitId: UnitId): void {
-    scenarioStore.enqueueCommand({
+    submitCommand({
       id: makeCmdId(),
       unitId,
       simAtSec: wargameClock.getSimTime(),
