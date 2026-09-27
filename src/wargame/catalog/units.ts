@@ -1,4 +1,5 @@
 import type { UnitCatalogEntry, UnitKind } from "../types";
+import { applyKindOverrides } from "./assetOverrides";
 
 /**
  * v1 三種單位的目錄定義。
@@ -501,6 +502,10 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     defaultAmmoMax: 0,                 // 無武裝偵察機
   },
 };
+
+/** 內建數值快照（套用資產表覆寫前）— assets:import 用來算差異 */
+export const UNIT_CATALOG_BASE: Record<UnitKind, UnitCatalogEntry> = structuredClone(UNIT_CATALOG);
+applyKindOverrides(UNIT_CATALOG);
 
 /** UI 顯示名稱對照 */
 export const CORE_ATTRIBUTE_LABELS: Record<keyof UnitCatalogEntry["defaultCore"], string> = {

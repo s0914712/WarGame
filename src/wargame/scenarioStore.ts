@@ -16,6 +16,7 @@ import type { Command, CoreAttributes, Scenario, SimulationState, Unit, UnitId }
 import { EMPTY_SCENARIO } from "./scenarios/empty";
 import { UNIT_CATALOG } from "./catalog/units";
 import { initUnitWeapons } from "./catalog/weapons";
+import { applyUnitOverride } from "./catalog/assetOverrides";
 
 type Listener = () => void;
 
@@ -70,7 +71,7 @@ export const scenarioStore = {
       const withExt = cat.defaultExtensions
         ? { ...u, extensions: { ...cat.defaultExtensions, ...u.extensions } }
         : u;
-      units[u.id] = initUnitWeapons(withExt, cat.defaultLoadout);
+      units[u.id] = initUnitWeapons(applyUnitOverride(scenario.id, withExt), cat.defaultLoadout);
     }
     state = {
       scenario,
