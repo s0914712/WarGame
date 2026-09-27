@@ -48,6 +48,8 @@ function mkUnit(
   opts: {
     headingDeg?: number;
     speedKnots?: number;
+    rangeKm?: number;
+    hpMax?: number;
     waypoints?: [number, number][];
     /** 隱蔽係數 0..0.95；潛艦預設 0.7、戰機預設 0 */
     stealth?: number;
@@ -56,6 +58,8 @@ function mkUnit(
   const cat = UNIT_CATALOG[kind];
   const core = { ...cat.defaultCore };
   if (opts.speedKnots !== undefined) core.speedKnots = opts.speedKnots;
+  if (opts.rangeKm !== undefined) core.rangeKm = opts.rangeKm;
+  if (opts.hpMax !== undefined) core.hpMax = opts.hpMax;
 
   const extensions: Unit["extensions"] = {};
   if (opts.stealth !== undefined) extensions.stealth = opts.stealth;
@@ -95,16 +99,23 @@ const BLUE_UNITS: Unit[] = [
   mkUnit("BLUE-ML-05", "blue", "missile_launcher", "雄三-04", "雄三反艦飛彈車 4", 121.74, 24.74),
 
   // 5 無人機（沿海巡邏 — 都有 waypoint，會自動巡曳）
+  // 騰雲偵察無人機：無武裝（rangeKm: 0），脆弱（hpMax: 8）
   mkUnit("BLUE-DR-01", "blue", "drone", "騰雲-01", "騰雲偵察無人機 1", 120.30, 23.50, {
     speedKnots: 180,
+    rangeKm: 0,
+    hpMax: 8,
     waypoints: [[119.90, 23.50], [120.30, 23.50], [120.30, 24.00], [119.90, 24.00], [119.90, 23.50]],
   }),
   mkUnit("BLUE-DR-02", "blue", "drone", "騰雲-02", "騰雲偵察無人機 2", 120.50, 24.00, {
     speedKnots: 180,
+    rangeKm: 0,
+    hpMax: 8,
     waypoints: [[120.10, 24.00], [120.50, 24.00], [120.50, 24.50], [120.10, 24.50], [120.10, 24.00]],
   }),
   mkUnit("BLUE-DR-03", "blue", "drone", "騰雲-03", "騰雲偵察無人機 3", 120.70, 24.50, {
     speedKnots: 180,
+    rangeKm: 0,
+    hpMax: 8,
     waypoints: [[120.30, 24.50], [120.70, 24.50], [120.70, 25.00], [120.30, 25.00], [120.30, 24.50]],
   }),
   mkUnit("BLUE-DR-04", "blue", "drone", "銳鳶-01", "銳鳶 II 偵察機 1", 121.20, 25.10, { speedKnots: 200 }),
