@@ -5,6 +5,7 @@
  * 地圖與所有 modal 仍由 WargameApp 共用渲染。
  */
 import { useState } from "react";
+import { HexToolbar } from "./HexToolbar";
 import type { Map as MapboxMap } from "mapbox-gl";
 import { WargameMobileTopBar } from "./WargameMobileTopBar";
 import { WargameMobileDock } from "./WargameMobileDock";
@@ -28,6 +29,7 @@ export function WargameMobileLayout({
   return (
     <>
       <WargameMobileTopBar />
+      <HexToolbar top={64} isMobile />
       <WargameMobileDock
         map={map}
         isLandscape={isLandscape}

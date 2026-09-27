@@ -3,7 +3,8 @@
  * 場景 / 底圖 / 視角 POV / 錄製回放 + 動作鈕（LLM・簡報・教學・說明・Demo・返回主選單）。
  */
 import type { Map as MapboxMap } from "mapbox-gl";
-import { Bot, Swords, GraduationCap, HelpCircle, Monitor, Menu } from "lucide-react";
+import { Bot, Swords, GraduationCap, HelpCircle, Monitor, Menu, Hexagon } from "lucide-react";
+import { hexStore } from "../../wargame/hex/hexStore";
 import { ScenarioPicker } from "../ScenarioPicker";
 import { MapStyleSwitcher } from "../MapStyleSwitcher";
 import { PovSwitcher } from "../PovSwitcher";
@@ -44,6 +45,7 @@ export function WargameMobileSettings({
       <Section label="動作">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <ActionBtn Icon={Bot} label="LLM 介接" onClick={onOpenLlm} primary />
+          <ActionBtn Icon={Hexagon} label="六角格 / 勢力範圍" onClick={() => hexStore.setVisible(!hexStore.isVisible())} />
           <ActionBtn Icon={Swords} label="場景簡報" onClick={onOpenBriefing} />
           <ActionBtn Icon={GraduationCap} label="教學導覽" onClick={launchTutorial} />
           <ActionBtn Icon={HelpCircle} label="介面說明" onClick={onOpenCheat} />

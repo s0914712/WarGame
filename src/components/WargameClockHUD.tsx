@@ -137,6 +137,7 @@ export function WargameClockHUD({ isMobile = false, embedded = false, hidePaused
             fontWeight: 700,
             letterSpacing: 1,
             whiteSpace: "nowrap",
+            flexShrink: 0,
           }}
         >
           {t("PAUSED")}

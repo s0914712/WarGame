@@ -9,7 +9,7 @@
  *
  * 規劃航線 / 佈聲標模式時整張卡換成 ✓ 套用 / ✗ 取消 / ⌫ 移除末點。
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Route, Eraser, Square, Crosshair, ShieldHalf, Shield, Ban, Radio, Waves, Grid3x3,
@@ -131,6 +131,21 @@ function buildCells(): Cell[] {
   ];
 }
 
+/**
+ * Tab / Shift+Tab：依呼號順序輪選可指揮的己方存活單位（相機會跟隨）。
+ * 上帝視角 / 單人 → 所有可控陣營的單位；多人 → 只輪自己陣營。
+ */
+function cycleOwnUnit(dir: 1 | -1) {
+  const pov = viewStore.getActiveSideId();
+  const own = Object.values(scenarioStore.getState().units)
+    .filter((u) => u.hpCurrent > 0 && (pov == null || u.sideId === pov) && netStore.canControlSide(u.sideId))
+    .sort((a, b) => a.callsign.localeCompare(b.callsign));
+  if (own.length === 0) return;
+  const cur = own.findIndex((u) => u.id === scenarioStore.getSelectedUnitId());
+  const next = own[(cur + dir + own.length) % own.length]!;
+  scenarioStore.setSelectedUnitId(next.id);
+}
+
 /** 模式卡：把少數指令放在前幾格，其餘補空格保持 3×4 */
 function modeCells(cells: Cell[]): Cell[] {
   const filler: Cell = { key: "", label: "", Icon: Square, enabled: false };
@@ -140,18 +155,29 @@ function modeCells(cells: Cell[]): Cell[] {
 export function CommandCard() {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const cells = buildCells();
+  // 最近一次觸發的格位（n 遞增 → 換 key 重播動畫）
+  const [press, setPress] = useState<{ idx: number; n: number } | null>(null);
+  const flash = (idx: number) => setPress((p) => ({ idx, n: (p?.n ?? 0) + 1 }));
 
   // 快捷鍵：只在 view 模式（規劃中的 Enter/Esc/⌫ 由 usePlanningHotkeys 處理）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || (e.repeat && e.code !== "Tab")) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (editorStore.getMode() !== "view") return;
-      const cell = buildCells().find((c) => c.code === e.code);
+      if (e.code === "Tab") {
+        e.preventDefault();
+        cycleOwnUnit(e.shiftKey ? -1 : 1);
+        return;
+      }
+      const all = buildCells();
+      const idx = all.findIndex((c) => c.code === e.code);
+      const cell = all[idx];
       if (cell?.enabled && cell.run) {
         e.preventDefault();
         cell.run();
+        setPress((p) => ({ idx, n: (p?.n ?? 0) + 1 }));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -163,21 +189,25 @@ export function CommandCard() {
       display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(4, 1fr)",
       gap: 6, height: "100%",
     }}>
-      {cells.map((c, i) => <CardButton key={i} cell={c} />)}
+      {cells.map((c, i) => (
+        <CardButton key={press?.idx === i ? `${i}-${press.n}` : i} cell={c}
+          pressed={press?.idx === i} onPress={() => flash(i)} />
+      ))}
     </div>
   );
 }
 
-function CardButton({ cell }: { cell: Cell }) {
+function CardButton({ cell, pressed, onPress }: { cell: Cell; pressed: boolean; onPress: () => void }) {
   const { Icon, enabled, active, accent = "#60a5fa" } = cell;
   if (!cell.label) return <div style={{ borderRadius: 6, background: "rgba(30, 41, 59, 0.25)" }} />;
   const clickable = enabled && !!cell.run;
+  const tip = `${cell.title ?? cell.label}${cell.key ? `（${cell.key}）` : ""}${enabled ? "" : " — 目前不可用"}`;
   return (
     <button
-      onClick={clickable ? cell.run : undefined}
+      onClick={clickable ? () => { cell.run!(); onPress(); } : undefined}
       disabled={!enabled}
-      title={cell.title ?? cell.label}
-      className={clickable ? "wg-btn" : undefined}
+      title={tip}
+      className={[clickable ? "wg-btn" : "", pressed ? "wg-key-press" : ""].filter(Boolean).join(" ") || undefined}
       style={{
         position: "relative",
         display: "flex", alignItems: "center", gap: 6,
@@ -185,6 +215,7 @@ function CardButton({ cell }: { cell: Cell }) {
         minWidth: 0,
         borderRadius: 6,
         border: `1px solid ${active ? accent : "rgba(148, 163, 184, 0.22)"}`,
+        boxShadow: active ? `inset 0 0 10px ${accent}40` : undefined,
         background: active ? `${accent}33` : enabled ? "rgba(30, 41, 59, 0.75)" : "rgba(30, 41, 59, 0.3)",
         color: enabled ? "#e2e8f0" : "#475569",
         cursor: clickable ? "pointer" : "default",
