@@ -12,6 +12,7 @@ import { scenarioStore } from "../scenarioStore";
 import { wargameClock } from "../clock";
 import { netStore } from "./netStore";
 import { wgSupabase } from "./wgSupabase";
+import { commandPings } from "../editor/commandPings";
 
 export interface SubmitResult { ok: boolean; error?: string }
 
@@ -19,6 +20,7 @@ export function submitCommand(cmd: Command): SubmitResult {
   const net = netStore.get();
   if (net.role === "off") {
     scenarioStore.enqueueCommand(cmd);
+    commandPings.push(cmd);   // 地圖上「收到命令」提示
     return { ok: true };
   }
 
@@ -32,6 +34,7 @@ export function submitCommand(cmd: Command): SubmitResult {
     scenarioStore.enqueueCommand({ ...cmd, simAtSec: wargameClock.getSimTime() });
   }
   void logCommand(cmd, unit.sideId);
+  commandPings.push(cmd);
   return { ok: true };
 }
 
