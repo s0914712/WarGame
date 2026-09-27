@@ -19,6 +19,7 @@ import { attachWargameCombatLayer } from "./map/wargameCombatLayer";
 import { attachWargameHexLayer } from "./map/wargameHexLayer";
 import { attachWargameObjectiveLayer } from "./map/wargameObjectiveLayer";
 import { attachWargameFxLayer } from "./map/wargameFxLayer";
+import { attachWargameCommandPingLayer } from "./map/wargameCommandPingLayer";
 import { ObjectivesHud } from "./components/wargame/ObjectivesHud";
 import { ThreatAlert } from "./components/wargame/ThreatAlert";
 import { hexStore } from "./wargame/hex/hexStore";
@@ -89,6 +90,7 @@ export default function WargameApp() {
       attachWargameSonobuoyLayer(map),
       attachWargameBearingLayer(map),
       attachWargameCombatLayer(map),
+      attachWargameCommandPingLayer(map),   // 右鍵 / 指令卡下令 → 攻擊準星 / 移動標記
       attachWargameFxLayer(map),    // 最上：浮動戰鬥文字 / 來襲警示環
     );
   }
