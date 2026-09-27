@@ -501,6 +501,105 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     },
     defaultAmmoMax: 0,                 // 無武裝偵察機
   },
+
+  // 一次性攻擊無人機：數值為遊戲預設，請依需求在 wargame-assets.xlsx 調整。
+  // 打擊距離 = 發現目標後可撲擊的距離；撲擊時載台本身即彈體（見 weapons.ts oneWay）。
+  sowa: {
+    kind: "sowa",
+    displayName: "SOWA 小型自殺無人機",
+    domain: "air",
+    defaultAltitudeM: 300,
+    iconShape: "triangle_inverted",
+    defaultCore: {
+      rangeKm: 20,
+      speedKnots: 60,
+      movementRangeKm: 40,
+      detectionRangeKm: 8,
+      hpMax: 3,
+    },
+    defaultExtensions: { stealth: 0.6 },   // 小型機體雷達截面極小
+    uiRanges: {
+      rangeKm:          { min: 0,  max: 60,   step: 5,  unit: "km" },
+      speedKnots:       { min: 20, max: 150,  step: 5,  unit: "kn" },
+      movementRangeKm:  { min: 10, max: 200,  step: 5,  unit: "km" },
+      detectionRangeKm: { min: 1,  max: 40,   step: 1,  unit: "km" },
+      hpMax:            { min: 1,  max: 20,   step: 1,  unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 2700,   // 滯空約 45 分
+      requireRoundTrip: false,         // 一次性：不需返航
+    },
+    defaultAmmoMax: 1,
+    defaultLoadout: [{ weaponId: "owa_small", ammoMax: 1 }],
+  },
+
+  mowa: {
+    kind: "mowa",
+    displayName: "MOWA 中型自殺無人機",
+    domain: "air",
+    defaultAltitudeM: 1000,
+    iconShape: "triangle_inverted",
+    defaultCore: {
+      rangeKm: 150,
+      speedKnots: 100,
+      movementRangeKm: 300,
+      detectionRangeKm: 15,
+      hpMax: 6,
+    },
+    defaultExtensions: { stealth: 0.4 },
+    uiRanges: {
+      rangeKm:          { min: 0,  max: 400,  step: 10, unit: "km" },
+      speedKnots:       { min: 40, max: 250,  step: 5,  unit: "kn" },
+      movementRangeKm:  { min: 50, max: 1000, step: 25, unit: "km" },
+      detectionRangeKm: { min: 1,  max: 80,   step: 1,  unit: "km" },
+      hpMax:            { min: 1,  max: 40,   step: 1,  unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 10800,  // 滯空約 3 hr
+      requireRoundTrip: false,
+    },
+    defaultAmmoMax: 1,
+    defaultLoadout: [{ weaponId: "owa_medium", ammoMax: 1 }],
+  },
+
+  // 登陸艦（解放軍 075 兩棲攻擊艦 / 071 船塢登陸艦 / 072 戰車登陸艦）：
+  // 船體大、防護弱；只有自衛火砲 + 近迫點防禦，無反艦飛彈。
+  landing_ship: {
+    kind: "landing_ship",
+    displayName: "登陸艦",
+    domain: "sea",
+    defaultAltitudeM: 0,
+    iconShape: "diamond",
+    defaultCore: {
+      rangeKm: 15,
+      speedKnots: 18,
+      movementRangeKm: 8000,
+      detectionRangeKm: 60,
+      hpMax: 450,
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 60,    step: 5,   unit: "km" },
+      speedKnots:       { min: 5,   max: 30,    step: 1,   unit: "kn" },
+      movementRangeKm:  { min: 500, max: 15000, step: 100, unit: "km" },
+      detectionRangeKm: { min: 10,  max: 200,   step: 5,   unit: "km" },
+      hpMax:            { min: 100, max: 1200,  step: 25,  unit: "點" },
+    },
+    constraints: {
+      forbidDomains: ["land"],
+      defaultPlanTimeLimitSec: 14400,
+    },
+    defaultAmmoMax: 220,
+    defaultLoadout: [
+      { weaponId: "ciws", ammoMax: 200 },
+      { weaponId: "gun", ammoMax: 20, rangeKm: "core" },
+    ],
+    // 大型兩棲艦噪音大、無反潛聲納
+    acoustics: {
+      sourceLevelDb: 155,
+      noisePerKnotDb: 1.0,
+      targetStrengthDb: 30,
+    },
+  },
 };
 
 /** 內建數值快照（套用資產表覆寫前）— assets:import 用來算差異 */
@@ -541,4 +640,7 @@ export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
   asw_helo: "ASW Helicopter",
   uav_ruiyuan: "Ruiyuan UAV",
   uav_ruihuo: "Ruihuo UAV",
+  sowa: "SOWA Loitering Munition",
+  mowa: "MOWA Loitering Munition",
+  landing_ship: "Landing Ship",
 };

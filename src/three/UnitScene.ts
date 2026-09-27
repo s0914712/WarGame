@@ -231,5 +231,8 @@ function domainOf(kind: Unit["kind"]): Domain {
     case "asw_helo": return "air";
     case "uav_ruiyuan": return "air";
     case "uav_ruihuo": return "air";
+    case "sowa": return "air";
+    case "mowa": return "air";
+    case "landing_ship": return "sea";
   }
 }

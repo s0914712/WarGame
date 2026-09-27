@@ -39,7 +39,10 @@ export type UnitKind =
   | "airbase"          // 空軍基地（戰機 RTB 目標；大範圍 supply）
   | "asw_helo"         // 反潛直升機（吊放聲納 dipping sonar 點偵測 + 輕型魚雷）
   | "uav_ruiyuan"      // 無人機 銳鳶（滯空 12 hr、作戰半徑 70 浬 ≈ 129.6 km）
-  | "uav_ruihuo";      // 無人機 銳穫（滯空 6 hr、作戰半徑 50 浬 ≈ 92.6 km）
+  | "uav_ruihuo"       // 無人機 銳穫（滯空 6 hr、作戰半徑 50 浬 ≈ 92.6 km）
+  | "sowa"             // 小型一次性攻擊無人機（Small One-Way Attack）
+  | "mowa"             // 中型一次性攻擊無人機（Medium One-Way Attack）
+  | "landing_ship";    // 登陸艦（075 / 071 / 072 等兩棲艦）
 export type Domain = "land" | "air" | "sea" | "subsurface";
 
 export interface UnitCatalogEntry {
@@ -138,6 +141,8 @@ export interface WeaponSpec {
   cooldownSec?: number;
   /** 命中傷害（target.hpMax 比例）；省略 = 0.6 */
   damageFrac?: number;
+  /** 一次性攻擊（自殺無人機）：發射即載台本身撲向目標 — 載台從戰場移除、飛行速度 = 載台最大速度 */
+  oneWay?: boolean;
 }
 
 /** 武器彈艙（runtime，per unit）。每種武器獨立計彈。 */

@@ -19,6 +19,7 @@ import {
 } from "./assetsShared";
 
 const errors: string[] = [];
+const warnings: string[] = [];
 const changes: string[] = [];
 
 function cellValue(c: ExcelJS.Cell): unknown {
@@ -31,6 +32,9 @@ function cellValue(c: ExcelJS.Cell): unknown {
 function str(v: unknown): string { return v == null ? "" : String(v).trim(); }
 
 /** 讀分頁成 {表頭: 值} 陣列（表頭去掉「（唯讀）」） */
+/** 舊版表格可能沒有的欄位 — 缺欄時沿用內建值，不報錯 */
+const OPTIONAL_HEADERS = new Set(["一次性攻擊"]);
+
 function readSheet(wb: ExcelJS.Workbook, name: string): { row: number; get: (h: string) => unknown }[] {
   const ws = wb.getWorksheet(name);
   if (!ws) { errors.push(`找不到分頁「${name}」`); return []; }
@@ -41,7 +45,10 @@ function readSheet(wb: ExcelJS.Workbook, name: string): { row: number; get: (h: 
     if (rowNum === 1) return;
     const get = (h: string) => {
       const col = heads.get(h);
-      if (col == null) { errors.push(`「${name}」缺少欄位「${h}」`); return null; }
+      if (col == null) {
+        if (!OPTIONAL_HEADERS.has(h)) errors.push(`「${name}」缺少欄位「${h}」`);
+        return undefined;
+      }
       return cellValue(r.getCell(col));
     };
     const anyValue = [...heads.values()].some((col) => str(cellValue(r.getCell(col))) !== "");
@@ -60,6 +67,16 @@ function num(v: unknown, where: string, opts: { min?: number; max?: number; opti
   if (opts.min != null && n < opts.min) { errors.push(`${where}：${n} 小於 ${opts.min}`); return undefined; }
   if (opts.max != null && n > opts.max) { errors.push(`${where}：${n} 大於 ${opts.max}`); return undefined; }
   return n;
+}
+
+/** 是 / 否；欄位不存在（舊表）→ undefined = 沿用內建 */
+function yesNo(v: unknown, where: string): boolean | undefined {
+  if (v === undefined) return undefined;
+  const t = str(v).toLowerCase();
+  if (["是", "y", "yes", "true", "1", "v", "✓"].includes(t)) return true;
+  if (["", "否", "n", "no", "false", "0"].includes(t)) return false;
+  errors.push(`${where}：請填「是」或「否」（目前：${str(v)}）`);
+  return undefined;
 }
 
 function list<T extends string>(v: unknown, allowed: readonly T[], where: string): T[] {
@@ -93,6 +110,7 @@ async function main(): Promise<void> {
       interceptProfiles: list<MissileProfile>(get("可攔截剖面"), PROFILES, `${at} 可攔截剖面`),
       profile: (str(get("飛行剖面")) || undefined) as MissileProfile | undefined,
       cooldownSec: num(get("冷卻 (秒)"), `${at} 冷卻`, { min: 0, optional: true }),
+      oneWay: yesNo(get("一次性攻擊"), `${at} 一次性攻擊`),
     };
     if (spec.profile && !PROFILES.includes(spec.profile)) errors.push(`${at}：飛行剖面「${spec.profile}」不存在`);
     const base = WEAPONS_BASE[id];
@@ -101,7 +119,8 @@ async function main(): Promise<void> {
       const b = base?.[k];
       const norm = (x: unknown) => JSON.stringify(Array.isArray(x) ? x : x ?? null);
       // 內建沒有的陣列欄位視為空陣列
-      const bn = (k === "interceptProfiles" && b == null) ? "[]" : norm(b);
+      const bn = (k === "interceptProfiles" && b == null) ? "[]"
+        : (k === "oneWay" && b == null) ? "false" : norm(b);
       if (v === undefined && b === undefined) continue;
       if (norm(v) !== bn) (diff as Record<string, unknown>)[k] = v ?? null;
     }
@@ -112,8 +131,10 @@ async function main(): Promise<void> {
   }
 
   // ── 單位類型 ──
+  const kindsInSheet = new Set<UnitKind>();
   for (const { row, get } of readSheet(wb, SHEET.kinds)) {
     const kind = str(get("類型代碼")) as UnitKind;
+    kindsInSheet.add(kind);
     const at = `${SHEET.kinds} 第 ${row} 列（${kind}）`;
     const base = UNIT_CATALOG_BASE[kind];
     if (!base) { errors.push(`${at}：類型代碼不存在`); continue; }
@@ -141,7 +162,13 @@ async function main(): Promise<void> {
     if (ammo == null) continue;
     loadouts.get(kind)!.push({ weaponId, ammoMax: ammo, ...(range != null ? { rangeKm: range } : {}) });
   }
+  const missingKinds = kinds.filter((k) => !kindsInSheet.has(k));
+  if (missingKinds.length) {
+    warnings.push(`表格沒有這些單位類型（可能是較舊的表格），維持內建值：${missingKinds.join(", ")} — 建議執行 npm run assets:export 取得最新表格`);
+  }
   for (const [kind, lo] of loadouts) {
+    // 不在表格裡的類型不比對掛載（否則會被當成「無武器」而被清空）
+    if (!kindsInSheet.has(kind)) continue;
     if (!sameLoadout(lo, kindLoadout(UNIT_CATALOG_BASE[kind]))) {
       (out.kinds[kind] ??= {}).loadout = lo;
       changes.push(`類型 ${kind} 掛載：${formatLoadout(lo)}`);
@@ -194,6 +221,7 @@ import type { AssetOverrides } from "./assetOverrides";
 
 export const ASSET_OVERRIDES: AssetOverrides = ${JSON.stringify(out, null, 2)};
 `, "utf8");
+  for (const w of warnings) console.warn(`⚠ ${w}`);
   console.log(`✓ 已寫入 ${GENERATED_PATH}`);
   console.log(changes.length ? `  與內建值不同的項目（${changes.length}）：\n${changes.map((c) => `  · ${c}`).join("\n")}` : "  （與內建值完全相同，無覆寫）");
 }

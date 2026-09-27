@@ -91,6 +91,8 @@ async function main(): Promise<void> {
     [`武器代碼：${weaponIds.join(", ")}（__primary__ = 舊式合成主武器）`],
     [`目標域：${DOMAINS.join(", ")}　飛行剖面：${PROFILES.join(", ")}`],
     ["命中率 / 傷害比例為 0–1 的小數（傷害比例 = 命中時扣目標最大 HP 的比例）。"],
+    ["一次性攻擊 = 是：自殺無人機（SOWA / MOWA）。發現目標且在打擊距離內就撲擊，載台本身即彈體、發射後從戰場消失；飛行速度用單位的最大速度，可被近迫武器 / SAM 攔截。"],
+    ["登陸艦（landing_ship）：H 時登島作戰中，登陸區必須有登陸艦在區內並守住 20 分鐘，紅方才算登陸成功。"],
   ];
   lines.forEach(([text, bold], i) => {
     const c = readme.getCell(i + 1, 1);
@@ -142,12 +144,14 @@ async function main(): Promise<void> {
     { header: "可攔截剖面", key: "intercept", width: 26, note: `逗號分隔：${PROFILES.join(", ")}；空白 = 不能攔截` },
     { header: "飛行剖面", key: "profile", width: 12, note: PROFILES.join(", ") },
     { header: "冷卻 (秒)", key: "cooldown", width: 10 },
+    { header: "一次性攻擊", key: "oneWay", width: 11, note: "是 = 自殺無人機：發射時載台本身撲向目標並從戰場移除，飛行速度 = 單位最大速度" },
   ], weaponIds.map((id) => {
     const w = WEAPONS[id]!;
     return {
       id, name: w.name, range: w.rangeKm, pKill: w.pKill, damage: w.damageFrac ?? null,
       speed: w.speedKnots ?? null, domains: w.targetDomains.join(", "),
       intercept: (w.interceptProfiles ?? []).join(", "), profile: w.profile ?? null, cooldown: w.cooldownSec ?? null,
+      oneWay: w.oneWay ? "是" : "否",
     };
   }));
 

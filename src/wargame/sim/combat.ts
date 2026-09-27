@@ -92,7 +92,10 @@ function spawnOffenseMissile(attacker: Unit, target: Unit, lw: LoadedWeapon, sim
   const targetDomain = UNIT_CATALOG[target.kind].domain;
   const profile: MissileProfile =
     attacker.weaponProfile ?? lw.spec.profile ?? (targetDomain === "sea" ? "sea_skim" : "cruise");
-  const speed = lw.spec.speedKnots ?? PROFILE_SPEED_KNOTS[profile] ?? 600;
+  // 一次性攻擊：無人機本身撲向目標 → 飛行速度 = 載台最大速度
+  const speed = lw.spec.oneWay
+    ? attacker.core.speedKnots
+    : lw.spec.speedKnots ?? PROFILE_SPEED_KNOTS[profile] ?? 600;
   return {
     id: `msl-${simSec.toFixed(1)}-${attacker.id}-${target.id}-${lw.mag.weaponId}`,
     attackerId: attacker.id,
@@ -182,6 +185,21 @@ export function runCombat(
     if (!lw) continue;
     if (!shouldFire(u, target, missiles)) continue;
     missiles = [...missiles, spawnOffenseMissile(u, target, lw, simSec)];
+    if (lw.spec.oneWay) {
+      // 自殺無人機：載台即彈體 → 從戰場移除（不留殘骸、不計入被擊毀）
+      const { [u.id]: _expended, ...rest } = units;
+      units = rest;
+      events.push({
+        id: `evt-${simSec}-${u.id}-${target.id}-fire`,
+        simAtSec: simSec,
+        kind: "weapon_release",
+        attackerId: u.id,
+        targetId: target.id,
+        position: [u.position.lng, u.position.lat],
+        message: `${u.callsign} 自殺攻擊 → ${target.callsign}（${lw.spec.name}）`,
+      });
+      continue;
+    }
     // 扣該武器彈艙 1 發（同步 aggregate ammoCurrent）
     const fired = consumeAmmo(u, lw.mag.weaponId, simSec);
     units = { ...units, [u.id]: fired };

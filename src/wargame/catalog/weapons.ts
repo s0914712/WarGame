@@ -66,6 +66,15 @@ export const WEAPONS: Record<string, WeaponSpec> = {
     targetDomains: ["air"], interceptProfiles: ["cruise", "ballistic", "pop_up"],
     cooldownSec: 8, speedKnots: 4200,
   },
+  // 一次性攻擊無人機彈頭（SOWA / MOWA）：無人機本身就是彈體，可被點防禦 / SAM 攔截（cruise）
+  owa_small: {
+    id: "owa_small", name: "小型自殺無人機", rangeKm: "core", pKill: 0.7,
+    targetDomains: ["sea", "land"], profile: "cruise", damageFrac: 0.12, oneWay: true,
+  },
+  owa_medium: {
+    id: "owa_medium", name: "中型自殺無人機", rangeKm: "core", pKill: 0.65,
+    targetDomains: ["sea", "land"], profile: "cruise", damageFrac: 0.3, oneWay: true,
+  },
   // 近迫武器系統（純點防禦，不攻擊單位）
   ciws: {
     id: "ciws", name: "方陣近迫", rangeKm: 5, pKill: 0.5,

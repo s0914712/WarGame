@@ -44,6 +44,11 @@ function roleOf(kind: UnitKind): Role {
     // 無武裝偵察 UAV：不進攻，靠前推進當感測前哨（striker 的推進行為 + 零彈藥 → 只偵蒐不開火）
     case "uav_ruiyuan":      return "striker";
     case "uav_ruihuo":       return "striker";
+    // 一次性攻擊無人機：前推撲擊
+    case "sowa":             return "striker";
+    case "mowa":             return "striker";
+    // 登陸艦：跟水面艦一樣隨編隊（依航點前往登陸區）
+    case "landing_ship":     return "escort";
   }
 }
 
