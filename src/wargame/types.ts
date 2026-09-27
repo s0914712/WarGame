@@ -309,6 +309,8 @@ export interface EngagementEvent {
   /** 被擊毀單位所屬陣營（destroyed event 才有；BattleStatsHud 算 kills 用） */
   targetSideId?: SideId;
   position?: LngLat;
+  /** hit event 的實際傷害（hp）；地圖浮動傷害數字用 */
+  damage?: number;
   message: string;
 }
 

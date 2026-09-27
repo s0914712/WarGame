@@ -43,6 +43,17 @@
 .wg-flash   { animation: wg-flash-bg 1.4s ease-out; }
 .wg-glow-critical { animation: wg-glow-critical 1.2s ease-in-out infinite; }
 
+/* 戰報列：可點選的事件 hover 高亮 */
+.wg-log-clickable { cursor: pointer; }
+.wg-log-clickable:hover { background: rgba(96, 165, 250, 0.12) !important; }
+
+/* 指令卡：按鍵觸發的瞬間回饋 */
+@keyframes wg-key-press {
+  0%   { transform: scale(0.94); filter: brightness(1.6); }
+  100% { transform: scale(1);    filter: brightness(1); }
+}
+.wg-key-press { animation: wg-key-press 0.22s ease-out; }
+
 /* 通用 transition：所有 button hover 流暢 */
 button.wg-btn {
   transition: background 0.15s, border-color 0.15s, transform 0.1s;

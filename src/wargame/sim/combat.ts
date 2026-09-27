@@ -23,7 +23,7 @@ import { detectionRank, MIN_ENGAGE_STATE } from "./detection";
 import { isPeriscopeDepth } from "./sonar";
 import { planInterceptors } from "./airDefense";
 import { UNIT_CATALOG } from "../catalog/units";
-import { loadoutOf, consumeAmmo, PROFILE_SPEED_KNOTS, type LoadedWeapon } from "../catalog/weapons";
+import { loadoutOf, consumeAmmo, specOf, PROFILE_SPEED_KNOTS, type LoadedWeapon } from "../catalog/weapons";
 
 const MIN_ENGAGE_RANK = detectionRank(MIN_ENGAGE_STATE);
 
@@ -286,7 +286,7 @@ export function runCombat(
           attackerId: mi.attackerId,
           targetId: threat.attackerId,
           position: aim,
-          message: `攔截成功 — 擊落來襲飛彈`,
+          message: `${units[mi.attackerId]?.callsign ?? "防空"} 攔截成功 — 擊落來襲${specOf(threat.weaponId ?? "")?.name ?? "飛彈"}`,
         });
       } else {
         events.push({
@@ -295,7 +295,7 @@ export function runCombat(
           kind: "miss",
           attackerId: mi.attackerId,
           position: aim,
-          message: `攔截失敗 — 飛彈漏防`,
+          message: `${units[mi.attackerId]?.callsign ?? "防空"} 攔截失敗 — 來襲${specOf(threat.weaponId ?? "")?.name ?? "飛彈"}漏防`,
         });
       }
       continue;   // 攔截彈用畢消失
@@ -337,6 +337,7 @@ export function runCombat(
             attackerId: m.attackerId,
             targetId: target.id,
             position: m.targetPositionAtFire,
+            damage: dmg,
             message: `${target.callsign} 被命中 −${dmg} hp（剩 ${newHp}）`,
           });
           if (newHp <= 0) {
@@ -373,7 +374,7 @@ export function runCombat(
             attackerId: m.attackerId,
             targetId: target.id,
             position: m.targetPositionAtFire,
-            message: `${m.id} 落空`,
+            message: `${units[m.attackerId]?.callsign ?? "（已毀單位）"} 的${specOf(m.weaponId ?? "")?.name ?? "飛彈"}落空（目標 ${target.callsign}）`,
           });
         }
         explosions = [...explosions, mkExplosion(m, outcome.hit, simSec)];

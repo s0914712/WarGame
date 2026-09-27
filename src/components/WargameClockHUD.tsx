@@ -136,6 +136,8 @@ export function WargameClockHUD({ isMobile = false, embedded = false }: { isMobi
             border: "1px solid rgba(251, 191, 36, 0.4)",
             fontWeight: 700,
             letterSpacing: 1,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
           }}
         >
           {t("PAUSED")}

@@ -7,8 +7,9 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Map as MapboxMap } from "mapbox-gl";
 import {
   Menu, Eye, EyeOff, Languages, Bot, ClipboardList, Swords, GraduationCap, HelpCircle,
-  Monitor, Home, Map as MapIcon, Film,
+  Monitor, Home, Map as MapIcon, Film, Hexagon,
 } from "lucide-react";
+import { hexStore } from "../../wargame/hex/hexStore";
 import { WargameClockHUD } from "../WargameClockHUD";
 import { BattleStatsHud } from "../BattleStatsHud";
 import { ScenarioPicker } from "../ScenarioPicker";
@@ -61,6 +62,7 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
         <div style={{ flex: 1 }} />
         <ScenarioPicker map={map} inBar />
         <PovSelect />
+        <HexButton />
         <BarButton
           active={fow}
           accent="#22c55e"
@@ -97,14 +99,14 @@ function PovSelect() {
   const locked = net.role !== "off" && !!net.mySideId;
   const color = view === "spectator" ? "#94a3b8" : sides.find((s) => s.id === view)?.colorPrimary ?? "#94a3b8";
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#94a3b8" }} title="視角（POV）">
+    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#94a3b8", minWidth: 0, flexShrink: 1 }} title="視角（POV）">
       <span style={{ width: 10, height: 10, borderRadius: "50%", background: color, boxShadow: `0 0 6px ${color}` }} />
       <select
         value={view}
         disabled={locked}
         onChange={(e) => viewStore.setActiveView(e.target.value as ActiveView)}
         style={{
-          padding: "6px 8px", fontSize: 15, borderRadius: 6,
+          padding: "6px 8px", fontSize: 15, borderRadius: 6, maxWidth: 190, minWidth: 90,
           background: "rgba(30, 41, 59, 0.6)", color: "#e2e8f0",
           border: "1px solid rgba(148, 163, 184, 0.3)", cursor: locked ? "not-allowed" : "pointer",
           fontFamily: "inherit",
@@ -118,6 +120,18 @@ function PovSelect() {
 }
 
 function getSidesSig() { return scenarioStore.getState().scenario.sides.map((s) => s.id).join("|"); }
+
+// ── 六角格開關 ──
+function HexButton() {
+  useSyncExternalStore(hexStore.subscribe, hexStore.getVersion, hexStore.getVersion);
+  const on = hexStore.isVisible();
+  return (
+    <BarButton active={on} accent="#a78bfa" title={on ? "關閉六角格 / 勢力範圍" : "六角格 / 勢力範圍（每格 ≈ 100 km²）"}
+      onClick={() => hexStore.setVisible(!on)}>
+      <Hexagon size={15} />
+    </BarButton>
+  );
+}
 
 // ── ☰ 選單 ──
 function MainMenu({ styleId, onStyleChange, onOpenBriefing, onOpenCheat, multiplayer }: {
@@ -138,7 +152,7 @@ function MainMenu({ styleId, onStyleChange, onOpenBriefing, onOpenCheat, multipl
   const act = (fn: () => void) => () => { setOpen(false); fn(); };
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       <BarButton active={open} title="選單" onClick={() => setOpen((o) => !o)}>
         <Menu size={16} />
       </BarButton>
@@ -201,7 +215,7 @@ function BarButton({ children, onClick, title, active = false, accent = "#3b82f6
 }) {
   return (
     <button onClick={disabled ? undefined : onClick} title={title} className="wg-btn" disabled={disabled} style={{
-      height: 36, padding: "0 12px", borderRadius: 6,
+      height: 36, padding: "0 12px", borderRadius: 6, flexShrink: 0,
       display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
       border: `1px solid ${active ? accent : "rgba(148, 163, 184, 0.3)"}`,
       background: active ? `${accent}40` : "rgba(30, 41, 59, 0.6)",

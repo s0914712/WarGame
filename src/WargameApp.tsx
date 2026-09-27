@@ -16,6 +16,13 @@ import { LandingScreen } from "./components/LandingScreen";
 import { PlayerRosterHUD } from "./components/PlayerRosterHUD";
 import { uiStore } from "./wargame/uiStore";
 import { attachWargameCombatLayer } from "./map/wargameCombatLayer";
+import { attachWargameHexLayer } from "./map/wargameHexLayer";
+import { attachWargameObjectiveLayer } from "./map/wargameObjectiveLayer";
+import { attachWargameFxLayer } from "./map/wargameFxLayer";
+import { ObjectivesHud } from "./components/wargame/ObjectivesHud";
+import { ThreatAlert } from "./components/wargame/ThreatAlert";
+import { hexStore } from "./wargame/hex/hexStore";
+import { HexToolbar } from "./components/wargame/HexToolbar";
 import { attachWargameRadarLayer } from "./map/wargameRadarLayer";
 import { attachWargameWrecksLayer } from "./map/wargameWrecksLayer";
 import { attachWargameSelectionLayer } from "./map/wargameSelectionLayer";
@@ -71,6 +78,8 @@ export default function WargameApp() {
     loadWargameSymbols(map);
     registerFlagMarkers(map);
     detachersRef.current.push(
+      attachWargameHexLayer(map),   // 最底：六角格 / 勢力範圍壓在所有兵棋圖層下
+      attachWargameObjectiveLayer(map),
       attachWargameRadarLayer(map),
       attachWargameSelectionLayer(map),
       attachWargameSymbolLayer(map),
@@ -80,6 +89,7 @@ export default function WargameApp() {
       attachWargameSonobuoyLayer(map),
       attachWargameBearingLayer(map),
       attachWargameCombatLayer(map),
+      attachWargameFxLayer(map),    // 最上：浮動戰鬥文字 / 來襲警示環
     );
   }
 
@@ -106,6 +116,7 @@ export default function WargameApp() {
 
       // Click：三種模式（view / planRoute / placeUnit）
       map.on("click", (e) => {
+        if (hexStore.getBrush()) return;   // 六角格塗色中：點擊由 hex layer 處理
         const mode = editorStore.getMode();
         if (mode === "planRoute") {
           editorStore.appendWaypoint(e.lngLat.lng, e.lngLat.lat);
@@ -152,14 +163,15 @@ export default function WargameApp() {
       const updateCursor = () => {
         const canvas = map.getCanvas();
         const mode = editorStore.getMode();
+        if (hexStore.getBrush()) { canvas.style.cursor = "crosshair"; return; }
         canvas.style.cursor = (mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea") ? "crosshair" : "";
       };
       editorStore.subscribe(updateCursor);
       map.on("mouseenter", SYMBOL_LAYER_ID, () => {
-        if (editorStore.getMode() === "view") map.getCanvas().style.cursor = "pointer";
+        if (editorStore.getMode() === "view" && !hexStore.getBrush()) map.getCanvas().style.cursor = "pointer";
       });
       map.on("mouseleave", SYMBOL_LAYER_ID, () => {
-        if (editorStore.getMode() === "view") map.getCanvas().style.cursor = "";
+        if (editorStore.getMode() === "view" && !hexStore.getBrush()) map.getCanvas().style.cursor = "";
       });
 
       setMapReady(true);
@@ -251,6 +263,9 @@ export default function WargameApp() {
             onOpenBriefing={() => setBriefingOpen(true)}
             onOpenCheat={() => setCheatOpen(true)}
           />
+          <HexToolbar top={TOP_BAR_HEIGHT + 12} />
+          <ThreatAlert top={TOP_BAR_HEIGHT + 10} />
+          <ObjectivesHud map={mapRef.current} bottom={CONSOLE_HEIGHT + 34} />
           <UnitPalette hideLauncher />
           <CommandConsole />
           <CinemaControls map={mapRef.current} bottomOffset={CONSOLE_HEIGHT} />

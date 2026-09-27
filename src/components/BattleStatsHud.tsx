@@ -73,6 +73,37 @@ export function BattleStatsHud({ isMobile = false, embedded = false }: { isMobil
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const s = getSnapshot();
 
+  // 桌面頂部列（56px 高）：精簡版 — 只放盾牌色 + 存活/損失 + 戰力條，陣營全名在 tooltip（頂部列很擠，放名稱會把右側按鈕擠出畫面）
+  if (embedded && !isMobile) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#e2e8f0", fontFamily: "ui-sans-serif, system-ui, sans-serif", flexShrink: 0 }}>
+        {s.sides.map((side, i) => {
+          const total = side.stats.alive + side.stats.killed;
+          const frac = total > 0 ? side.stats.alive / total : 0;
+          return (
+            <div key={side.id} style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}
+              title={`${side.stats.displayName}：存活 ${side.stats.alive} · 損失 ${side.stats.killed}`}>
+              {i > 0 && <span style={{ color: "#475569", fontSize: 12, fontWeight: 700 }}>VS</span>}
+              <Shield size={16} color={side.stats.color} fill={side.stats.color} fillOpacity={0.2} style={{ flexShrink: 0 }} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, fontFamily: "ui-monospace, monospace", display: "flex", alignItems: "center", gap: 6, lineHeight: 1 }}>
+                  <PopNumber value={side.stats.alive} color={side.stats.color} />
+                  <span style={{ color: "#64748b", fontSize: 13, display: "flex", alignItems: "center", gap: 2 }}>
+                    <Skull size={11} />
+                    <PopNumber value={side.stats.killed} color="#94a3b8" />
+                  </span>
+                </span>
+                <span style={{ width: 56, height: 3, borderRadius: 2, background: "rgba(148,163,184,0.18)", overflow: "hidden" }}>
+                  <span style={{ display: "block", height: "100%", width: `${frac * 100}%`, background: side.stats.color, transition: "width 0.4s" }} />
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div
       style={embedded ? {

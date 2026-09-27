@@ -57,7 +57,7 @@ interface MkOpts {
   /**
    * 明確武器掛載 — 設了就**繞過** catalog defaultLoadout（避免新武器系統把 1958
    * 船艦塞進現代 sam_ship/ciws/asm/torpedo 組合，導致海戰互相攔截打不死人）。
-   * 1958 期：岸砲/艦砲 → asm（短射程，當砲彈用）、魚雷艇 → torpedo、補給艦 → 無武器。
+   * 1958 期：岸砲/艦砲 → gun（火砲）、魚雷艇 → torpedo、補給艦 → 無武器。
    */
   weapons?: Unit["weapons"];
 }
@@ -101,12 +101,12 @@ function mkUnit(
 }
 
 // 1958 期武器掛載（繞過現代 catalog defaultLoadout：避免 sam_ship/ciws 點防禦互相攔截）。
-// 引擎無「艦砲」武器 → 借 asm（短射程，當砲彈用）；魚雷艇用 torpedo。射程沿用 core.rangeKm。
-const GUN = (ammo: number): Unit["weapons"] => [{ weaponId: "asm", ammoCurrent: ammo, ammoMax: ammo }];
+// 岸砲 / 艦砲用 gun（火砲）；魚雷艇用 torpedo。射程沿用 core.rangeKm。
+const GUN = (ammo: number): Unit["weapons"] => [{ weaponId: "gun", ammoCurrent: ammo, ammoMax: ammo }];
 const TORP = (ammo: number): Unit["weapons"] => [{ weaponId: "torpedo", ammoCurrent: ammo, ammoMax: ammo }];
 
 // 岸砲共用調校：固定砲位、坑道硬化高 HP、跨海峽自我觀測。
-// 彈量刻意壓低（asm 每發 ~60% HP，太多發會把海上船團瞬間清空）→ 以反砲戰為主。
+// 彈量刻意壓低（gun 每發 ~60% HP，太多發會把海上船團瞬間清空）→ 以反砲戰為主。
 const ARTY = (rangeKm: number, hpMax = 120): MkOpts => ({
   core: { rangeKm, speedKnots: 0, movementRangeKm: 0, detectionRangeKm: 26, hpMax },
   weapons: GUN(10),

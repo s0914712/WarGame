@@ -76,6 +76,7 @@ function ScenarioPickerInner({ map, isMobile = false, embedded = false, inBar = 
       ref={ref}
       style={inBar ? {
         position: "relative",
+        minWidth: 0, flexShrink: 1,
       } : embedded ? {
         position: "relative",
         width: "100%",
@@ -102,11 +103,13 @@ function ScenarioPickerInner({ map, isMobile = false, embedded = false, inBar = 
           cursor: "pointer",
           display: "flex", alignItems: "center", gap: 8,
           width: embedded ? "100%" : undefined,
+          maxWidth: inBar ? "100%" : undefined,
         }}
+        title={inBar ? getScenarioName() : undefined}
       >
-        <Swords size={14} color="#fbbf24" />
+        <Swords size={14} color="#fbbf24" style={{ flexShrink: 0 }} />
         <span style={{ color: "#94a3b8", fontSize: 15 }}>{t("Scenario")}</span>
-        <span style={{ fontWeight: 600 }}>{getScenarioName()}</span>
+        <span style={{ fontWeight: 600, ...(inBar ? { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" } : {}) }}>{getScenarioName()}</span>
         <ChevronDown size={14} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
 

@@ -35,6 +35,13 @@ export const WEAPONS: Record<string, WeaponSpec> = {
     id: "asbm", name: "反艦彈道飛彈", rangeKm: "core", pKill: 0.5,
     targetDomains: ["sea", "land"], profile: "ballistic", speedKnots: 3200, damageFrac: 0.7,
   },
+  // 火砲（岸砲 / 艦砲，1958 等非飛彈年代場景用）。
+  // 命中 / 傷害 / 速度沿用 asm 的數值 → 換掉 asm 佔位不改變既有場景平衡；
+  // 彈道剖面 → 只有反彈道 SAM 能攔（現代點防禦不會攔砲彈）。
+  gun: {
+    id: "gun", name: "火砲", rangeKm: "core", pKill: 0.6,
+    targetDomains: ["sea", "land"], profile: "ballistic", speedKnots: 600, damageFrac: 0.6,
+  },
   // 魚雷（反艦 + 反潛）
   torpedo: {
     id: "torpedo", name: "重型魚雷", rangeKm: "core", pKill: 0.55,
