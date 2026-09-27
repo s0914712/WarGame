@@ -69,6 +69,12 @@ function mkUnit(
   };
 }
 
+/** 騰雲：純偵察無武裝、脆弱（hpMax 8）、偵測距離 20 km — 與 strait_2030 一致 */
+function tengYunRecon(u: Unit): Unit {
+  const core = { ...u.core, rangeKm: 0, hpMax: 8, detectionRangeKm: 20 };
+  return { ...u, core, hpCurrent: core.hpMax, ammoMax: 0, ammoCurrent: 0, weapons: [] };
+}
+
 const BLUE_UNITS: Unit[] = [
   // 4 雄三 ASM 部署於金門島
   mkUnit("BLUE-ML-01", "blue", "missile_launcher", "雄三-K1", "雄三車載 1（料羅灣）",      118.43, 24.42),
@@ -90,10 +96,10 @@ const BLUE_UNITS: Unit[] = [
   mkUnit("BLUE-RAD-01", "blue", "radar_station", "RAD-K01", "太武山雷達", 118.40, 24.43),
 
   // 1 UAV 偵察
-  mkUnit("BLUE-DR-01", "blue", "drone", "騰雲-K1", "騰雲 UAV", 118.45, 24.45, {
+  tengYunRecon(mkUnit("BLUE-DR-01", "blue", "drone", "騰雲-K1", "騰雲 UAV", 118.45, 24.45, {
     speedKnots: 180,
     waypoints: [[118.35, 24.50], [118.25, 24.45], [118.30, 24.40], [118.40, 24.45]],
-  }),
+  })),
 ];
 
 const RED_UNITS: Unit[] = [
