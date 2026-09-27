@@ -70,3 +70,105 @@ button.wg-btn:active {
 .wg-desktop-chrome .mapboxgl-ctrl-top-right { top: 56px; }
 .wg-desktop-chrome .mapboxgl-ctrl-bottom-left,
 .wg-desktop-chrome .mapboxgl-ctrl-bottom-right { bottom: 196px; }
+
+/* ── 主選單（LandingScreen）── */
+@keyframes wg-ld-kenburns {
+  from { transform: scale(1) translate(0, 0); }
+  to   { transform: scale(1.08) translate(-1.5%, 1%); }
+}
+.wg-ld-bg { animation: wg-ld-kenburns 32s ease-in-out infinite alternate; will-change: transform; }
+
+@keyframes wg-ld-in-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.wg-ld-in { animation: wg-ld-in-left 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@keyframes wg-ld-panel-in {
+  from { opacity: 0; transform: translateX(24px) scale(0.98); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+.wg-ld-panel { animation: wg-ld-panel-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@keyframes wg-ld-art-in {
+  from { transform: scale(1.12); filter: brightness(1.4) saturate(0.6); }
+  to   { transform: scale(1); filter: none; }
+}
+.wg-ld-art { animation: wg-ld-art-in 0.7s ease-out both; }
+
+/* 離場：整頁微放大 + 淡出，接地圖 flyTo */
+@keyframes wg-ld-exit {
+  0%   { opacity: 1; transform: scale(1); filter: none; }
+  40%  { opacity: 1; filter: brightness(1.35); }
+  100% { opacity: 0; transform: scale(1.06); filter: brightness(1.6) blur(2px); }
+}
+.wg-ld-exit { animation: wg-ld-exit 0.52s ease-in forwards; pointer-events: none; }
+
+/* 選單按鈕進場：動 translate（獨立屬性）而非 transform，
+   否則 fill-mode 會鎖住 transform、hover 右移失效 */
+@keyframes wg-ld-menu-in {
+  from { opacity: 0; translate: -28px 0; }
+  to   { opacity: 1; translate: 0 0; }
+}
+.wg-ld-menu-in { animation: wg-ld-menu-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* 選單按鈕 */
+.wg-ld-menu {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; text-align: left; cursor: pointer;
+  font-family: inherit; font-weight: 800; letter-spacing: 4px; color: #e2e8f0;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.35));
+  border: 1px solid rgba(233, 113, 50, 0.35);
+  border-left: 4px solid rgba(233, 113, 50, 0.55);
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+  transition: transform 0.18s ease, background 0.2s, border-color 0.2s, box-shadow 0.2s, color 0.2s;
+}
+.wg-ld-menu-label { flex: 1; }
+.wg-ld-menu-arrow {
+  font-size: 0.9em; color: #E97132; opacity: 0; transform: translateX(-8px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.wg-ld-menu:hover, .wg-ld-menu.is-active {
+  transform: translateX(10px);
+  color: #fff;
+  border-color: rgba(233, 113, 50, 0.9);
+  border-left-color: #E97132;
+  background: linear-gradient(90deg, rgba(233, 113, 50, 0.45), rgba(233, 113, 50, 0.08) 70%, rgba(15, 23, 42, 0.2));
+  box-shadow: 0 0 24px rgba(233, 113, 50, 0.35), inset 0 0 18px rgba(233, 113, 50, 0.15);
+}
+.wg-ld-menu:hover .wg-ld-menu-arrow, .wg-ld-menu.is-active .wg-ld-menu-arrow { opacity: 1; transform: translateX(0); }
+.wg-ld-menu:active { transform: translateX(10px) scale(0.97); }
+.wg-ld-menu:focus-visible { outline: 2px solid #fdba74; outline-offset: 2px; }
+
+/* 點擊掃光：一道亮帶由左掃到右 */
+@keyframes wg-ld-sweep {
+  from { transform: translateX(-120%) skewX(-20deg); opacity: 1; }
+  to   { transform: translateX(260%) skewX(-20deg); opacity: 0; }
+}
+@keyframes wg-ld-press {
+  0%   { transform: translateX(10px) scale(0.95); }
+  60%  { transform: translateX(14px) scale(1.02); }
+  100% { transform: translateX(10px) scale(1); }
+}
+.wg-ld-menu.is-pressed { animation: wg-ld-press 0.32s ease-out both; }
+.wg-ld-menu.is-pressed::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 237, 213, 0.75), transparent);
+  animation: wg-ld-sweep 0.55s ease-out forwards; pointer-events: none;
+}
+
+/* 戰役面板：紀錄片入口微光 / 開始鈕呼吸光 */
+@keyframes wg-ld-glow {
+  0%, 100% { box-shadow: 0 8px 24px rgba(233, 113, 50, 0.3); }
+  50%      { box-shadow: 0 8px 32px rgba(233, 113, 50, 0.65); }
+}
+.wg-ld-start { animation: wg-ld-glow 2s ease-in-out infinite; }
+.wg-ld-feature:hover { border-color: #E97132 !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wg-ld-bg, .wg-ld-start { animation: none; }
+  .wg-ld-in, .wg-ld-panel, .wg-ld-art, .wg-ld-menu.is-pressed { animation-duration: 0.01s; }
+}
