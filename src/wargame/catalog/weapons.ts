@@ -10,6 +10,7 @@
  * loadout entry 可用 rangeKm 覆寫成固定值（如 ASW 魚雷 18km）。
  */
 import type { MissileProfile, Unit, WeaponMagazine, WeaponSpec } from "../types";
+import { applyWeaponOverrides } from "./assetOverrides";
 
 /** 各飛行剖面的飛彈速度（knots）；武器未指定 speedKnots 時的 fallback */
 export const PROFILE_SPEED_KNOTS: Record<MissileProfile, number> = {
@@ -72,6 +73,10 @@ export const WEAPONS: Record<string, WeaponSpec> = {
     cooldownSec: 3, speedKnots: 1500,
   },
 };
+
+/** 內建數值快照（套用資產表覆寫前）— assets:import 用來算差異 */
+export const WEAPONS_BASE: Record<string, WeaponSpec> = structuredClone(WEAPONS);
+applyWeaponOverrides(WEAPONS);
 
 export interface LoadedWeapon {
   spec: WeaponSpec;
