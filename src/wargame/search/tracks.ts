@@ -243,14 +243,21 @@ function generateLadder(input: GenerateTracksInput, legsAlongLongAxis: boolean):
   // 先算出每條航段在區內的區間（矩形時就是整條）
   const legs = Array.from({ length: totalLegs }, (_, legIdx) => {
     // 文件：第一條航跡距邊 ½ S，之後每條 +1 S
-    const creepOff = Math.min((legIdx + 0.5) * S, creepLenNm);
+    // 多邊形：最後一條若超出範圍，改放在剩餘條帶的中線 —— 夾到遠側邊上
+    // 常常只碰到一個頂點（如三角形尖端），裁出來的航段長度趨近 0
+    const nominal = (legIdx + 0.5) * S;
+    const creepOff = polyLocal && nominal > creepLenNm
+      ? (legIdx * S + creepLenNm) / 2
+      : Math.min(nominal, creepLenNm);
     return { creepOff, intervals: intervalsFor(creepOff) };
   }).filter((l) => l.intervals.length > 0);   // 多邊形在該航段上沒有面積 → 略過
 
   // 分配給各機（連續切塊）：
   //   矩形 → 各段等長，照條數均分（餘數分給前幾架）
   //   多邊形 → 各段長短不一，改依累計長度均分，避免某架負擔遠多於他機
-  const legLen = (l: (typeof legs)[number]) => l.intervals.reduce((acc, [s0, e0]) => acc + (e0 - s0), 0);
+  // 以實際飛行跨距計（含凹多邊形區間之間跨越缺口的那段）
+  const legLen = (l: (typeof legs)[number]) =>
+    (l.intervals[l.intervals.length - 1]?.[1] ?? 0) - (l.intervals[0]?.[0] ?? 0);
   const counts: number[] = [];
   if (!polyLocal) {
     const base = Math.floor(legs.length / n);
