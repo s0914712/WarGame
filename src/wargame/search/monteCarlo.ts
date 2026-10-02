@@ -40,7 +40,7 @@ import type { LngLat } from "../types";
 import { makeRng } from "../sim/rng";
 import { KM_PER_NM } from "./patterns";
 import type { DroneTrack, SearchBox } from "./tracks";
-import { measureBox } from "./tracks";
+import { measureBox, pointInPolygon } from "./tracks";
 
 const KM_PER_DEG_LAT = 111.32;
 
@@ -53,6 +53,8 @@ export type TargetDistribution =
 
 export interface MonteCarloInput {
   box: SearchBox;
+  /** 多邊形搜索區（box 為其外接框）；均勻分布時只在多邊形內撒目標 */
+  polygon?: LngLat[];
   tracks: DroneTrack[];
   /** 修正後掃掠寬度（浬）—— 決定橫向距離函數 */
   sweepWidthNm: number;
@@ -224,6 +226,9 @@ export function runMonteCarlo(input: MonteCarloInput): MonteCarloResult {
   const gaussianTarget = input.distribution.kind === "gaussian" ? input.distribution : null;
   const datumLocal = gaussianTarget ? toLocalNm(gaussianTarget.datum, origin) : null;
   const k = (input.sweepWidthNm * input.sweepWidthNm) / (4 * Math.PI);
+  const polyLocal = input.polygon && input.polygon.length >= 3
+    ? input.polygon.map((p) => toLocalNm(p, origin))
+    : null;
 
   for (let t = 0; t < trials; t++) {
     // ── 目標初始位置 ──
@@ -234,6 +239,13 @@ export function runMonteCarlo(input: MonteCarloInput): MonteCarloResult {
     } else {
       tx = rng() * m.widthNm;
       ty = rng() * m.heightNm;
+      // 多邊形：拒絕取樣（上限次數保底，避免極細長多邊形卡住）
+      if (polyLocal) {
+        for (let tries = 0; tries < 200 && !pointInPolygon(tx, ty, polyLocal); tries++) {
+          tx = rng() * m.widthNm;
+          ty = rng() * m.heightNm;
+        }
+      }
     }
 
     // ── 漂移 ──

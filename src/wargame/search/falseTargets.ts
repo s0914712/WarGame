@@ -107,6 +107,8 @@ export function integrateDensity(
   field: DensityField,
   box: { west: number; east: number; south: number; north: number },
   samples = 40,
+  /** 只累計落在此判斷式內的格點（多邊形搜索區用）；省略 = 整個框 */
+  inside?: (lng: number, lat: number) => boolean,
 ): number {
   const midLat = (box.north + box.south) / 2;
   const wNm = ((box.east - box.west) * KM_PER_DEG_LAT_LOCAL * Math.cos((midLat * Math.PI) / 180)) / KM_PER_NM_LOCAL;
@@ -117,6 +119,7 @@ export function integrateDensity(
     for (let j = 0; j < samples; j++) {
       const lng = box.west + ((i + 0.5) / samples) * (box.east - box.west);
       const lat = box.south + ((j + 0.5) / samples) * (box.north - box.south);
+      if (inside && !inside(lng, lat)) continue;
       total += densityAt(field, lng, lat) * cellArea;
     }
   }
@@ -131,8 +134,9 @@ export function calibrateBaseDensity(
   field: DensityField,
   box: { west: number; east: number; south: number; north: number },
   targetCount: number,
+  inside?: (lng: number, lat: number) => boolean,
 ): number {
-  const unit = integrateDensity({ ...field, baseDensityPerNm2: 1 }, box);
+  const unit = integrateDensity({ ...field, baseDensityPerNm2: 1 }, box, 40, inside);
   return unit > 0 ? Math.max(0, targetCount) / unit : 0;
 }
 

@@ -2,7 +2,7 @@
  * 搜索規劃器 external store。
  *
  * 與 scenarioStore / editorStore 平行；持有：
- *   - 搜索區（地圖兩角框）
+ *   - 搜索區（地圖兩角框，或手動輸入經緯度的多邊形 3–10 點）
  *   - 感測 / 環境 / 機隊參數
  *   - 解算方向（正解 = 給架數求時間；反解 = 給時間求架數）
  *   - 產生的搜索航線 + 指派到哪些單位
@@ -22,7 +22,11 @@ import {
 import type { SearchTargetClass, SweepWidthCorrections } from "./sweepWidth";
 import type { PodModel } from "./pod";
 import type { SearchPatternId } from "./patterns";
-import { boxFromCorners, generateSearchTracks, measureBox, type DroneTrack } from "./tracks";
+import {
+  boxFromCorners, boxFromPolygon, generateSearchTracks, measureBox, pointInPolygon,
+  polygonAreaNm2, validatePolygon,
+  type DroneTrack, type PolygonIssue, type SearchBox,
+} from "./tracks";
 import { runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
 import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
 import {
@@ -223,6 +227,12 @@ let open = false;
 let picking = false;
 let cornerA: LngLat | null = null;
 let cornerB: LngLat | null = null;
+/**
+ * 手動輸入的多邊形搜索區。設定時 cornerA/B 同步成其外接框，
+ * 讓只認框的計算（事前分布、最佳矩形、標籤位置）照常運作；
+ * 面積、航線裁切、蒙地卡羅撒點、假目標密度則以多邊形為準。
+ */
+let polygon: LngLat[] | null = null;
 let inputs: PlannerInputs = { ...DEFAULT_INPUTS };
 let tracks: DroneTrack[] = [];
 let assignedUnitIds: UnitId[] = [];
@@ -269,11 +279,27 @@ export function assetProfileFromUnit(u: Unit): Partial<PlannerInputs> {
   };
 }
 
-function geometry(): SearchAreaGeometry | null {
+/** 搜索區外接框（矩形時即本身） */
+function areaBox(): SearchBox | null {
+  if (polygon) return boxFromPolygon(polygon);
   if (!cornerA || !cornerB) return null;
-  const m = measureBox(boxFromCorners(cornerA, cornerB));
-  if (!(m.areaNm2 > 0)) return null;
-  return { areaNm2: m.areaNm2, longSideNm: m.longSideNm, shortSideNm: m.shortSideNm };
+  return boxFromCorners(cornerA, cornerB);
+}
+
+/** 多邊形時的內外判斷式；矩形時 undefined（= 整個框） */
+function insideArea(): ((lng: number, lat: number) => boolean) | undefined {
+  const poly = polygon;
+  return poly ? (lng, lat) => pointInPolygon(lng, lat, poly) : undefined;
+}
+
+function geometry(): SearchAreaGeometry | null {
+  const box = areaBox();
+  if (!box) return null;
+  const m = measureBox(box);
+  // 多邊形：面積取實際面積；長短邊沿用外接框（只用於長寬比 → 圖形建議）
+  const areaNm2 = polygon ? polygonAreaNm2(polygon) : m.areaNm2;
+  if (!(areaNm2 > 0)) return null;
+  return { areaNm2, longSideNm: m.longSideNm, shortSideNm: m.shortSideNm };
 }
 
 function sensor(): SensorConditions {
@@ -357,12 +383,11 @@ export function currentRangeLimits(): RangeLimits {
 
 export function densityField(): DensityField {
   const bands = inputs.densityBandsEnabled ? densityBands : [];
-  const { a, b } = { a: cornerA, b: cornerB };
-  if (!a || !b) return { baseDensityPerNm2: 0, bands };
-  const box = boxFromCorners(a, b);
+  const box = areaBox();
+  if (!box) return { baseDensityPerNm2: 0, bands };
   const field: DensityField = { baseDensityPerNm2: 1, bands };
   return {
-    baseDensityPerNm2: calibrateBaseDensity(field, box, inputs.expectedFalseTargetsInArea),
+    baseDensityPerNm2: calibrateBaseDensity(field, box, inputs.expectedFalseTargetsInArea, insideArea()),
     bands,
   };
 }
@@ -495,6 +520,8 @@ export const searchPlannerStore = {
   isOpen: () => open,
   isPicking: () => picking,
   getCorners: () => ({ a: cornerA, b: cornerB }),
+  /** 手動輸入的多邊形搜索區；null = 使用兩角框 */
+  getPolygon: () => polygon,
   getInputs: () => inputs,
   getTracks: () => tracks,
   getMonteCarlo: () => mcResult,
@@ -519,6 +546,7 @@ export const searchPlannerStore = {
     loggingContact = false;
     cornerA = null;
     cornerB = null;
+    polygon = null;
     tracks = [];
     mcResult = null;
     wargameClock.pause();
@@ -528,6 +556,7 @@ export const searchPlannerStore = {
   /** 地圖點擊：第 1 點存 A、第 2 點存 B 並自動結束框選 */
   setCorner(lng: number, lat: number): void {
     if (!picking) return;
+    polygon = null;
     if (!cornerA || cornerB) {
       cornerA = [lng, lat];
       cornerB = null;
@@ -545,9 +574,29 @@ export const searchPlannerStore = {
     notify();
   },
 
+  /**
+   * 以經緯度頂點（3–10 點，依序連成封閉多邊形）設定搜索區。
+   * 不合法時不變更狀態，回傳問題代碼；成功回傳 null。
+   */
+  setPolygon(points: LngLat[]): PolygonIssue | null {
+    const pts = points.map(([lng, lat]) => [lng, lat] as LngLat);
+    const issue = validatePolygon(pts);
+    if (issue) return issue;
+    polygon = pts;
+    const box = boxFromPolygon(pts);
+    cornerA = [box.west, box.south];
+    cornerB = [box.east, box.north];
+    picking = false;
+    tracks = [];
+    mcResult = null;
+    notify();
+    return null;
+  },
+
   clearArea(): void {
     cornerA = null;
     cornerB = null;
+    polygon = null;
     tracks = [];
     mcResult = null;
     notify();
@@ -588,12 +637,13 @@ export const searchPlannerStore = {
   /** 依當前解算結果產生搜索航線 */
   generateTracks(): DroneTrack[] {
     const sol = solve();
-    if (!sol || !cornerA || !cornerB) { tracks = []; mcResult = null; notify(); return tracks; }
-    const box = boxFromCorners(cornerA, cornerB);
+    const box = areaBox();
+    if (!sol || !box) { tracks = []; mcResult = null; notify(); return tracks; }
     const m = measureBox(box);
     tracks = generateSearchTracks({
       pattern: sol.pattern,
       box,
+      polygon: polygon ?? undefined,
       trackSpacingNm: sol.trackSpacingNm,
       droneCount: sol.droneCount,
       radiusNm: Math.min(m.shortSideNm / 2, sol.pattern === "VS" ? 5 : m.shortSideNm / 2),
@@ -609,15 +659,16 @@ export const searchPlannerStore = {
    */
   runMonteCarlo(): MonteCarloResult | null {
     const sol = solve();
-    if (!sol || tracks.length === 0 || !cornerA || !cornerB) return null;
+    const box = areaBox();
+    if (!sol || tracks.length === 0 || !box) return null;
     const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
-    const box = boxFromCorners(cornerA, cornerB);
     const centre = measureBox(box).centre;
     const distribution: TargetDistribution = inputs.mcDistributionKind === "gaussian"
       ? { kind: "gaussian", datum: centre, sigmaNm: inputs.mcSigmaNm }
       : { kind: "uniform" };
     mcResult = runMonteCarlo({
       box, tracks,
+      polygon: polygon ?? undefined,
       sweepWidthNm: W,
       speedKn: inputs.speedKn,
       distribution,
@@ -704,6 +755,7 @@ export const searchPlannerStore = {
     const halfLngNm = sol.rectangle.best.length1Nm / 2;
     const dLat = (halfLatNm * 1.852) / 111.32;
     const dLng = (halfLngNm * 1.852) / (111.32 * Math.cos((cLat * Math.PI) / 180));
+    polygon = null;
     cornerA = [cLng - dLng, cLat - dLat];
     cornerB = [cLng + dLng, cLat + dLat];
     tracks = [];
@@ -790,8 +842,9 @@ export const searchPlannerStore = {
 
   /** 搜索區內假目標期望總數（對密度場積分，分帶時仍等於使用者輸入的個數） */
   integratedFalseTargets(): number {
-    if (!cornerA || !cornerB) return 0;
-    return integrateDensity(densityField(), boxFromCorners(cornerA, cornerB));
+    const box = areaBox();
+    if (!box) return 0;
+    return integrateDensity(densityField(), box, 40, insideArea());
   },
 
   setAssignedUnitIds(ids: UnitId[]): void {
