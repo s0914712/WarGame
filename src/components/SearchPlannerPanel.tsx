@@ -11,14 +11,16 @@
  * 面板同時服務兵推模式與 standalone 搜索規劃 app。
  */
 import { useState, useSyncExternalStore } from "react";
-import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin } from "lucide-react";
+import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste } from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
   currentRangeLimits,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
-import { TRACK_COLORS } from "../wargame/search/tracks";
+import { MAX_POLYGON_VERTICES, TRACK_COLORS } from "../wargame/search/tracks";
+import type { LngLat } from "../wargame/types";
+import type { SearchStrings } from "../wargame/search/i18n";
 import { suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
 import { useLang } from "../wargame/i18n/lang";
@@ -51,6 +53,8 @@ export function SearchPlannerPanel(
   const picking = searchPlannerStore.isPicking();
   const inputs = searchPlannerStore.getInputs();
   const { a, b } = searchPlannerStore.getCorners();
+  const polygon = searchPlannerStore.getPolygon();
+  const [polyOpen, setPolyOpen] = useState(false);
   const tracks = searchPlannerStore.getTracks();
   const assigned = searchPlannerStore.getAssignedUnitIds();
   const mc = searchPlannerStore.getMonteCarlo();
@@ -158,9 +162,13 @@ export function SearchPlannerPanel(
       <div style={embedded ? bodyEmbedded : body}>
         {/* ① 搜索區 */}
         <Section title={t.secArea}>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <button className="wg-btn" style={primaryBtn} onClick={() => searchPlannerStore.startPickArea()}>
               <Crosshair size={13} /> {t.pickOnMap}
+            </button>
+            <button className="wg-btn" style={{ ...smallBtn, ...(polyOpen ? { borderColor: "#facc15", color: "#fef9c3" } : {}) }}
+              onClick={() => setPolyOpen((v) => !v)}>
+              <Hexagon size={12} /> {t.polyInput}
             </button>
             {a && b && (
               <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.clearArea()}>
@@ -168,9 +176,12 @@ export function SearchPlannerPanel(
               </button>
             )}
           </div>
+          {polyOpen && <PolygonEditor t={t} polygon={polygon} corners={a && b ? [a, b] : null} />}
           {sol ? (
             <div style={readout}>
-              {sol.area.longSideNm.toFixed(1)} × {sol.area.shortSideNm.toFixed(1)} nm
+              {polygon
+                ? <>{t.polyArea} {polygon.length} {t.polyVertices}</>
+                : <>{sol.area.longSideNm.toFixed(1)} × {sol.area.shortSideNm.toFixed(1)} nm</>}
               {"  ·  "}<b style={{ color: "#fef9c3" }}>{sol.area.areaNm2.toFixed(0)} nm²</b>
             </div>
           ) : (
@@ -860,6 +871,123 @@ function PodCurve({ data, title, hoursLabel }: {
 }
 
 // ── 小元件 ────────────────────────────────────────────────
+/**
+ * 手動輸入多邊形頂點（3–10 點）建立搜索區。
+ * 欄位以字串保存，允許輸入過程中出現「-」「119.」等暫時不合法的值；
+ * 按「建立搜索區」時才解析並交給 store 驗證（自相交、面積 0 等）。
+ */
+function PolygonEditor({ t, polygon, corners }: {
+  t: SearchStrings; polygon: LngLat[] | null; corners: [LngLat, LngLat] | null;
+}) {
+  const initial = (): [string, string][] => {
+    if (polygon) return polygon.map(([lng, lat]) => [String(lng), String(lat)]);
+    if (corners) {
+      // 以目前框的四角起頭，方便在其上修改
+      const [[x1, y1], [x2, y2]] = corners;
+      const w = Math.min(x1, x2), e = Math.max(x1, x2), s = Math.min(y1, y2), n = Math.max(y1, y2);
+      return ([[w, s], [e, s], [e, n], [w, n]] as LngLat[]).map(([lng, lat]) => [lng.toFixed(4), lat.toFixed(4)]);
+    }
+    return [["", ""], ["", ""], ["", ""]];
+  };
+  const [rows, setRows] = useState<[string, string][]>(initial);
+  const [error, setError] = useState<string | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+
+  const setCell = (i: number, col: 0 | 1, v: string) => {
+    setRows((rs) => rs.map((r, k) => (k === i ? (col === 0 ? [v, r[1]] : [r[0], v]) : r)));
+    setError(null);
+  };
+  const removeRow = (i: number) => { setRows((rs) => rs.filter((_, k) => k !== i)); setError(null); };
+  const addRow = () => {
+    if (rows.length >= MAX_POLYGON_VERTICES) return;
+    setRows((rs) => [...rs, ["", ""]]);
+  };
+
+  const apply = () => {
+    // 全空的列直接忽略，方便保留多餘空白列
+    const filled = rows.filter(([x, y]) => x.trim() !== "" || y.trim() !== "");
+    const pts: LngLat[] = filled.map(([x, y]) => [Number(x), Number(y)]);
+    if (filled.some(([x, y]) => x.trim() === "" || y.trim() === "")) {
+      setError(t.polyIssue.invalid_coord);
+      return;
+    }
+    const issue = searchPlannerStore.setPolygon(pts);
+    setError(issue ? t.polyIssue[issue] : null);
+  };
+
+  /** 解析貼上的文字：每行「經度, 緯度」（逗號 / 空白 / tab 分隔皆可） */
+  const loadPaste = () => {
+    const parsed: [string, string][] = [];
+    for (const line of pasteText.split(/\r?\n/)) {
+      const parts = line.trim().split(/[\s,，;；]+/).filter(Boolean);
+      if (parts.length === 0) continue;
+      const [x, y] = parts;
+      if (parts.length !== 2 || x === undefined || y === undefined
+        || !Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) {
+        setError(t.polyIssue.parse_failed);
+        return;
+      }
+      parsed.push([x, y]);
+    }
+    if (parsed.length > MAX_POLYGON_VERTICES) { setError(t.polyIssue.too_many); return; }
+    if (parsed.length === 0) { setError(t.polyIssue.parse_failed); return; }
+    setRows(parsed);
+    setPasteOpen(false);
+    setError(null);
+  };
+
+  const cellInput: React.CSSProperties = { ...numInput, flex: 1, width: "auto", minWidth: 0 };
+
+  return (
+    <div style={{
+      marginTop: 6, padding: "8px 9px", borderRadius: 4,
+      background: "rgba(30,41,59,0.5)", border: "1px solid rgba(148,163,184,0.2)",
+    }}>
+      <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5, marginBottom: 6 }}>{t.polyHint}</div>
+      <div style={{ display: "flex", gap: 6, fontSize: 13, color: "#64748b", marginBottom: 3, paddingLeft: 22 }}>
+        <span style={{ flex: 1 }}>{t.polyLng}</span>
+        <span style={{ flex: 1 }}>{t.polyLat}</span>
+        <span style={{ width: 26 }} />
+      </div>
+      {rows.map(([x, y], i) => (
+        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+          <span style={{ width: 16, fontSize: 13, color: "#94a3b8", textAlign: "right" }}>{i + 1}</span>
+          <input style={cellInput} inputMode="decimal" value={x} placeholder="119.50"
+            onChange={(e) => setCell(i, 0, e.target.value)} />
+          <input style={cellInput} inputMode="decimal" value={y} placeholder="23.20"
+            onChange={(e) => setCell(i, 1, e.target.value)} />
+          <button className="wg-btn" style={{ ...smallBtn, padding: "4px 6px" }}
+            onClick={() => removeRow(i)} disabled={rows.length <= 1} aria-label="remove">
+            <X size={12} />
+          </button>
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+        <button className="wg-btn" style={{ ...smallBtn, opacity: rows.length >= MAX_POLYGON_VERTICES ? 0.4 : 1 }}
+          onClick={addRow} disabled={rows.length >= MAX_POLYGON_VERTICES}>
+          <Plus size={12} /> {t.polyAddPoint} ({rows.length}/{MAX_POLYGON_VERTICES})
+        </button>
+        <button className="wg-btn" style={smallBtn} onClick={() => setPasteOpen((v) => !v)}>
+          <ClipboardPaste size={12} /> {t.polyPaste}
+        </button>
+      </div>
+      {pasteOpen && (
+        <div style={{ marginTop: 6 }}>
+          <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)}
+            placeholder={t.polyPastePlaceholder} rows={5}
+            style={{ ...numInput, width: "100%", boxSizing: "border-box", resize: "vertical" }} />
+          <button className="wg-btn" style={{ ...smallBtn, marginTop: 4 }} onClick={loadPaste}>{t.polyParse}</button>
+        </div>
+      )}
+      {error && <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 6 }}>{error}</div>}
+      <button className="wg-btn" style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={apply}>
+        <Hexagon size={13} /> {t.polyApply}
+      </button>
+    </div>
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ borderBottom: "1px solid rgba(148,163,184,0.15)", paddingBottom: 10, marginBottom: 10 }}>

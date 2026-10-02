@@ -2,14 +2,14 @@
  * 搜索規劃圖層 — 搜索區框 + 掃掠帶 + 產生的搜索航線。
  *
  * 訂閱 searchPlannerStore：
- *   - 搜索區（兩角框）+ 面積 / POD 標籤
+ *   - 搜索區（兩角框或多邊形）+ 面積 / POD 標籤
  *   - 各架無人機的搜索航線（依序號分色）
  *   - 掃掠帶（沿航線加寬 W，直觀顯示覆蓋率）
  */
 import type { Map as MapboxMap } from "mapbox-gl";
 import type { LngLat } from "../wargame/types";
 import { searchPlannerStore, solve } from "../wargame/search/searchPlannerStore";
-import { measureBox, boxFromCorners, TRACK_COLORS } from "../wargame/search/tracks";
+import { measureBox, boxFromCorners, polygonAreaNm2, TRACK_COLORS } from "../wargame/search/tracks";
 import { SEARCH_PATTERNS } from "../wargame/search/patterns";
 import { langStore } from "../wargame/i18n/lang";
 import { searchStrings } from "../wargame/search/i18n";
@@ -33,6 +33,7 @@ const LAYER_BOX = "wg-search-box";
 const LAYER_TRACKS = "wg-search-tracks";
 const LAYER_TRACK_PTS = "wg-search-track-pts";
 const LAYER_LABEL = "wg-search-label";
+const LAYER_VERTEX = "wg-search-vertex";
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -48,15 +49,21 @@ function buildBox(): GeoJSON.FeatureCollection {
     ] };
   }
   const box = boxFromCorners(a, b);
-  const ring: [number, number][] = [
-    [box.west, box.south], [box.east, box.south],
-    [box.east, box.north], [box.west, box.north], [box.west, box.south],
-  ];
+  const polygon = searchPlannerStore.getPolygon();
+  const ring: [number, number][] = polygon
+    ? [...polygon, polygon[0] as LngLat]
+    : [
+      [box.west, box.south], [box.east, box.south],
+      [box.east, box.north], [box.west, box.north], [box.west, box.south],
+    ];
   const m = measureBox(box);
   const sol = solve();
 
   const t = searchStrings(lang());
-  let label = `${t.secArea.replace(/^[①1][. ]*/, "")} ${m.widthNm.toFixed(1)}×${m.heightNm.toFixed(1)} nm · ${m.areaNm2.toFixed(0)} nm²`;
+  const areaName = t.secArea.replace(/^[①1][. ]*/, "");
+  let label = polygon
+    ? `${areaName} ${t.polyArea} ${polygon.length} ${t.polyVertices} · ${polygonAreaNm2(polygon).toFixed(0)} nm²`
+    : `${areaName} ${m.widthNm.toFixed(1)}×${m.heightNm.toFixed(1)} nm · ${m.areaNm2.toFixed(0)} nm²`;
   if (sol) {
     const pat = SEARCH_PATTERNS[sol.pattern][lang()];
     const pod = sol.forward ? sol.forward.pod : sol.inverse?.achievedPod ?? 0;
@@ -70,6 +77,10 @@ function buildBox(): GeoJSON.FeatureCollection {
     type: "FeatureCollection",
     features: [
       { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } },
+      // 多邊形頂點標記
+      ...(polygon ?? []).map((p, i): GeoJSON.Feature => ({
+        type: "Feature", properties: { vertex: i + 1 }, geometry: { type: "Point", coordinates: p },
+      })),
       { type: "Feature", properties: { label }, geometry: { type: "Point", coordinates: [(box.west + box.east) / 2, box.north] } },
     ],
   };
@@ -195,7 +206,7 @@ function buildContacts(): GeoJSON.FeatureCollection {
 }
 
 export function attachWargameSearchLayer(map: MapboxMap): () => void {
-  const all = [LAYER_CONTACT_LABEL, LAYER_CONTACTS, LAYER_LABEL, LAYER_TRACK_PTS, LAYER_TRACKS,
+  const all = [LAYER_CONTACT_LABEL, LAYER_CONTACTS, LAYER_LABEL, LAYER_VERTEX, LAYER_TRACK_PTS, LAYER_TRACKS,
     LAYER_OPT, LAYER_BOX, LAYER_SWEEP, LAYER_BANDS, LAYER_PROB];
   for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
   for (const id of [SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
@@ -301,10 +312,20 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
     paint: { "text-color": "#0f172a" },
   });
 
+  // 多邊形頂點
+  map.addLayer({
+    id: LAYER_VERTEX, type: "circle", source: SRC_BOX,
+    filter: ["has", "vertex"],
+    paint: {
+      "circle-radius": 4, "circle-color": "#facc15",
+      "circle-stroke-color": "#0f172a", "circle-stroke-width": 1.5,
+    },
+  });
+
   // 區域標籤
   map.addLayer({
     id: LAYER_LABEL, type: "symbol", source: SRC_BOX,
-    filter: ["==", ["geometry-type"], "Point"],
+    filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "vertex"]]],
     layout: {
       "text-field": ["get", "label"], "text-size": 13, "text-anchor": "bottom",
       "text-offset": [0, -0.6], "text-allow-overlap": true, "text-line-height": 1.3,
