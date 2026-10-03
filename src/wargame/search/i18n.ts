@@ -117,7 +117,10 @@ export interface SearchStrings {
   polyDeg: string; polyMin: string; polySec: string; polyHemiToggle: string;
   polyAddPoint: string; polyApply: string; polyPaste: string; polyPastePlaceholder: string;
   polyParse: string; polyArea: string; polyVertices: string;
-  polyIssue: Record<"too_few" | "too_many" | "invalid_coord" | "self_intersecting" | "zero_area" | "parse_failed", string>;
+  polyIssue: Record<"too_few" | "too_many" | "invalid_coord" | "self_intersecting" | "zero_area" | "parse_failed" | "no_polygon", string>;
+  polyOrderLngLat: string; polyOrderLatLng: string; polyMoveUp: string; polyMoveDown: string;
+  polyAutoSort: string; polySorted: string; polyAlreadySorted: string;
+  polyImport: string; polyExport: string; polyImported: string;
   dirGivenAssets: string; dirGivenTime: string;
   droneCount: string; availableTime: string; targetPod: string;
   searchTarget: string; targetSmall: string; targetLarge: string;
@@ -208,14 +211,20 @@ const ZH: SearchStrings = {
   polyAddPoint: "新增頂點", polyApply: "建立搜索區",
   polyPaste: "貼上座標", polyPastePlaceholder: "每行一點：經度 緯度（度分秒或十進位度皆可）\n例：119°30′00″E 23°12′00″N\n　　119 30 00, 23 12 00",
   polyParse: "帶入",
+  polyOrderLngLat: "經度在前", polyOrderLatLng: "緯度在前", polyMoveUp: "上移", polyMoveDown: "下移",
+  polyAutoSort: "自動排序並繪製",
+  polySorted: "已依繞中心的方位重新排序並繪製 —— 凹形區域請確認形狀是否符合預期",
+  polyAlreadySorted: "頂點順序已正確，已繪製",
+  polyImport: "匯入", polyExport: "匯出", polyImported: "已匯入 {n} 點（{fmt}）",
   polyArea: "多邊形", polyVertices: "點",
   polyIssue: {
     too_few: "至少需要 3 個頂點",
     too_many: "最多 10 個頂點",
     invalid_coord: "經緯度格式錯誤：度需為整數、分 0–59（整數）、秒 0–59.9；經度 ≤180°、緯度 ≤85°",
-    self_intersecting: "多邊形邊線交叉 —— 請依順時針或逆時針順序輸入頂點",
+    self_intersecting: "多邊形邊線交叉 —— 請依順時針或逆時針順序輸入頂點，或按「自動排序並繪製」",
     zero_area: "多邊形面積為 0（頂點共線或重複）",
     parse_failed: "無法解析貼上的座標，請每行一點：「119°30′00″E 23°12′00″N」或「119.5, 23.2」",
+    no_polygon: "檔案中找不到多邊形或座標",
   },
   dirGivenAssets: "給架數 → 求時間 / POD", dirGivenTime: "給時間 → 求架數 / 方式",
   droneCount: "無人機數量", availableTime: "可用時間", targetPod: "目標發現機率 POD",
@@ -373,14 +382,20 @@ const EN: SearchStrings = {
   polyAddPoint: "Add vertex", polyApply: "Create search area",
   polyPaste: "Paste", polyPastePlaceholder: "One point per line: lng lat (DMS or decimal degrees)\ne.g. 119°30′00″E 23°12′00″N\n     119 30 00, 23 12 00",
   polyParse: "Load",
+  polyOrderLngLat: "Lng first", polyOrderLatLng: "Lat first", polyMoveUp: "Move up", polyMoveDown: "Move down",
+  polyAutoSort: "Auto-sort & draw",
+  polySorted: "Re-ordered by bearing around the centre and drawn — check concave shapes still look as intended",
+  polyAlreadySorted: "Vertex order was already fine — drawn",
+  polyImport: "Import", polyExport: "Export", polyImported: "Imported {n} points ({fmt})",
   polyArea: "Polygon", polyVertices: "pts",
   polyIssue: {
     too_few: "At least 3 vertices are required",
     too_many: "At most 10 vertices",
     invalid_coord: "Invalid coordinate: whole degrees, minutes 0–59 (whole), seconds 0–59.9; lng ≤180°, lat ≤85°",
-    self_intersecting: "Polygon edges cross — enter vertices in clockwise or counter-clockwise order",
+    self_intersecting: "Polygon edges cross — enter vertices in clockwise or counter-clockwise order, or press \"Auto-sort & draw\"",
     zero_area: "Polygon has zero area (collinear or duplicate vertices)",
     parse_failed: "Could not parse the pasted coordinates — one point per line, e.g. \"119°30′00″E 23°12′00″N\" or \"119.5, 23.2\"",
+    no_polygon: "No polygon or coordinates found in the file",
   },
   dirGivenAssets: "Given assets → time / POD", dirGivenTime: "Given time → assets / pattern",
   droneCount: "Number of UAVs", availableTime: "Time available", targetPod: "Target POD",

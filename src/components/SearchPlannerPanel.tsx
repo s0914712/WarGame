@@ -10,8 +10,11 @@
  * 解算全在 src/wargame/search/*（純函式、語言中立）；文字由 search/i18n.ts 產生。
  * 面板同時服務兵推模式與 standalone 搜索規劃 app。
  */
-import { useState, useSyncExternalStore } from "react";
-import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste } from "lucide-react";
+import { useRef, useState, useSyncExternalStore } from "react";
+import {
+  Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste,
+  ChevronUp, ChevronDown, Upload, Download, ArrowDownUp,
+} from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
   currentRangeLimits, lkpProjection,
@@ -22,8 +25,12 @@ import { MAX_POLYGON_VERTICES, TRACK_COLORS } from "../wargame/search/tracks";
 import type { LngLat } from "../wargame/types";
 import type { SearchStrings } from "../wargame/search/i18n";
 import {
-  decimalToDms, dmsToDecimal, formatDms, parseLngLatLine, validateDms, DMS_SEC_DECIMALS, type CoordAxis,
+  decimalToDms, dmsToDecimal, formatDms, parseLngLatLine, validateDms, DMS_SEC_DECIMALS,
+  type CoordAxis, type CoordOrder,
 } from "../wargame/search/dms";
+import {
+  EXPORT_MIME, exportPolygon, importPolygon, isAngleSorted, sortVerticesByAngle, type ExportFormat,
+} from "../wargame/search/polygonIO";
 import { altitudeLookupKind, suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
 import { useLang } from "../wargame/i18n/lang";
@@ -964,6 +971,23 @@ function dmsTextToDecimal(x: DmsText, axis: CoordAxis): number | null {
  * 欄位以字串保存，允許輸入過程中出現暫時不合法的值；
  * 按「建立搜索區」時才解析並交給 store 驗證（自相交、面積 0 等）。
  */
+const ORDER_KEY = "wg-search-coord-order";
+function loadOrder(): CoordOrder {
+  try { return localStorage.getItem(ORDER_KEY) === "latlng" ? "latlng" : "lnglat"; } catch { return "lnglat"; }
+}
+
+/** 觸發瀏覽器下載文字檔 */
+function downloadText(filename: string, mime: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function PolygonEditor({ t, polygon, corners }: {
   t: SearchStrings; polygon: LngLat[] | null; corners: [LngLat, LngLat] | null;
 }) {
@@ -979,31 +1003,76 @@ function PolygonEditor({ t, polygon, corners }: {
   };
   const [rows, setRows] = useState<VertexText[]>(initial);
   const [error, setError] = useState<string | null>(null);
+  /** 成功訊息（排序 / 匯入結果） */
+  const [notice, setNotice] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  /** 座標書寫順序：決定輸入列排列、貼上 / 匯入純數字的解讀、CSV 匯出欄位順序 */
+  const [order, setOrderState] = useState<CoordOrder>(loadOrder);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const setOrder = (o: CoordOrder) => {
+    setOrderState(o);
+    try { localStorage.setItem(ORDER_KEY, o); } catch { /* 只是不記住 */ }
+  };
+  const say = (err: string | null, ok: string | null = null) => { setError(err); setNotice(ok); };
 
   const setPart = (i: number, axis: CoordAxis, p: Partial<DmsText>) => {
     setRows((rs) => rs.map((r, k) => (k === i ? { ...r, [axis]: { ...r[axis], ...p } } : r)));
-    setError(null);
+    say(null);
   };
-  const removeRow = (i: number) => { setRows((rs) => rs.filter((_, k) => k !== i)); setError(null); };
+  const removeRow = (i: number) => { setRows((rs) => rs.filter((_, k) => k !== i)); say(null); };
+  /** 與相鄰頂點互換位置（dir = -1 上移、+1 下移） */
+  const moveRow = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= rows.length) return;
+    setRows((rs) => {
+      const next = [...rs];
+      const a = next[i], b = next[j];
+      if (!a || !b) return rs;
+      next[i] = b; next[j] = a;
+      return next;
+    });
+    say(null);
+  };
   const addRow = () => {
     if (rows.length >= MAX_POLYGON_VERTICES) return;
     setRows((rs) => [...rs, emptyVertex()]);
   };
 
-  const apply = () => {
-    // 全空的頂點直接忽略，方便保留多餘空白列
+  /** 目前欄位 → 頂點（全空列略過）；有不合法欄位回 null 並顯示錯誤 */
+  const readPoints = (): LngLat[] | null => {
     const filled = rows.filter((r) => !isBlank(r.lng) || !isBlank(r.lat));
     const pts: LngLat[] = [];
     for (const r of filled) {
       const lng = dmsTextToDecimal(r.lng, "lng");
       const lat = dmsTextToDecimal(r.lat, "lat");
-      if (lng === null || lat === null) { setError(t.polyIssue.invalid_coord); return; }
+      if (lng === null || lat === null) { say(t.polyIssue.invalid_coord); return null; }
       pts.push([lng, lat]);
     }
+    return pts;
+  };
+
+  const draw = (pts: LngLat[], ok: string | null = null) => {
     const issue = searchPlannerStore.setPolygon(pts);
-    setError(issue ? t.polyIssue[issue] : null);
+    say(issue ? t.polyIssue[issue] : null, issue ? null : ok);
+  };
+
+  const apply = () => {
+    const pts = readPoints();
+    if (pts) draw(pts);
+  };
+
+  /** 依繞中心的方位重新排序（修正邊線交叉）並直接繪製 */
+  const autoSort = () => {
+    const pts = readPoints();
+    if (!pts) return;
+    if (pts.length < 3) { say(t.polyIssue.too_few); return; }
+    const already = isAngleSorted(pts);
+    const sorted = already ? pts : sortVerticesByAngle(pts);
+    if (!already) setRows(sorted.map(vertexFrom));
+    draw(sorted, already ? t.polyAlreadySorted : t.polySorted);
   };
 
   /** 解析貼上的文字：每行一點，度分秒或十進位度皆可（見 parseLngLatLine） */
@@ -1011,19 +1080,54 @@ function PolygonEditor({ t, polygon, corners }: {
     const parsed: VertexText[] = [];
     for (const line of pasteText.split(/\r?\n/)) {
       if (!line.trim()) continue;
-      const pt = parseLngLatLine(line);
-      if (!pt) { setError(t.polyIssue.parse_failed); return; }
+      const pt = parseLngLatLine(line, order);
+      if (!pt) { say(t.polyIssue.parse_failed); return; }
       parsed.push(vertexFrom(pt));
     }
-    if (parsed.length > MAX_POLYGON_VERTICES) { setError(t.polyIssue.too_many); return; }
-    if (parsed.length === 0) { setError(t.polyIssue.parse_failed); return; }
+    if (parsed.length > MAX_POLYGON_VERTICES) { say(t.polyIssue.too_many); return; }
+    if (parsed.length === 0) { say(t.polyIssue.parse_failed); return; }
     setRows(parsed);
     setPasteOpen(false);
-    setError(null);
+    say(null);
+  };
+
+  /** 匯入檔案（CSV / TXT / GeoJSON / KML）→ 填入欄位並繪製 */
+  const onFile = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const r = importPolygon(String(reader.result ?? ""), order);
+      if (typeof r === "string") { say(t.polyIssue[r]); return; }
+      setRows(r.points.map(vertexFrom));
+      draw(r.points, t.polyImported
+        .replace("{n}", String(r.points.length))
+        .replace("{fmt}", r.format === "text" ? "TXT" : r.format === "geojson" ? "GeoJSON" : r.format.toUpperCase()));
+    };
+    reader.onerror = () => say(t.polyIssue.parse_failed);
+    reader.readAsText(file);
+  };
+
+  const doExport = (format: ExportFormat) => {
+    const pts = readPoints();
+    if (!pts) return;
+    if (pts.length < 3) { say(t.polyIssue.too_few); return; }
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+    downloadText(`search-area-${stamp}.${format}`, EXPORT_MIME[format], exportPolygon(pts, format, order));
+    setExportOpen(false);
+    say(null);
   };
 
   const dmsLine = (i: number, axis: CoordAxis, x: DmsText) => (
     <DmsFields t={t} axis={axis} value={x} onChange={(p) => setPart(i, axis, p)} />
+  );
+  const axes: CoordAxis[] = order === "lnglat" ? ["lng", "lat"] : ["lat", "lng"];
+  const arrowBtn: React.CSSProperties = { ...smallBtn, padding: "1px 4px", fontSize: 11, lineHeight: 1 };
+  const orderBtn = (o: CoordOrder, label: string) => (
+    <button className="wg-btn" onClick={() => setOrder(o)} style={{
+      ...smallBtn, flex: 1, justifyContent: "center",
+      ...(order === o ? { borderColor: "#facc15", color: "#fef9c3", background: "rgba(250,204,21,0.15)", fontWeight: 700 } : {}),
+    }}>{label}</button>
   );
 
   return (
@@ -1032,7 +1136,11 @@ function PolygonEditor({ t, polygon, corners }: {
       background: "rgba(30,41,59,0.5)", border: "1px solid rgba(148,163,184,0.2)",
     }}>
       <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5, marginBottom: 6 }}>{t.polyHint}</div>
-      <div style={{ display: "flex", gap: 5, fontSize: 12, color: "#64748b", marginBottom: 3, paddingLeft: 61, paddingRight: 64 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+        {orderBtn("lnglat", t.polyOrderLngLat)}
+        {orderBtn("latlng", t.polyOrderLatLng)}
+      </div>
+      <div style={{ display: "flex", gap: 5, fontSize: 12, color: "#64748b", marginBottom: 3, paddingLeft: 61, paddingRight: 88 }}>
         <span style={{ flex: 1 }}>{t.polyDeg}</span>
         <span style={{ flex: 1 }}>{t.polyMin}</span>
         <span style={{ flex: 1 }}>{t.polySec}</span>
@@ -1044,8 +1152,13 @@ function PolygonEditor({ t, polygon, corners }: {
         }}>
           <span style={{ width: 16, fontSize: 13, color: "#94a3b8", textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
-            {dmsLine(i, "lng", r.lng)}
-            {dmsLine(i, "lat", r.lat)}
+            {axes.map((ax) => <div key={ax}>{dmsLine(i, ax, r[ax])}</div>)}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <button className="wg-btn" style={{ ...arrowBtn, opacity: i === 0 ? 0.3 : 1 }} disabled={i === 0}
+              onClick={() => moveRow(i, -1)} title={t.polyMoveUp} aria-label={t.polyMoveUp}><ChevronUp size={12} /></button>
+            <button className="wg-btn" style={{ ...arrowBtn, opacity: i === rows.length - 1 ? 0.3 : 1 }} disabled={i === rows.length - 1}
+              onClick={() => moveRow(i, 1)} title={t.polyMoveDown} aria-label={t.polyMoveDown}><ChevronDown size={12} /></button>
           </div>
           <button className="wg-btn" style={{ ...smallBtn, padding: "4px 6px" }}
             onClick={() => removeRow(i)} disabled={rows.length <= 1} aria-label="remove">
@@ -1061,7 +1174,26 @@ function PolygonEditor({ t, polygon, corners }: {
         <button className="wg-btn" style={smallBtn} onClick={() => setPasteOpen((v) => !v)}>
           <ClipboardPaste size={12} /> {t.polyPaste}
         </button>
+        <button className="wg-btn" style={smallBtn} onClick={() => fileRef.current?.click()}>
+          <Upload size={12} /> {t.polyImport}
+        </button>
+        <button className="wg-btn" style={{ ...smallBtn, ...(exportOpen ? { borderColor: "#facc15", color: "#fef9c3" } : {}) }}
+          onClick={() => setExportOpen((v) => !v)}>
+          <Download size={12} /> {t.polyExport}
+        </button>
+        <input ref={fileRef} type="file" accept=".csv,.txt,.json,.geojson,.kml,text/csv,text/plain,application/json,application/geo+json,application/vnd.google-earth.kml+xml"
+          style={{ display: "none" }}
+          onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
       </div>
+      {exportOpen && (
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          {(["csv", "geojson", "kml"] as ExportFormat[]).map((f) => (
+            <button key={f} className="wg-btn" style={{ ...smallBtn, flex: 1, justifyContent: "center" }} onClick={() => doExport(f)}>
+              {f === "geojson" ? "GeoJSON" : f.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      )}
       {pasteOpen && (
         <div style={{ marginTop: 6 }}>
           <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)}
@@ -1071,9 +1203,15 @@ function PolygonEditor({ t, polygon, corners }: {
         </div>
       )}
       {error && <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 6 }}>{error}</div>}
-      <button className="wg-btn" style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={apply}>
-        <Hexagon size={13} /> {t.polyApply}
-      </button>
+      {notice && <div style={{ color: "#86efac", fontSize: 13, marginTop: 6 }}>{notice}</div>}
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <button className="wg-btn" style={{ ...primaryBtn, flex: 1 }} onClick={apply}>
+          <Hexagon size={13} /> {t.polyApply}
+        </button>
+        <button className="wg-btn" style={{ ...smallBtn, justifyContent: "center", padding: "6px 10px", fontSize: 14 }} onClick={autoSort}>
+          <ArrowDownUp size={13} /> {t.polyAutoSort}
+        </button>
+      </div>
     </div>
   );
 }

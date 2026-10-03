@@ -99,28 +99,34 @@ export function parseCoordinate(text: string, axis: CoordAxis): number | null {
   return neg ? -v : v;
 }
 
+/** 一行座標的書寫順序：經度在前 / 緯度在前 */
+export type CoordOrder = "lnglat" | "latlng";
+
 /**
- * 解析一行「經度, 緯度」。座標內部可能含空白（119 30 15），所以：
+ * 解析一行座標（回傳 [經度, 緯度]）。座標內部可能含空白（119 30 15），所以：
  *   1. 有逗號 / 分號 / tab → 依此切兩半
- *   2. 有半球字母 → 切在第一個 E/W 之後（或 N/S 之前的經度結尾）
+ *   2. 有半球字母 → 依字母判斷哪段是經度、哪段是緯度（不看 order）
  *   3. 純數字以空白分隔 → 2 個 = 十進位度、4 個 = 度分、6 個 = 度分秒，對半切
- * 失敗回 null。
+ * 沒有半球字母時先依 order 解讀；若數值超出該軸範圍（例：緯度 119）則改試另一順序 ——
+ * 台海經度 119–122 不可能是緯度，所以順序寫反也能自動辨識。失敗回 null。
  */
-export function parseLngLatLine(line: string): [number, number] | null {
+export function parseLngLatLine(line: string, order: CoordOrder = "lnglat"): [number, number] | null {
   const raw = line.trim();
   if (!raw) return null;
 
-  const tryPair = (a: string, b: string): [number, number] | null => {
-    const lng = parseCoordinate(a, "lng");
-    const lat = parseCoordinate(b, "lat");
+  const tryPair = (lngText: string, latText: string): [number, number] | null => {
+    const lng = parseCoordinate(lngText, "lng");
+    const lat = parseCoordinate(latText, "lat");
     return lng !== null && lat !== null ? [lng, lat] : null;
   };
+  /** a、b 為書寫順序的兩段 */
+  const tryOrdered = (a: string, b: string): [number, number] | null =>
+    order === "lnglat" ? (tryPair(a, b) ?? tryPair(b, a)) : (tryPair(b, a) ?? tryPair(a, b));
 
   const bySep = raw.split(/[,，;；\t]+/).map((x) => x.trim()).filter(Boolean);
   if (bySep.length === 2) {
     const [a = "", b = ""] = bySep;
-    // 也接受「緯度, 經度」只要有半球字母能分辨
-    return tryPair(a, b) ?? (/[NS北南]/i.test(a) ? tryPair(b, a) : null);
+    return tryOrdered(a, b);
   }
 
   const lngHemi = raw.search(/[EW東西]/i);
@@ -137,7 +143,7 @@ export function parseLngLatLine(line: string): [number, number] | null {
   const tokens = raw.split(/\s+/).filter(Boolean);
   if (tokens.length === 2 || tokens.length === 4 || tokens.length === 6) {
     const half = tokens.length / 2;
-    return tryPair(tokens.slice(0, half).join(" "), tokens.slice(half).join(" "));
+    return tryOrdered(tokens.slice(0, half).join(" "), tokens.slice(half).join(" "));
   }
   return null;
 }
