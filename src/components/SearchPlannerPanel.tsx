@@ -717,6 +717,19 @@ export function SearchPlannerPanel(
             <>
               <NumField label={t.particleCount} value={inputs.particleCount} min={500} max={20000} step={500} unit=""
                 onChange={(v) => patch({ particleCount: v })} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <Toggle active={inputs.priorFromLkp} onClick={() => patch({ priorFromLkp: true })} label={t.priorModeLkp} />
+                <Toggle active={!inputs.priorFromLkp} onClick={() => patch({ priorFromLkp: false })} label={t.priorModeScenarios} />
+              </div>
+              {inputs.priorFromLkp ? (
+                <>
+                  <LkpEditor t={t} fmtHr={fmtHr} shared />
+                  <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                    {t.midSearchNote} → T+{midSearchElapsedHr().toFixed(1)} hr
+                  </div>
+                </>
+              ) : (
+              <>
               <NumField label={t.elapsedHr} value={inputs.elapsedHr} min={0} max={72} step={0.5} unit="hr"
                 onChange={(v) => patch({ elapsedHr: v })} />
               <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
@@ -743,6 +756,8 @@ export function SearchPlannerPanel(
                     onChange={(v) => searchPlannerStore.updateScenario(sc.id, { driftCourseDeg: v })} />
                 </div>
               ))}
+              </>
+              )}
               <button className="wg-btn" style={{ ...smallBtn, marginTop: 6 }}
                 onClick={() => searchPlannerStore.rebuildDistribution()}>
                 <RotateCcw size={12} /> {t.rebuildPrior}
@@ -1503,12 +1518,17 @@ function fmtLngLat(p: LngLat, order: CoordOrder): string {
 /**
  * 蒙地卡羅「最後已知位置」輸入：LKP（度分秒 / 點地圖 / 搜索區中心 / 帶入事前分布）+ 目標航向航速。
  */
-function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
+/**
+ * @param shared 顯示「與事前分布 / 蒙地卡羅共用」提示（依 LKP 建事前分布時，兩處編輯同一組參數）
+ */
+function LkpEditor({ t, fmtHr, shared = false }: { t: SearchStrings; fmtHr: (h: number) => string; shared?: boolean }) {
   const inputs = searchPlannerStore.getInputs();
   const patch = searchPlannerStore.patch.bind(searchPlannerStore);
   const order = useCoordOrder();
   const proj = lkpProjection();
-  const priorDatum = inputs.bayesEnabled ? searchPlannerStore.primaryScenarioDatum() : null;
+  // 事前分布用多情境時才需要「帶入」；依 LKP 時兩邊本來就是同一組參數
+  const priorDatum = inputs.bayesEnabled && !inputs.priorFromLkp ? searchPlannerStore.primaryScenarioDatum() : null;
+  const linked = shared || (inputs.bayesEnabled && inputs.priorFromLkp);
 
   return (
     <div style={{
@@ -1521,6 +1541,7 @@ function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => strin
           <button className="wg-btn" style={smallBtn} title={t.lkpFromPriorNote}
             onClick={() => patch({ mcLkp: [priorDatum[0], priorDatum[1]] })}>{t.lkpFromPrior}</button>
         )} />
+      {linked && <div style={{ fontSize: 12, color: "#7dd3fc", lineHeight: 1.5 }}>{t.lkpSharedNote}</div>}
 
       <NumField label={t.lkpSigma} value={inputs.mcSigmaNm} min={0} max={40} step={0.5} unit="nm"
         onChange={(v) => patch({ mcSigmaNm: v })} />

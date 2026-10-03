@@ -24,7 +24,7 @@ import type { PodModel } from "./pod";
 import type { SearchPatternId } from "./patterns";
 import {
   boxFromCorners, boxFromPolygon, generateSearchTracks, measureBox, pointInPolygon, MAX_POLYGON_VERTICES,
-  polygonAreaNm2, validatePolygon,
+  polygonAreaNm2, polygonOrientation, validatePolygon,
   type DroneTrack, type PolygonIssue, type SearchBox,
 } from "./tracks";
 import { deadReckon, runMonteCarlo, toLocalNm, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
@@ -130,6 +130,11 @@ export interface PlannerInputs {
   sweepWidthSpread: number;
   // ── Stone §2/§6：事前分布與貝氏更新 ──
   bayesEnabled: boolean;
+  /**
+   * 事前分布依 LKP 建立（與蒙地卡羅共用 mcLkp / mcSigmaNm / 目標航向航速 / mcLkpElapsedHr）。
+   * false = 使用多情境手動設定（scenarios）。
+   */
+  priorFromLkp: boolean;
   particleCount: number;
   /**
    * 從基準點（事發／最後已知位置）到**抵達搜索區**的時數。
@@ -173,9 +178,15 @@ const GEOMETRY_KEYS = new Set<string>([
   "falseTargetsEnabled", "expectedFalseTargetsInArea", "investigationHr",
 ]);
 
+/** priorFromLkp 開啟時，這些 LKP 參數也決定事前分布 */
+const LKP_PRIOR_KEYS = new Set<string>([
+  "mcLkp", "mcSigmaNm", "mcTargetCourseDeg", "mcTargetCourseSigmaDeg",
+  "mcTargetSpeedKn", "mcTargetSpeedSigmaKn", "mcLkpElapsedHr",
+]);
+
 /** 變動後需要重建事前分布的參數 */
 const DISTRIBUTION_KEYS = new Set<string>([
-  "bayesEnabled", "particleCount", "elapsedHr", "mcSeed",
+  "bayesEnabled", "priorFromLkp", "particleCount", "elapsedHr", "mcSeed",
   // 幾何參數會改掃區時間 → 改變 Stone §5 的搜索期中點 → 分布要重推
   ...GEOMETRY_KEYS,
 ]);
@@ -232,6 +243,7 @@ const DEFAULT_INPUTS: PlannerInputs = {
   navErrorSigmaNm: 0,
   sweepWidthSpread: 0,
   bayesEnabled: false,
+  priorFromLkp: true,
   particleCount: 5000,
   elapsedHr: 0,
   stopThreshold: 0.9,
@@ -365,9 +377,13 @@ function geometry(): SearchAreaGeometry | null {
   const box = areaBox();
   if (!box) return null;
   const m = measureBox(box);
-  // 多邊形：面積取實際面積；長短邊沿用外接框（只用於長寬比 → 圖形建議）
+  // 多邊形：面積取實際面積；長短邊取最小外接矩形（斜放的區域長寬比才正確 → 圖形建議）
   const areaNm2 = polygon ? polygonAreaNm2(polygon) : m.areaNm2;
   if (!(areaNm2 > 0)) return null;
+  if (polygon) {
+    const o = polygonOrientation(polygon);
+    return { areaNm2, longSideNm: o.longNm, shortSideNm: o.shortNm };
+  }
   return { areaNm2, longSideNm: m.longSideNm, shortSideNm: m.shortSideNm };
 }
 
@@ -406,7 +422,33 @@ function sensor(): SensorConditions {
  */
 export function midSearchElapsedHr(): number {
   const sweepHr = currentSweepHours();
-  return inputs.elapsedHr + (Number.isFinite(sweepHr) ? sweepHr / 2 : 0);
+  return priorElapsedHr() + (Number.isFinite(sweepHr) ? sweepHr / 2 : 0);
+}
+
+/** 基準點 → 抵達現場的時數：依 LKP 時用「LKP 至開始搜索」，否則用事前分布自己的欄位 */
+function priorElapsedHr(): number {
+  return inputs.priorFromLkp ? inputs.mcLkpElapsedHr : inputs.elapsedHr;
+}
+
+/**
+ * 實際用來抽事前分布粒子的情境。
+ * priorFromLkp：單一情境 = LKP ± σ，以目標航向航速（及其誤差）推進 —— 與蒙地卡羅同一組參數。
+ * 否則：多情境手動設定。
+ */
+export function priorScenarios(): SearchScenario[] {
+  if (!inputs.priorFromLkp) return scenarios;
+  const box = areaBox();
+  const datum: LngLat = inputs.mcLkp
+    ?? (box ? [(box.west + box.east) / 2, (box.south + box.north) / 2] : DEFAULT_SCENARIOS[0]?.datum ?? [120, 23.6]);
+  return [{
+    id: "lkp", label: "LKP 推算", labelEn: "From LKP", weight: 1,
+    datum,
+    positionSigmaNm: Math.max(0.01, inputs.mcSigmaNm),
+    driftSpeedKn: inputs.mcTargetSpeedKn,
+    driftSpeedSigmaKn: inputs.mcTargetSpeedSigmaKn,
+    driftCourseDeg: inputs.mcTargetCourseDeg,
+    driftCourseSigmaDeg: inputs.mcTargetCourseSigmaDeg,
+  }];
 }
 
 /** 掃完全區所需時數（不依賴粒子，故可安全地在重建分布時呼叫） */
@@ -597,7 +639,9 @@ export function solve(): PlannerSolution | null {
 export function lkpProjection(): {
   lkp: LngLat; atStart: LngLat; atEnd: LngLat | null; insideAtStart: boolean | null;
 } | null {
-  if (inputs.mcDistributionKind !== "lkp" || !inputs.mcLkp) return null;
+  // 蒙地卡羅用 LKP 分布，或事前分布依 LKP 建立時都顯示推算航跡
+  const usesLkp = inputs.mcDistributionKind === "lkp" || (inputs.bayesEnabled && inputs.priorFromLkp);
+  if (!usesLkp || !inputs.mcLkp) return null;
   const { mcLkp: lkp, mcTargetCourseDeg: c, mcTargetSpeedKn: v, mcLkpElapsedHr: T } = inputs;
   const atStart = deadReckon(lkp, c, v, T);
   // 航線飛完所需時數 = 最長一條航線 / 速度
@@ -784,13 +828,18 @@ export const searchPlannerStore = {
 
   patch(p: Partial<PlannerInputs>): void {
     inputs = { ...inputs, ...p };
+    // 依 LKP 建事前分布但還沒有 LKP → 以搜索區中心起頭（兩個功能共用同一點）
+    if (inputs.bayesEnabled && inputs.priorFromLkp && !inputs.mcLkp && ("bayesEnabled" in p || "priorFromLkp" in p)) {
+      const box = areaBox();
+      if (box) inputs = { ...inputs, mcLkp: [(box.west + box.east) / 2, (box.south + box.north) / 2] };
+    }
     // 只有真正改變航線幾何的參數才作廢既有航線（見 GEOMETRY_KEYS 的說明）
     if (Object.keys(p).some((k) => GEOMETRY_KEYS.has(k))) tracks = [];
     mcResult = null; transitResult = null;
     // 影響事前分布的參數變動 → 重建粒子（並清掉搜索歷程）
-    if (Object.keys(p).some((k) => DISTRIBUTION_KEYS.has(k))) {
+    if (Object.keys(p).some((k) => DISTRIBUTION_KEYS.has(k) || (inputs.priorFromLkp && LKP_PRIOR_KEYS.has(k)))) {
       if (inputs.bayesEnabled) {
-        particles = sampleParticles(scenarios, inputs.particleCount, inputs.mcSeed);
+        particles = sampleParticles(priorScenarios(), inputs.particleCount, inputs.mcSeed);
         const t = midSearchElapsedHr();
         if (t > 0) particles = propagate(particles, t);
       } else {
@@ -916,7 +965,7 @@ export const searchPlannerStore = {
    * 當成靜止目標問題來規劃 —— elapsedHr 即該時刻。
    */
   rebuildDistribution(): void {
-    particles = sampleParticles(scenarios, inputs.particleCount, inputs.mcSeed);
+    particles = sampleParticles(priorScenarios(), inputs.particleCount, inputs.mcSeed);
     const t = midSearchElapsedHr();
     if (t > 0) particles = propagate(particles, t);
     sortiePos = [];
@@ -1017,7 +1066,7 @@ export const searchPlannerStore = {
    */
   primaryScenarioDatum(): LngLat | null {
     let best: SearchScenario | null = null;
-    for (const sc of scenarios) if (!best || sc.weight > best.weight) best = sc;
+    for (const sc of priorScenarios()) if (!best || sc.weight > best.weight) best = sc;
     return best ? best.datum : null;
   },
 

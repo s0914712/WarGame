@@ -95,7 +95,9 @@ function buildBox(): GeoJSON.FeatureCollection {
 function buildLkp(): GeoJSON.FeatureCollection {
   const en = lang() === "en";
   // 事前分布各情境的 LKP（橘點、標情境名）
-  const priorPts: GeoJSON.Feature[] = searchPlannerStore.getInputs().bayesEnabled
+  const inp = searchPlannerStore.getInputs();
+  // 依 LKP 建事前分布時 LKP 已由下方推算航跡標出，不重複
+  const priorPts: GeoJSON.Feature[] = inp.bayesEnabled && !inp.priorFromLkp
     ? searchPlannerStore.getScenarios().map((sc) => ({
       type: "Feature" as const,
       properties: { role: "prior", label: `LKP · ${en ? (sc.labelEn ?? sc.label) : sc.label}` },
