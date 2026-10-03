@@ -129,11 +129,8 @@ export default function WargameApp() {
       map.on("click", (e) => {
         if (rulerStore.isActive()) return;  // 尺規量測中：點擊由 rulerTool 處理
         if (hexStore.getBrush()) return;   // 六角格塗色中：點擊由 hex layer 處理
-        // 搜索規劃器框選搜索區（與 editorStore 模式獨立，故先攔）
-        if (searchPlannerStore.isPicking()) {
-          searchPlannerStore.setCorner(e.lngLat.lng, e.lngLat.lat);
-          return;
-        }
+        // 搜索規劃器繪製搜索區（點擊由 searchAreaDraw 處理；這裡只攔下，避免選到單位）
+        if (searchPlannerStore.isPicking()) return;
         if (searchPlannerStore.isLoggingContact()) {
           searchPlannerStore.addContactAt(e.lngLat.lng, e.lngLat.lat);
           return;

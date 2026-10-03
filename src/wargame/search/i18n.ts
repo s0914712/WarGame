@@ -113,6 +113,7 @@ export interface SearchStrings {
   secSpacing: string; secMonteCarlo: string; secTracks: string;
   pickOnMap: string; clear: string; noArea: string;
   pickFirstCorner: string; pickSecondCorner: string; cancel: string;
+  drawHint: string; drawFinish: string; drawUndo: string; drawSortFinish: string;
   polyInput: string; polyHint: string; polyLng: string; polyLat: string;
   polyDeg: string; polyMin: string; polySec: string; polyHemiToggle: string;
   polyAddPoint: string; polyApply: string; polyPaste: string; polyPastePlaceholder: string;
@@ -210,8 +211,10 @@ const ZH: SearchStrings = {
   secArea: "① 搜索區", secSolve: "② 要解算什麼", secSensor: "③ 目標與感測條件",
   secAsset: "④ 無人機性能", secSpacing: "⑤ 航跡間距與圖形",
   secMonteCarlo: "⑥ 蒙地卡羅模擬", secTracks: "⑦ 產生搜索航線",
-  pickOnMap: "在地圖上框選", clear: "清除", noArea: "尚未框選搜索區",
+  pickOnMap: "在地圖上繪製", clear: "清除", noArea: "尚未設定搜索區",
   pickFirstCorner: "點地圖定搜索區第一角", pickSecondCorner: "再點一次定對角", cancel: "取消",
+  drawHint: "點地圖加頂點（{n}/10）· 最後一點雙擊完成（手機快速點兩下）",
+  drawFinish: "完成", drawUndo: "復原", drawSortFinish: "自動排序並完成",
   polyInput: "輸入經緯度（多邊形）",
   polyHint: "依序輸入 3–10 個頂點（度分秒，60 進位），系統自動首尾相連成封閉區域（頂點順序不可交叉）。分、秒留空視為 0；右側按鈕切換 E/W、N/S。",
   polyLng: "經度", polyLat: "緯度",
@@ -410,6 +413,8 @@ const EN: SearchStrings = {
   secMonteCarlo: "6. Monte Carlo simulation", secTracks: "7. Generate search tracks",
   pickOnMap: "Draw on map", clear: "Clear", noArea: "No search area defined yet",
   pickFirstCorner: "Click the map to set the first corner", pickSecondCorner: "Click again to set the opposite corner", cancel: "Cancel",
+  drawHint: "Click to add vertices ({n}/10) · double-click the last one to finish (double-tap on mobile)",
+  drawFinish: "Finish", drawUndo: "Undo", drawSortFinish: "Auto-sort & finish",
   polyInput: "Enter coordinates (polygon)",
   polyHint: "Enter 3–10 vertices in order as degrees / minutes / seconds; the last one closes back to the first. Edges must not cross. Blank minutes or seconds count as 0; the button on the right toggles E/W, N/S.",
   polyLng: "Lng", polyLat: "Lat",

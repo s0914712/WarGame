@@ -12,6 +12,7 @@ import { lkpProjection, searchPlannerStore, solve, transitProjection } from "../
 import { measureBox, boxFromCorners, polygonAreaNm2, TRACK_COLORS } from "../wargame/search/tracks";
 import { SEARCH_PATTERNS } from "../wargame/search/patterns";
 import { langStore } from "../wargame/i18n/lang";
+import { attachSearchAreaDraw } from "./searchAreaDraw";
 import { searchStrings } from "../wargame/search/i18n";
 import { podForDisplay, POD_DISPLAY_CAP } from "../wargame/search/pod";
 
@@ -414,8 +415,11 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   };
   const unsub = searchPlannerStore.subscribe(refresh);
   const unsubLang = langStore.subscribe(refresh);
+  // 地圖繪製搜索區（多點、雙擊完成）+ 點地圖模式的座標提示
+  const detachDraw = attachSearchAreaDraw(map, lang);
 
   return () => {
+    detachDraw();
     unsub(); unsubLang();
     for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
     for (const id of [SRC_LKP, SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {

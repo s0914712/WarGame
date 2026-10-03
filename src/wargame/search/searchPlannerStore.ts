@@ -23,12 +23,13 @@ import type { SearchTargetClass, SweepWidthCorrections } from "./sweepWidth";
 import type { PodModel } from "./pod";
 import type { SearchPatternId } from "./patterns";
 import {
-  boxFromCorners, boxFromPolygon, generateSearchTracks, measureBox, pointInPolygon,
+  boxFromCorners, boxFromPolygon, generateSearchTracks, measureBox, pointInPolygon, MAX_POLYGON_VERTICES,
   polygonAreaNm2, validatePolygon,
   type DroneTrack, type PolygonIssue, type SearchBox,
 } from "./tracks";
 import { deadReckon, runMonteCarlo, toLocalNm, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
 import { insideIntervals, runTransitAnalysis, type TransitResult } from "./transit";
+import { sortVerticesByAngle } from "./polygonIO";
 import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
 import {
   DEFAULT_EOIR, rangeLimits, TARGET_GEOMETRY,
@@ -285,6 +286,9 @@ let cornerB: LngLat | null = null;
  * 面積、航線裁切、蒙地卡羅撒點、假目標密度則以多邊形為準。
  */
 let polygon: LngLat[] | null = null;
+/** 地圖繪製中的頂點（完成前不影響目前搜索區） */
+let draftPoints: LngLat[] = [];
+let draftIssue: PolygonIssue | null = null;
 let inputs: PlannerInputs = { ...DEFAULT_INPUTS };
 let tracks: DroneTrack[] = [];
 let assignedUnitIds: UnitId[] = [];
@@ -681,38 +685,72 @@ export const searchPlannerStore = {
     notify();
   },
 
-  /** 進入地圖框選模式（面板收合成細列） */
+  /**
+   * 進入地圖繪製搜索區模式（面板收合成細列）：點地圖逐一加頂點，
+   * 最後一點雙擊（手機快速點兩下）完成。完成前保留原本的搜索區，取消不會遺失。
+   */
   startPickArea(): void {
     picking = true;
     loggingContact = false;
     lkpPickTarget = null;
-    cornerA = null;
-    cornerB = null;
-    polygon = null;
-    tracks = [];
-    mcResult = null; transitResult = null;
+    draftPoints = [];
+    draftIssue = null;
     wargameClock.pause();
     notify();
   },
 
-  /** 地圖點擊：第 1 點存 A、第 2 點存 B 並自動結束框選 */
-  setCorner(lng: number, lat: number): void {
-    if (!picking) return;
-    polygon = null;
-    if (!cornerA || cornerB) {
-      cornerA = [lng, lat];
-      cornerB = null;
-    } else {
-      cornerB = [lng, lat];
-      picking = false;              // 兩角齊 → 自動回到面板
-    }
-    tracks = [];
-    mcResult = null; transitResult = null;
+  getDraftPoints: () => draftPoints,
+  getDraftIssue: () => draftIssue,
+
+  /** 繪製中加一個頂點（上限 MAX_POLYGON_VERTICES） */
+  addDraftPoint(lng: number, lat: number): void {
+    if (!picking || draftPoints.length >= MAX_POLYGON_VERTICES) return;
+    draftPoints = [...draftPoints, [lng, lat]];
+    draftIssue = null;
     notify();
+  },
+
+  undoDraftPoint(): void {
+    if (draftPoints.length === 0) return;
+    draftPoints = draftPoints.slice(0, -1);
+    draftIssue = null;
+    notify();
+  },
+
+  /**
+   * 完成繪製：頂點合法則設為搜索區並離開繪製模式；
+   * 不合法（少於 3 點、邊線交叉…）則留在繪製模式並記下問題，讓使用者修正。
+   * sort = true 時先依繞中心方位排序（修正交叉）。
+   */
+  finishDraft(sort = false): PolygonIssue | null {
+    if (!picking) return null;
+    if (draftPoints.length < 3) { draftIssue = "too_few"; notify(); return draftIssue; }
+    const pts = sort ? sortVerticesByAngle(draftPoints) : draftPoints;
+    const issue = this.setPolygon(pts);
+    if (issue) { draftIssue = issue; notify(); return issue; }
+    picking = false;
+    draftPoints = [];
+    draftIssue = null;
+    notify();
+    return null;
   },
 
   cancelPick(): void {
     picking = false;
+    draftPoints = [];
+    draftIssue = null;
+    notify();
+  },
+
+  /** 以兩個對角直接設定矩形搜索區（無底圖時的經緯度輸入、腳本用） */
+  setRectangle(a: LngLat, b: LngLat): void {
+    polygon = null;
+    cornerA = [a[0], a[1]];
+    cornerB = [b[0], b[1]];
+    picking = false;
+    draftPoints = [];
+    tracks = [];
+    mcResult = null; transitResult = null;
     notify();
   },
 

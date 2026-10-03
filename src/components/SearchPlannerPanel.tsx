@@ -91,15 +91,37 @@ export function SearchPlannerPanel(
   if (!open && !standalone && !embedded) return null;
 
   if (picking) {
+    const draft = searchPlannerStore.getDraftPoints();
+    const issue = searchPlannerStore.getDraftIssue();
     return (
       <div style={embedded ? pickBarInline : { ...pickBar, top: pickBar.top as number + insetTop }}>
         <Crosshair size={16} color="#facc15" />
         <span style={{ color: "#fef9c3", fontWeight: 600 }}>
-          {a ? t.pickSecondCorner : t.pickFirstCorner}
+          {t.drawHint.replace("{n}", String(draft.length))}
         </span>
-        <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.cancelPick()}>
-          {t.cancel}
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className="wg-btn" style={{ ...smallBtn, opacity: draft.length < 3 ? 0.45 : 1 }} disabled={draft.length < 3}
+            onClick={() => searchPlannerStore.finishDraft()}>
+            <Hexagon size={12} /> {t.drawFinish}
+          </button>
+          <button className="wg-btn" style={{ ...smallBtn, opacity: draft.length === 0 ? 0.45 : 1 }} disabled={draft.length === 0}
+            onClick={() => searchPlannerStore.undoDraftPoint()}>
+            <RotateCcw size={12} /> {t.drawUndo}
+          </button>
+          <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.cancelPick()}>
+            {t.cancel}
+          </button>
+        </div>
+        {issue && (
+          <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 14 }}>
+            <span style={{ color: "#fca5a5" }}>{t.polyIssue[issue]}</span>
+            {issue === "self_intersecting" && (
+              <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.finishDraft(true)}>
+                <ArrowDownUp size={12} /> {t.drawSortFinish}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -1672,7 +1694,7 @@ const header: React.CSSProperties = {
 const body: React.CSSProperties = { padding: 14, overflowY: "auto", flex: 1 };
 const pickBar: React.CSSProperties = {
   position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 60,
-  display: "flex", alignItems: "center", gap: 10,
+  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", maxWidth: "min(640px, calc(100vw - 32px))",
   padding: "8px 14px", borderRadius: 8,
   background: "rgba(15, 23, 42, 0.95)", border: "1px solid rgba(250, 204, 21, 0.5)",
   fontSize: 16, fontFamily: "ui-sans-serif, system-ui, sans-serif",

@@ -90,7 +90,7 @@ export default function SearchPlannerApp() {
       map.on("click", (e) => {
         if (rulerStore.isActive()) return;          // 尺規量測中：點擊由 rulerTool 處理
         if (searchPlannerStore.isPicking()) {
-          searchPlannerStore.setCorner(e.lngLat.lng, e.lngLat.lat);
+          return;                                   // 繪製搜索區：由 searchAreaDraw 處理
         } else if (searchPlannerStore.isPickingLkp()) {
           searchPlannerStore.setLkpAt(e.lngLat.lng, e.lngLat.lat);
         } else if (searchPlannerStore.isLoggingContact()) {
@@ -148,10 +148,9 @@ export default function SearchPlannerApp() {
     </button>
   );
 
-  const pickHintEl = (picking || pickingLkp) && !mapFailed && (
-    <div style={pickHint}>
-      {pickingLkp ? t.lkpPickHint : searchPlannerStore.getCorners().a ? t.pickSecondCorner : t.pickFirstCorner}
-    </div>
+  // 繪製搜索區時由面板的繪製列（含完成 / 復原 / 取消）提示；這裡只提示 LKP 點選
+  const pickHintEl = pickingLkp && !mapFailed && (
+    <div style={pickHint}>{t.lkpPickHint}</div>
   );
 
   // ── 手機版：地圖滿版 + 底部抽屜 ──────────────────────────
@@ -234,11 +233,7 @@ function NoMapFallback({ lang, compact = false }: { lang: "zh" | "en"; compact?:
   const [bLng, setBLng] = useState(b?.[0] ?? 120.3);
   const [bLat, setBLat] = useState(b?.[1] ?? 24.0);
 
-  const apply = () => {
-    searchPlannerStore.startPickArea();
-    searchPlannerStore.setCorner(aLng, aLat);
-    searchPlannerStore.setCorner(bLng, bLat);
-  };
+  const apply = () => searchPlannerStore.setRectangle([aLng, aLat], [bLng, bLat]);
 
   const txt = lang === "en" ? {
     title: "Map unavailable",
