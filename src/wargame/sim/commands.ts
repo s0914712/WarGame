@@ -71,14 +71,16 @@ function buildSonobuoys(
   }));
 }
 
-function applyOne(unit: Unit, cmd: Command): Unit {
+/** 單一指令套用到單位（undoStore 也用來推算「已排隊未套用」後的單位狀態） */
+export function applyOne(unit: Unit, cmd: Command): Unit {
   switch (cmd.kind) {
     case "set_waypoints":
       return { ...unit, waypoints: [...cmd.waypoints] };
     case "set_speed":
       return { ...unit, position: { ...unit.position, speedKnots: cmd.speedKnots } };
     case "engage":
-      return { ...unit, engagingTargetId: cmd.targetUnitId };
+      // 空字串 = 解除接戰（Ctrl+Z 復原用）
+      return { ...unit, engagingTargetId: cmd.targetUnitId || undefined };
     case "hold":
       return { ...unit, waypoints: [], position: { ...unit.position, speedKnots: 0 } };
     case "set_roe":

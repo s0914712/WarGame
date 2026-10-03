@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import "./wargame/styles.css";
@@ -34,6 +34,7 @@ import { attachWargameRadarLayer } from "./map/wargameRadarLayer";
 import { attachWargameWrecksLayer } from "./map/wargameWrecksLayer";
 import { attachWargameSelectionLayer } from "./map/wargameSelectionLayer";
 import { useCameraFollow } from "./hooks/useCameraFollow";
+import { useWargameHotkeys } from "./hooks/useWargameHotkeys";
 import { scenarioStore } from "./wargame/scenarioStore";
 import { editorStore } from "./wargame/editor/editorStore";
 import { attachWargameRangeRings } from "./map/wargameRangeRings";
@@ -77,6 +78,8 @@ export default function WargameApp() {
   useSimLoop();
   useAiSideLoop();
   useCameraFollow(mapRef.current);
+  const openCheat = useCallback(() => setCheatOpen(true), []);
+  useWargameHotkeys({ onOpenCheat: openCheat });
 
   function mountAllLayers(map: mapboxgl.Map) {
     // 清掉先前的（safety — 不該有，但保險）
@@ -148,6 +151,13 @@ export default function WargameApp() {
           editorStore.setSonobuoyCorner(e.lngLat.lng, e.lngLat.lat);
           return;
         }
+        if (mode === "attackTarget") {
+          // A 鍵攻擊選標：點到有效敵方 → 接戰；點空白 / 非敵方 → 取消
+          const feats = map.queryRenderedFeatures(e.point, { layers: [SYMBOL_LAYER_ID] });
+          const targetId = feats[0]?.properties?.unitId as string | undefined;
+          if (!targetId || !editorStore.pickAttackTarget(targetId)) editorStore.cancel();
+          return;
+        }
         if (mode === "placeUnit") {
           const features = map.queryRenderedFeatures(e.point, { layers: [SYMBOL_LAYER_ID] });
           if (features.length > 0) {
@@ -189,7 +199,7 @@ export default function WargameApp() {
         const mode = editorStore.getMode();
         if (hexStore.getBrush()) { canvas.style.cursor = "crosshair"; return; }
         const picking = searchPlannerStore.isMapClickMode();
-        canvas.style.cursor = (picking || mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea") ? "crosshair" : "";
+        canvas.style.cursor = (picking || mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea" || mode === "attackTarget") ? "crosshair" : "";
       };
       editorStore.subscribe(updateCursor);
       searchPlannerStore.subscribe(updateCursor);

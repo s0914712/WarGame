@@ -19,6 +19,7 @@ import { UNIT_CATALOG } from "../catalog/units";
 import { DEFAULT_MDR_KM } from "../sim/sonobuoyField";
 import { submitCommand } from "../net/commandBus";
 import { netStore } from "../net/netStore";
+import { undoStore } from "./undoStore";
 
 /** 規劃時暫停時鐘 — 多人模式不可本地暫停（會跟 host 不同步），改為邊跑邊規劃 */
 function pauseForPlanning(): boolean {
@@ -31,12 +32,15 @@ function pauseForPlanning(): boolean {
 
 type Listener = () => void;
 
-export type EditorMode = "view" | "planRoute" | "placeUnit" | "defineSonobuoyArea";
+export type EditorMode = "view" | "planRoute" | "placeUnit" | "defineSonobuoyArea" | "attackTarget";
 
 let mode: EditorMode = "view";
 let planningUnitId: UnitId | null = null;
 let pendingWaypoints: LngLat[] = [];
 let wasRunningBeforePlan = false;
+
+// 攻擊選標（attackTarget 模式，A 鍵）：哪個己方單位要攻擊 — 不暫停時鐘（RTS 式）
+let attackUnitId: UnitId | null = null;
 
 // 聲標反潛屏幕 draft（defineSonobuoyArea 模式）
 let sonobuoyUnitId: UnitId | null = null;
@@ -131,7 +135,38 @@ export const editorStore = {
       lastTickSimSec: 0,
     };
     scenarioStore.addUnit(unit);
+    undoStore.recordAddUnit(unit.id);
     return unit;
+  },
+
+  /** Plan Mode：刪除單位（可 Ctrl+Z 復原） */
+  deleteUnit(unitId: UnitId): boolean {
+    if (mode !== "placeUnit") return false;
+    const u = scenarioStore.getState().units[unitId];
+    if (!u) return false;
+    scenarioStore.removeUnit(unitId);
+    undoStore.recordRemoveUnit(u);
+    return true;
+  },
+
+  // ── 攻擊選標（A 鍵 → 左鍵點敵方單位）──────────────────────
+  getAttackUnitId(): UnitId | null { return attackUnitId; },
+
+  startAttackTarget(unitId: UnitId): void {
+    if (mode !== "view") return;
+    const u = scenarioStore.getState().units[unitId];
+    if (!u || u.hpCurrent <= 0 || !netStore.canControlSide(u.sideId)) return;
+    mode = "attackTarget";
+    attackUnitId = unitId;
+    notify();
+  },
+
+  /** attackTarget 模式下點到單位：有效敵方 → 下達接戰並回到 view；回傳是否成功 */
+  pickAttackTarget(targetId: UnitId): boolean {
+    if (mode !== "attackTarget" || !attackUnitId) return false;
+    const ok = this.quickEngage(attackUnitId, targetId);
+    if (ok) this.exitPlanMode();
+    return ok;
   },
 
   startPlanRoute(unitId: UnitId): void {
@@ -248,6 +283,7 @@ export const editorStore = {
     sonobuoyUnitId = null;
     sonobuoyCornerA = null;
     sonobuoyCornerB = null;
+    attackUnitId = null;
     if (wasRunningBeforePlan) {
       wargameClock.resume();
       wasRunningBeforePlan = false;

@@ -13,12 +13,14 @@ import { wargameClock } from "../clock";
 import { netStore } from "./netStore";
 import { wgSupabase } from "./wgSupabase";
 import { commandPings } from "../editor/commandPings";
+import { undoStore } from "../editor/undoStore";
 
 export interface SubmitResult { ok: boolean; error?: string }
 
 export function submitCommand(cmd: Command): SubmitResult {
   const net = netStore.get();
   if (net.role === "off") {
+    undoStore.recordCommand(cmd);   // Ctrl+Z：要在 enqueue 前記（取下令前狀態）
     scenarioStore.enqueueCommand(cmd);
     commandPings.push(cmd);   // 地圖上「收到命令」提示
     return { ok: true };
@@ -30,6 +32,7 @@ export function submitCommand(cmd: Command): SubmitResult {
     return { ok: false, error: `不能指揮 ${unit.sideId} 方單位` };
   }
 
+  undoStore.recordCommand(cmd);
   if (net.role === "host") {
     scenarioStore.enqueueCommand({ ...cmd, simAtSec: wargameClock.getSimTime() });
   }
@@ -69,3 +72,5 @@ export function acceptRemoteCommand(row: { user_id: string; side_id: string; pay
   }
   scenarioStore.enqueueCommand({ ...cmd, simAtSec: wargameClock.getSimTime() });
 }
+
+undoStore.bindSender((cmd) => { submitCommand(cmd); });
