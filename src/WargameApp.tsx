@@ -7,6 +7,9 @@ import { CinemaControls } from "./components/CinemaControls";
 import { BattleStatsHud } from "./components/BattleStatsHud";
 import { UnitPalette } from "./components/UnitPalette";
 import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
+import { attachRulerLayer, rulerStore } from "./map/rulerTool";
+import { RulerControl } from "./components/RulerControl";
+import { useLang } from "./wargame/i18n/lang";
 import { DemoModeToggle } from "./components/DemoModeToggle";
 import { TutorialOverlay } from "./components/TutorialOverlay";
 import { VictoryModal } from "./components/VictoryModal";
@@ -69,6 +72,7 @@ export default function WargameApp() {
   const [cheatOpen, setCheatOpen] = useState(false);
   const demoMode = useSyncExternalStore(uiStore.subscribe, isDemo, isDemo);
   const { isMobile, isLandscape } = useIsMobile();
+  const uiLang = useLang() === "en" ? "en" : "zh";
 
   useSimLoop();
   useAiSideLoop();
@@ -96,6 +100,7 @@ export default function WargameApp() {
       attachWargameCombatLayer(map),
       attachWargameCommandPingLayer(map),   // 右鍵 / 指令卡下令 → 攻擊準星 / 移動標記
       attachWargameFxLayer(map),    // 最上：浮動戰鬥文字 / 來襲警示環
+      attachRulerLayer(map),   // 尺規量測（壓在最上，點擊優先）
     );
   }
 
@@ -122,6 +127,7 @@ export default function WargameApp() {
 
       // Click：三種模式（view / planRoute / placeUnit）
       map.on("click", (e) => {
+        if (rulerStore.isActive()) return;  // 尺規量測中：點擊由 rulerTool 處理
         if (hexStore.getBrush()) return;   // 六角格塗色中：點擊由 hex layer 處理
         // 搜索規劃器框選搜索區（與 editorStore 模式獨立，故先攔）
         if (searchPlannerStore.isPicking()) {
@@ -166,6 +172,7 @@ export default function WargameApp() {
       //   右鍵點到敵方單位 → 下達「接戰」攻擊計畫
       //   右鍵點空白海面 → 移動（Shift = 接續排隊航點）
       map.on("contextmenu", (e) => {
+        if (rulerStore.isActive()) return;              // 尺規：右鍵 = 刪最後一點
         if (editorStore.getMode() !== "view") return;   // 規劃 / 放置模式不攔右鍵
         if (searchPlannerStore.isMapClickMode()) return;
         const unitId = scenarioStore.getSelectedUnitId();
@@ -286,6 +293,8 @@ export default function WargameApp() {
             onOpenCheat={() => setCheatOpen(true)}
           />
           <HexToolbar top={TOP_BAR_HEIGHT + 12} />
+          {/* 入口在頂部列「尺規」鈕；這裡只在量測中顯示控制面板 */}
+          <RulerControl hideLauncher lang={uiLang} style={{ top: TOP_BAR_HEIGHT + 12, left: 16 }} />
           <ThreatAlert top={TOP_BAR_HEIGHT + 10} />
           <ObjectivesHud map={mapRef.current} bottom={CONSOLE_HEIGHT + 34} />
           <UnitPalette hideLauncher />
