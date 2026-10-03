@@ -24,7 +24,7 @@ import type { SearchStrings } from "../wargame/search/i18n";
 import {
   decimalToDms, dmsToDecimal, formatDms, parseLngLatLine, validateDms, DMS_SEC_DECIMALS, type CoordAxis,
 } from "../wargame/search/dms";
-import { nearestTabulatedAltitudeFt, suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
+import { altitudeLookupKind, suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
 import { useLang } from "../wargame/i18n/lang";
 import {
@@ -117,9 +117,11 @@ export function SearchPlannerPanel(
   const logging = searchPlannerStore.isLoggingContact();
   const rankedContacts = inputs.falseTargetsEnabled ? searchPlannerStore.rankLoggedContacts(4) : [];
   const limits = currentRangeLimits();
-  const tableWu = W?.uncorrectedNm ?? 0;
-  const sweepExceedsPhysics = tableWu > limits.sweepWidthCapNm + 1e-9;
   const useExperience = inputs.sweepSource === "experience";
+  // 查表：engine 已夾到上限，看 capped 旗標；經驗值：不夾，只比較是否超過
+  const sweepExceedsPhysics = useExperience
+    ? (W?.uncorrectedNm ?? 0) > limits.sweepWidthCapNm + 1e-9
+    : W?.capped === true;
   const analyticPod = sol
     ? (fwd?.pod ?? inv?.achievedPod ?? podFromCoverage(sol.trackSpacingNm > 0 ? (W?.correctedNm ?? 0) / sol.trackSpacingNm : 0, inputs.podModel))
     : 0;
@@ -225,9 +227,8 @@ export function SearchPlannerPanel(
           </Row>
           <Row label={t.sweepSource}>
             <div style={{ display: "flex", gap: 6, flex: 1 }}>
-              {/* 切回查表時把高度吸附到表列值，避免 select 顯示不到 */}
               <Toggle active={!useExperience} label={t.sweepSourceTable}
-                onClick={() => patch({ sweepSource: "table", altitudeFt: nearestTabulatedAltitudeFt(inputs.altitudeFt) })} />
+                onClick={() => patch({ sweepSource: "table" })} />
               <Toggle active={useExperience} label={t.sweepSourceExperience}
                 onClick={() => patch({ sweepSource: "experience" })} />
             </div>
@@ -251,12 +252,18 @@ export function SearchPlannerPanel(
               <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{t.expNote}</div>
             </div>
           ) : (
-            <Row label={t.altitude}>
-              <select value={inputs.altitudeFt} style={select}
-                onChange={(e) => patch({ altitudeFt: Number(e.target.value) })}>
-                {[500, 1000, 1500, 2000].map((ft) => <option key={ft} value={ft}>{ft.toLocaleString()} ft</option>)}
-              </select>
-            </Row>
+            <>
+              <NumField label={t.altitude} value={inputs.altitudeFt} min={100} max={20000} step={100} unit="ft"
+                onChange={(v) => patch({ altitudeFt: v })} />
+              {altitudeLookupKind(inputs.altitudeFt) !== "tabulated" && (
+                <div style={{
+                  fontSize: 13, lineHeight: 1.5, paddingLeft: 2,
+                  color: altitudeLookupKind(inputs.altitudeFt) === "interpolated" ? "#94a3b8" : "#fed7aa",
+                }}>
+                  {t.altLookup[altitudeLookupKind(inputs.altitudeFt) as "interpolated" | "extrapolated_low" | "extrapolated_high"]}
+                </div>
+              )}
+            </>
           )}
           <div style={{
             padding: "7px 9px", borderRadius: 4, marginTop: 2,
@@ -426,7 +433,9 @@ export function SearchPlannerPanel(
                 ? `${inputs.experiencePlatform ? `${inputs.experiencePlatform} · ` : ""}Wu = 2 × ${W.experienceRangeNm ?? 0} nm`
                   + ((W.visibilityFactor ?? 1) < 1 ? ` × ${(W.visibilityFactor ?? 1).toFixed(2)}` : "")
                   + ` = ${W.uncorrectedNm.toFixed(1)}`
-                : `Wu ${W.uncorrectedNm.toFixed(1)}`)
+                : W.capped
+                  ? `Wu ${(W.tableNm ?? 0).toFixed(1)} → ${W.uncorrectedNm.toFixed(1)} (${t.sweepCap})`
+                  : `Wu ${W.uncorrectedNm.toFixed(1)}`)
                 + ` × Fw ${W.corrections.weather} × Fv ${W.corrections.speed}${W.corrections.fatigued ? " × Ff 0.9" : ""}`
                 + ((W.corrections.operational ?? 1) < 1 ? ` × Fo ${W.corrections.operational}` : "")
                 + ((W.visibilityFactor ?? 1) < 1 ? ` · ${t.expVisReduced}` : "")} />
