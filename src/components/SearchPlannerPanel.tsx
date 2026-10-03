@@ -21,6 +21,9 @@ import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/sear
 import { MAX_POLYGON_VERTICES, TRACK_COLORS } from "../wargame/search/tracks";
 import type { LngLat } from "../wargame/types";
 import type { SearchStrings } from "../wargame/search/i18n";
+import {
+  decimalToDms, dmsToDecimal, parseLngLatLine, validateDms, DMS_SEC_DECIMALS, type CoordAxis,
+} from "../wargame/search/dms";
 import { suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
 import { useLang } from "../wargame/i18n/lang";
@@ -871,64 +874,84 @@ function PodCurve({ data, title, hoursLabel }: {
 }
 
 // ── 小元件 ────────────────────────────────────────────────
+/** 一個座標分量的輸入欄（度 / 分 / 秒以字串保存，允許輸入中途的不完整值） */
+interface DmsText { d: string; m: string; s: string; neg: boolean }
+interface VertexText { lng: DmsText; lat: DmsText }
+
+const EMPTY_DMS: DmsText = { d: "", m: "", s: "", neg: false };
+const emptyVertex = (): VertexText => ({ lng: { ...EMPTY_DMS }, lat: { ...EMPTY_DMS } });
+
+function dmsTextFrom(value: number): DmsText {
+  const x = decimalToDms(value);
+  return { d: String(x.deg), m: String(x.min), s: x.sec.toFixed(DMS_SEC_DECIMALS), neg: x.neg };
+}
+const vertexFrom = ([lng, lat]: LngLat): VertexText => ({ lng: dmsTextFrom(lng), lat: dmsTextFrom(lat) });
+
+const isBlank = (x: DmsText) => x.d.trim() === "" && x.m.trim() === "" && x.s.trim() === "";
+
+/** 欄位 → 十進位度；分、秒空白視為 0。不合法回 null */
+function dmsTextToDecimal(x: DmsText, axis: CoordAxis): number | null {
+  if (x.d.trim() === "") return null;
+  const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
+  const dms = { deg: num(x.d), min: num(x.m), sec: num(x.s), neg: x.neg };
+  return validateDms(dms, axis) ? null : dmsToDecimal(dms);
+}
+
 /**
- * 手動輸入多邊形頂點（3–10 點）建立搜索區。
- * 欄位以字串保存，允許輸入過程中出現「-」「119.」等暫時不合法的值；
+ * 手動輸入多邊形頂點（3–10 點）建立搜索區 —— 以度分秒（60 進位）輸入。
+ * 欄位以字串保存，允許輸入過程中出現暫時不合法的值；
  * 按「建立搜索區」時才解析並交給 store 驗證（自相交、面積 0 等）。
  */
 function PolygonEditor({ t, polygon, corners }: {
   t: SearchStrings; polygon: LngLat[] | null; corners: [LngLat, LngLat] | null;
 }) {
-  const initial = (): [string, string][] => {
-    if (polygon) return polygon.map(([lng, lat]) => [String(lng), String(lat)]);
+  const initial = (): VertexText[] => {
+    if (polygon) return polygon.map(vertexFrom);
     if (corners) {
       // 以目前框的四角起頭，方便在其上修改
       const [[x1, y1], [x2, y2]] = corners;
       const w = Math.min(x1, x2), e = Math.max(x1, x2), s = Math.min(y1, y2), n = Math.max(y1, y2);
-      return ([[w, s], [e, s], [e, n], [w, n]] as LngLat[]).map(([lng, lat]) => [lng.toFixed(4), lat.toFixed(4)]);
+      return ([[w, s], [e, s], [e, n], [w, n]] as LngLat[]).map(vertexFrom);
     }
-    return [["", ""], ["", ""], ["", ""]];
+    return [emptyVertex(), emptyVertex(), emptyVertex()];
   };
-  const [rows, setRows] = useState<[string, string][]>(initial);
+  const [rows, setRows] = useState<VertexText[]>(initial);
   const [error, setError] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
 
-  const setCell = (i: number, col: 0 | 1, v: string) => {
-    setRows((rs) => rs.map((r, k) => (k === i ? (col === 0 ? [v, r[1]] : [r[0], v]) : r)));
+  const setPart = (i: number, axis: CoordAxis, p: Partial<DmsText>) => {
+    setRows((rs) => rs.map((r, k) => (k === i ? { ...r, [axis]: { ...r[axis], ...p } } : r)));
     setError(null);
   };
   const removeRow = (i: number) => { setRows((rs) => rs.filter((_, k) => k !== i)); setError(null); };
   const addRow = () => {
     if (rows.length >= MAX_POLYGON_VERTICES) return;
-    setRows((rs) => [...rs, ["", ""]]);
+    setRows((rs) => [...rs, emptyVertex()]);
   };
 
   const apply = () => {
-    // 全空的列直接忽略，方便保留多餘空白列
-    const filled = rows.filter(([x, y]) => x.trim() !== "" || y.trim() !== "");
-    const pts: LngLat[] = filled.map(([x, y]) => [Number(x), Number(y)]);
-    if (filled.some(([x, y]) => x.trim() === "" || y.trim() === "")) {
-      setError(t.polyIssue.invalid_coord);
-      return;
+    // 全空的頂點直接忽略，方便保留多餘空白列
+    const filled = rows.filter((r) => !isBlank(r.lng) || !isBlank(r.lat));
+    const pts: LngLat[] = [];
+    for (const r of filled) {
+      const lng = dmsTextToDecimal(r.lng, "lng");
+      const lat = dmsTextToDecimal(r.lat, "lat");
+      if (lng === null || lat === null) { setError(t.polyIssue.invalid_coord); return; }
+      pts.push([lng, lat]);
     }
     const issue = searchPlannerStore.setPolygon(pts);
     setError(issue ? t.polyIssue[issue] : null);
   };
 
-  /** 解析貼上的文字：每行「經度, 緯度」（逗號 / 空白 / tab 分隔皆可） */
+  /** 解析貼上的文字：每行一點，度分秒或十進位度皆可（見 parseLngLatLine） */
   const loadPaste = () => {
-    const parsed: [string, string][] = [];
+    const parsed: VertexText[] = [];
     for (const line of pasteText.split(/\r?\n/)) {
-      const parts = line.trim().split(/[\s,，;；]+/).filter(Boolean);
-      if (parts.length === 0) continue;
-      const [x, y] = parts;
-      if (parts.length !== 2 || x === undefined || y === undefined
-        || !Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) {
-        setError(t.polyIssue.parse_failed);
-        return;
-      }
-      parsed.push([x, y]);
+      if (!line.trim()) continue;
+      const pt = parseLngLatLine(line);
+      if (!pt) { setError(t.polyIssue.parse_failed); return; }
+      parsed.push(vertexFrom(pt));
     }
     if (parsed.length > MAX_POLYGON_VERTICES) { setError(t.polyIssue.too_many); return; }
     if (parsed.length === 0) { setError(t.polyIssue.parse_failed); return; }
@@ -937,7 +960,31 @@ function PolygonEditor({ t, polygon, corners }: {
     setError(null);
   };
 
-  const cellInput: React.CSSProperties = { ...numInput, flex: 1, width: "auto", minWidth: 0 };
+  const cellInput: React.CSSProperties = { ...numInput, flex: 1, width: "auto", minWidth: 0, padding: "4px 5px" };
+  const unit: React.CSSProperties = { fontSize: 14, color: "#94a3b8", marginLeft: -3 };
+
+  const dmsLine = (i: number, axis: CoordAxis, x: DmsText) => {
+    const hemi = axis === "lng" ? (x.neg ? "W" : "E") : (x.neg ? "S" : "N");
+    return (
+      <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+        <span style={{ width: 34, fontSize: 13, color: "#94a3b8", flexShrink: 0 }}>
+          {axis === "lng" ? t.polyLng : t.polyLat}
+        </span>
+        <input style={cellInput} inputMode="numeric" value={x.d} placeholder={axis === "lng" ? "119" : "23"}
+          aria-label={`${axis} ${t.polyDeg}`} onChange={(e) => setPart(i, axis, { d: e.target.value })} />
+        <span style={unit}>°</span>
+        <input style={cellInput} inputMode="numeric" value={x.m} placeholder="0"
+          aria-label={`${axis} ${t.polyMin}`} onChange={(e) => setPart(i, axis, { m: e.target.value })} />
+        <span style={unit}>′</span>
+        <input style={cellInput} inputMode="decimal" value={x.s} placeholder="0"
+          aria-label={`${axis} ${t.polySec}`} onChange={(e) => setPart(i, axis, { s: e.target.value })} />
+        <span style={unit}>″</span>
+        <button className="wg-btn" title={t.polyHemiToggle}
+          style={{ ...smallBtn, padding: "3px 0", width: 26, justifyContent: "center", fontFamily: "ui-monospace, monospace" }}
+          onClick={() => setPart(i, axis, { neg: !x.neg })}>{hemi}</button>
+      </div>
+    );
+  };
 
   return (
     <div style={{
@@ -945,18 +992,21 @@ function PolygonEditor({ t, polygon, corners }: {
       background: "rgba(30,41,59,0.5)", border: "1px solid rgba(148,163,184,0.2)",
     }}>
       <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5, marginBottom: 6 }}>{t.polyHint}</div>
-      <div style={{ display: "flex", gap: 6, fontSize: 13, color: "#64748b", marginBottom: 3, paddingLeft: 22 }}>
-        <span style={{ flex: 1 }}>{t.polyLng}</span>
-        <span style={{ flex: 1 }}>{t.polyLat}</span>
-        <span style={{ width: 26 }} />
+      <div style={{ display: "flex", gap: 5, fontSize: 12, color: "#64748b", marginBottom: 3, paddingLeft: 61, paddingRight: 64 }}>
+        <span style={{ flex: 1 }}>{t.polyDeg}</span>
+        <span style={{ flex: 1 }}>{t.polyMin}</span>
+        <span style={{ flex: 1 }}>{t.polySec}</span>
       </div>
-      {rows.map(([x, y], i) => (
-        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-          <span style={{ width: 16, fontSize: 13, color: "#94a3b8", textAlign: "right" }}>{i + 1}</span>
-          <input style={cellInput} inputMode="decimal" value={x} placeholder="119.50"
-            onChange={(e) => setCell(i, 0, e.target.value)} />
-          <input style={cellInput} inputMode="decimal" value={y} placeholder="23.20"
-            onChange={(e) => setCell(i, 1, e.target.value)} />
+      {rows.map((r, i) => (
+        <div key={i} style={{
+          display: "flex", gap: 6, alignItems: "center", marginBottom: 5, paddingBottom: 5,
+          borderBottom: i < rows.length - 1 ? "1px dashed rgba(148,163,184,0.15)" : "none",
+        }}>
+          <span style={{ width: 16, fontSize: 13, color: "#94a3b8", textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+            {dmsLine(i, "lng", r.lng)}
+            {dmsLine(i, "lat", r.lat)}
+          </div>
           <button className="wg-btn" style={{ ...smallBtn, padding: "4px 6px" }}
             onClick={() => removeRow(i)} disabled={rows.length <= 1} aria-label="remove">
             <X size={12} />

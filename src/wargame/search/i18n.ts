@@ -114,6 +114,7 @@ export interface SearchStrings {
   pickOnMap: string; clear: string; noArea: string;
   pickFirstCorner: string; pickSecondCorner: string; cancel: string;
   polyInput: string; polyHint: string; polyLng: string; polyLat: string;
+  polyDeg: string; polyMin: string; polySec: string; polyHemiToggle: string;
   polyAddPoint: string; polyApply: string; polyPaste: string; polyPastePlaceholder: string;
   polyParse: string; polyArea: string; polyVertices: string;
   polyIssue: Record<"too_few" | "too_many" | "invalid_coord" | "self_intersecting" | "zero_area" | "parse_failed", string>;
@@ -193,19 +194,20 @@ const ZH: SearchStrings = {
   pickOnMap: "在地圖上框選", clear: "清除", noArea: "尚未框選搜索區",
   pickFirstCorner: "點地圖定搜索區第一角", pickSecondCorner: "再點一次定對角", cancel: "取消",
   polyInput: "輸入經緯度（多邊形）",
-  polyHint: "依序輸入 3–10 個頂點，系統自動首尾相連成封閉區域（頂點順序不可交叉）。",
+  polyHint: "依序輸入 3–10 個頂點（度分秒，60 進位），系統自動首尾相連成封閉區域（頂點順序不可交叉）。分、秒留空視為 0；右側按鈕切換 E/W、N/S。",
   polyLng: "經度", polyLat: "緯度",
+  polyDeg: "度", polyMin: "分", polySec: "秒", polyHemiToggle: "切換半球",
   polyAddPoint: "新增頂點", polyApply: "建立搜索區",
-  polyPaste: "貼上座標", polyPastePlaceholder: "每行一點：經度, 緯度\n例：119.5, 23.2",
+  polyPaste: "貼上座標", polyPastePlaceholder: "每行一點：經度 緯度（度分秒或十進位度皆可）\n例：119°30′00″E 23°12′00″N\n　　119 30 00, 23 12 00",
   polyParse: "帶入",
   polyArea: "多邊形", polyVertices: "點",
   polyIssue: {
     too_few: "至少需要 3 個頂點",
     too_many: "最多 10 個頂點",
-    invalid_coord: "經緯度格式錯誤（經度 ±180、緯度 ±85）",
+    invalid_coord: "經緯度格式錯誤：度需為整數、分 0–59（整數）、秒 0–59.9；經度 ≤180°、緯度 ≤85°",
     self_intersecting: "多邊形邊線交叉 —— 請依順時針或逆時針順序輸入頂點",
     zero_area: "多邊形面積為 0（頂點共線或重複）",
-    parse_failed: "無法解析貼上的座標，請以「經度, 緯度」每行一點",
+    parse_failed: "無法解析貼上的座標，請每行一點：「119°30′00″E 23°12′00″N」或「119.5, 23.2」",
   },
   dirGivenAssets: "給架數 → 求時間 / POD", dirGivenTime: "給時間 → 求架數 / 方式",
   droneCount: "無人機數量", availableTime: "可用時間", targetPod: "目標發現機率 POD",
@@ -336,19 +338,20 @@ const EN: SearchStrings = {
   pickOnMap: "Draw on map", clear: "Clear", noArea: "No search area defined yet",
   pickFirstCorner: "Click the map to set the first corner", pickSecondCorner: "Click again to set the opposite corner", cancel: "Cancel",
   polyInput: "Enter coordinates (polygon)",
-  polyHint: "Enter 3–10 vertices in order; the last one closes back to the first. Edges must not cross.",
+  polyHint: "Enter 3–10 vertices in order as degrees / minutes / seconds; the last one closes back to the first. Edges must not cross. Blank minutes or seconds count as 0; the button on the right toggles E/W, N/S.",
   polyLng: "Lng", polyLat: "Lat",
+  polyDeg: "Deg", polyMin: "Min", polySec: "Sec", polyHemiToggle: "Toggle hemisphere",
   polyAddPoint: "Add vertex", polyApply: "Create search area",
-  polyPaste: "Paste", polyPastePlaceholder: "One point per line: lng, lat\ne.g. 119.5, 23.2",
+  polyPaste: "Paste", polyPastePlaceholder: "One point per line: lng lat (DMS or decimal degrees)\ne.g. 119°30′00″E 23°12′00″N\n     119 30 00, 23 12 00",
   polyParse: "Load",
   polyArea: "Polygon", polyVertices: "pts",
   polyIssue: {
     too_few: "At least 3 vertices are required",
     too_many: "At most 10 vertices",
-    invalid_coord: "Invalid coordinate (lng within ±180, lat within ±85)",
+    invalid_coord: "Invalid coordinate: whole degrees, minutes 0–59 (whole), seconds 0–59.9; lng ≤180°, lat ≤85°",
     self_intersecting: "Polygon edges cross — enter vertices in clockwise or counter-clockwise order",
     zero_area: "Polygon has zero area (collinear or duplicate vertices)",
-    parse_failed: "Could not parse the pasted coordinates — use \"lng, lat\", one per line",
+    parse_failed: "Could not parse the pasted coordinates — one point per line, e.g. \"119°30′00″E 23°12′00″N\" or \"119.5, 23.2\"",
   },
   dirGivenAssets: "Given assets → time / POD", dirGivenTime: "Given time → assets / pattern",
   droneCount: "Number of UAVs", availableTime: "Time available", targetPod: "Target POD",
