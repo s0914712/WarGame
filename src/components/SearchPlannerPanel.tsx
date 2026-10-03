@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
-  currentRangeLimits, lkpProjection, type LkpPickTarget,
+  currentRangeLimits, lkpProjection, transitProjection, type LkpPickTarget,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
@@ -772,6 +772,16 @@ export function SearchPlannerPanel(
           </Section>
         )}
 
+        {/* ⑪ 突穿機率（已知船舶航經搜索區、未被發現） */}
+        <Section title={t.secTransit}>
+          <label style={checkRow}>
+            <input type="checkbox" checked={inputs.transitEnabled}
+              onChange={(e) => patch({ transitEnabled: e.target.checked })} />
+            {t.transitEnable}
+          </label>
+          {inputs.transitEnabled && <TransitEditor t={t} fmtHr={fmtHr} />}
+        </Section>
+
         {/* ⑩ 假目標與接觸查證（Stone §6） */}
         <Section title={t.secFalseTargets}>
           <label style={checkRow}>
@@ -1375,6 +1385,91 @@ function ScenarioLkp({ t, id, datum }: { t: SearchStrings; id: string; datum: Ln
       )}
     </div>
   );
+}
+
+/** 突穿機率：船舶回報位置 / 航向航速 + 執行與結果 */
+function TransitEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
+  const inputs = searchPlannerStore.getInputs();
+  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
+  const tracks = searchPlannerStore.getTracks();
+  const r = searchPlannerStore.getTransitResult();
+  const proj = transitProjection();
+  const [busy, setBusy] = useState(false);
+  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+  const ci = (c: [number, number]) => `95% CI [${(c[0] * 100).toFixed(1)}%, ${(c[1] * 100).toFixed(1)}%]`;
+  const run = () => {
+    setBusy(true);
+    setTimeout(() => { searchPlannerStore.runTransit(); setBusy(false); }, 20);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{
+        padding: "7px 9px", borderRadius: 4,
+        background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.3)",
+      }}>
+        <LkpInput key={JSON.stringify(inputs.transitPos)} t={t} title={t.transitShipPos} accent="#fca5a5"
+          value={inputs.transitPos} onApply={(p) => patch({ transitPos: p })} pickTarget={{ kind: "transit" }} />
+      </div>
+      <NumField label={t.transitReportToStart} value={inputs.transitReportToStartHr} min={0} max={48} step={0.25} unit="hr"
+        onChange={(v) => patch({ transitReportToStartHr: v })} />
+      <NumField label={t.lkpSigma} value={inputs.transitSigmaNm} min={0} max={20} step={0.5} unit="nm"
+        onChange={(v) => patch({ transitSigmaNm: v })} />
+      <NumField label={t.targetCourse} value={inputs.transitCourseDeg} min={0} max={359} step={1} unit="°"
+        onChange={(v) => patch({ transitCourseDeg: v })} />
+      <NumField label={t.targetCourseSigma} value={inputs.transitCourseSigmaDeg} min={0} max={90} step={1} unit="°"
+        onChange={(v) => patch({ transitCourseSigmaDeg: v })} />
+      <NumField label={t.targetSpeed} value={inputs.transitSpeedKn} min={0} max={40} step={0.5} unit="kn"
+        onChange={(v) => patch({ transitSpeedKn: v })} />
+      <NumField label={t.targetSpeedSigma} value={inputs.transitSpeedSigmaKn} min={0} max={10} step={0.1} unit="kn"
+        onChange={(v) => patch({ transitSpeedSigmaKn: v })} />
+
+      {proj && (
+        <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.55 }}>
+          {proj.entryHr !== null
+            ? <>{t.transitNominalEntry} {fmtSignedHr(proj.entryHr, fmtHr, t)}
+              {proj.exitHr !== null && <> · {t.transitNominalExit} {fmtSignedHr(proj.exitHr, fmtHr, t)}</>}</>
+            : <span style={{ color: "#fed7aa" }}>{t.transitNominalMiss}</span>}
+        </div>
+      )}
+
+      {tracks.length === 0 ? (
+        <div style={warnBox}>{t.mcNeedTracks}</div>
+      ) : !inputs.transitPos ? (
+        <div style={warnBox}>{t.transitNeedPos}</div>
+      ) : (
+        <button className="wg-btn" style={{ ...primaryBtn, marginTop: 4 }} disabled={busy} onClick={run}>
+          <Play size={13} /> {busy ? t.mcRunning : t.transitRun}
+        </button>
+      )}
+
+      {r && (
+        <div style={{ ...resultBox, marginTop: 6, marginBottom: 0, background: "rgba(248,113,113,0.06)", borderColor: "rgba(248,113,113,0.3)" }}>
+          <KV k={t.transitPen} v={pct(r.pPenetrated)} big note={ci(r.pPenetratedCi95)} />
+          <KV k={t.transitPenGivenEnter} v={pct(r.pPenetratedGivenEnter)} note={`${ci(r.pPenetratedGivenEnterCi95)} · ${t.transitPenGivenEnterNote}`} />
+          <KV k={t.transitDetected} v={pct(r.pDetected)} highlight />
+          <KV k={t.transitEnter} v={pct(r.pEnter)}
+            note={r.medianEntryHr !== null ? `${t.transitMedianEntry} ${fmtSignedHr(r.medianEntryHr, fmtHr, t)}` : undefined} />
+          {r.pMissed > 0 && <KV k={t.transitMissed} v={pct(r.pMissed)} />}
+          {r.pLoiter > 0 && <KV k={t.transitLoiter} v={pct(r.pLoiter)} />}
+          {r.pPenetrated > 0 && (
+            <KV k={t.transitTiming} wrap
+              v={`${t.transitBefore} ${pct(r.penetratedBeforeSearch)} · ${t.transitDuring} ${pct(r.penetratedDuringSearch)} · ${t.transitAfter} ${pct(r.penetratedAfterSearch)}`}
+              note={`${t.transitSearchDuration} ${fmtHr(r.searchDurationHr)}`} />
+          )}
+          {r.penetratedAfterSearch + r.penetratedBeforeSearch > 0.5 * r.pPenetrated && r.pPenetrated > 0.05 && (
+            <div style={{ ...warnBox, marginTop: 4 }}>{t.transitTimingWarn}</div>
+          )}
+        </div>
+      )}
+      <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>{t.transitNote}</div>
+    </div>
+  );
+}
+
+/** 相對搜索開始的時刻：負值顯示「搜索前 x」 */
+function fmtSignedHr(h: number, fmtHr: (h: number) => string, t: SearchStrings): string {
+  return h < 0 ? `${t.transitBeforeStart} ${fmtHr(-h)}` : `T+${fmtHr(h)}`;
 }
 
 /** 依共用經緯順序顯示一點的度分秒 */

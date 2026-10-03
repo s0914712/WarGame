@@ -132,21 +132,21 @@ function kmPerDegLng(latDeg: number): number {
 }
 
 /** 以 refLat 為基準，把經緯度轉成本地平面座標（浬） */
-function toLocalNm(p: LngLat, origin: LngLat): [number, number] {
+export function toLocalNm(p: LngLat, origin: LngLat): [number, number] {
   const dxKm = (p[0] - origin[0]) * kmPerDegLng(origin[1]);
   const dyKm = (p[1] - origin[1]) * KM_PER_DEG_LAT;
   return [dxKm / KM_PER_NM, dyKm / KM_PER_NM];
 }
 
 /** Box–Muller：標準常態亂數 */
-function gaussian(rng: () => number): number {
+export function gaussian(rng: () => number): number {
   const u1 = Math.max(1e-12, rng());
   const u2 = rng();
   return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
 }
 
 /** 把航線重取樣成等時間間隔的位置序列（本地平面座標，浬） */
-function resampleTrack(
+export function resampleTrack(
   track: DroneTrack, origin: LngLat, speedKn: number, stepSec: number,
 ): [number, number][] {
   const pts = track.waypoints.map((w) => toLocalNm(w, origin));

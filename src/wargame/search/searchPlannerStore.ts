@@ -27,7 +27,8 @@ import {
   polygonAreaNm2, validatePolygon,
   type DroneTrack, type PolygonIssue, type SearchBox,
 } from "./tracks";
-import { deadReckon, runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
+import { deadReckon, runMonteCarlo, toLocalNm, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
+import { insideIntervals, runTransitAnalysis, type TransitResult } from "./transit";
 import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
 import {
   DEFAULT_EOIR, rangeLimits, TARGET_GEOMETRY,
@@ -100,6 +101,17 @@ export interface PlannerInputs {
   mcTargetSpeedSigmaKn: number;
   /** LKP 時刻到搜索開始（航線起點）的時數 */
   mcLkpElapsedHr: number;
+  // ── 突穿機率：已知船舶航經搜索區、未被發現的機率 ──
+  transitEnabled: boolean;
+  /** 船舶回報位置；null = 尚未輸入 */
+  transitPos: LngLat | null;
+  transitSigmaNm: number;
+  transitCourseDeg: number;
+  transitCourseSigmaDeg: number;
+  transitSpeedKn: number;
+  transitSpeedSigmaKn: number;
+  /** 回報時刻 → 搜索開始（hr） */
+  transitReportToStartHr: number;
   mcSeed: number;
   // ── Stone §3：感測器實戰效能折扣 ──
   sensorTested: boolean;
@@ -202,6 +214,14 @@ const DEFAULT_INPUTS: PlannerInputs = {
   mcTargetSpeedKn: 5,
   mcTargetSpeedSigmaKn: 1,
   mcLkpElapsedHr: 1,
+  transitEnabled: false,
+  transitPos: null,
+  transitSigmaNm: 1,
+  transitCourseDeg: 90,
+  transitCourseSigmaDeg: 5,
+  transitSpeedKn: 12,
+  transitSpeedSigmaKn: 1,
+  transitReportToStartHr: 0,
   mcSeed: 20260906,
   sensorTested: false,
   sweepSource: "table",
@@ -269,6 +289,7 @@ let inputs: PlannerInputs = { ...DEFAULT_INPUTS };
 let tracks: DroneTrack[] = [];
 let assignedUnitIds: UnitId[] = [];
 let mcResult: MonteCarloResult | null = null;
+let transitResult: TransitResult | null = null;
 let scenarios: SearchScenario[] = DEFAULT_SCENARIOS.map((x) => ({ ...x }));
 /** 目前的目標機率分布（粒子）；bayesEnabled 才建立 */
 let particles: Particle[] = [];
@@ -286,6 +307,7 @@ let loggingContact = false;
  */
 export type LkpPickTarget =
   | { kind: "mc" }
+  | { kind: "transit" }
   | { kind: "priorAll" }
   | { kind: "scenario"; id: string };
 let lkpPickTarget: LkpPickTarget | null = null;
@@ -587,6 +609,47 @@ export function lkpProjection(): {
   return { lkp, atStart, atEnd, insideAtStart };
 }
 
+/**
+ * 突穿分析的名目航線（不含誤差）—— 給地圖畫船舶預計航跡與進出點。
+ * 時間以搜索開始為 0；回報時刻為 −T。
+ */
+export function transitProjection(): {
+  report: LngLat; atStart: LngLat; entry: LngLat | null; exit: LngLat | null; end: LngLat;
+  entryHr: number | null; exitHr: number | null;
+} | null {
+  if (!inputs.transitEnabled || !inputs.transitPos) return null;
+  const { transitPos: rep0, transitCourseDeg: c, transitSpeedKn: v, transitReportToStartHr: T } = inputs;
+  const at = (hr: number) => deadReckon(rep0, c, v, T + hr);
+  const atStart = at(0);
+  const box = areaBox();
+  let entryHr: number | null = null, exitHr: number | null = null;
+  if (box) {
+    const origin: LngLat = [box.west, box.south];
+    const poly = (polygon ?? [
+      [box.west, box.south], [box.east, box.south], [box.east, box.north], [box.west, box.north],
+    ] as LngLat[]).map((p) => toLocalNm(p, origin));
+    const brg = (c * Math.PI) / 180;
+    const vel: [number, number] = [Math.sin(brg) * v, Math.cos(brg) * v];
+    const ivs = insideIntervals(toLocalNm(atStart, origin), vel, poly, -T);
+    const first = ivs[0], last = ivs[ivs.length - 1];
+    if (first && last) {
+      entryHr = first[0];
+      exitHr = Number.isFinite(last[1]) ? last[1] : null;
+    }
+  }
+  // 畫到離開搜索區後再延伸一點；沒進入就畫到航線結束時
+  const longestNm = tracks.reduce((mx, tr) => Math.max(mx, tr.trackNm), 0);
+  const searchHr = longestNm > 0 && inputs.speedKn > 0 ? longestNm / inputs.speedKn : 1;
+  const endHr = exitHr !== null ? exitHr + Math.max(0.3, (exitHr - (entryHr ?? 0)) * 0.2) : Math.max(searchHr, 1);
+  return {
+    report: rep0, atStart,
+    entry: entryHr !== null ? at(entryHr) : null,
+    exit: exitHr !== null ? at(exitHr) : null,
+    end: at(endHr),
+    entryHr, exitHr,
+  };
+}
+
 export const searchPlannerStore = {
   /** useSyncExternalStore 的 snapshot —— 每次狀態變動都會遞增 */
   getVersion: () => version,
@@ -598,6 +661,7 @@ export const searchPlannerStore = {
   getInputs: () => inputs,
   getTracks: () => tracks,
   getMonteCarlo: () => mcResult,
+  getTransitResult: () => transitResult,
   getScenarios: () => scenarios,
   getParticles: () => particles,
   getSortiePos: () => sortiePos,
@@ -626,7 +690,7 @@ export const searchPlannerStore = {
     cornerB = null;
     polygon = null;
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     wargameClock.pause();
     notify();
   },
@@ -643,7 +707,7 @@ export const searchPlannerStore = {
       picking = false;              // 兩角齊 → 自動回到面板
     }
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
   },
 
@@ -666,7 +730,7 @@ export const searchPlannerStore = {
     cornerB = [box.east, box.north];
     picking = false;
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
     return null;
   },
@@ -676,7 +740,7 @@ export const searchPlannerStore = {
     cornerB = null;
     polygon = null;
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
   },
 
@@ -684,7 +748,7 @@ export const searchPlannerStore = {
     inputs = { ...inputs, ...p };
     // 只有真正改變航線幾何的參數才作廢既有航線（見 GEOMETRY_KEYS 的說明）
     if (Object.keys(p).some((k) => GEOMETRY_KEYS.has(k))) tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     // 影響事前分布的參數變動 → 重建粒子（並清掉搜索歷程）
     if (Object.keys(p).some((k) => DISTRIBUTION_KEYS.has(k))) {
       if (inputs.bayesEnabled) {
@@ -703,7 +767,7 @@ export const searchPlannerStore = {
     inputs = { ...DEFAULT_INPUTS };
     scenarios = DEFAULT_SCENARIOS.map((x) => ({ ...x }));
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     particles = [];
     sortiePos = [];
     loggedContacts = [];
@@ -716,7 +780,7 @@ export const searchPlannerStore = {
   generateTracks(): DroneTrack[] {
     const sol = solve();
     const box = areaBox();
-    if (!sol || !box) { tracks = []; mcResult = null; notify(); return tracks; }
+    if (!sol || !box) { tracks = []; mcResult = null; transitResult = null; notify(); return tracks; }
     const m = measureBox(box);
     tracks = generateSearchTracks({
       pattern: sol.pattern,
@@ -726,7 +790,7 @@ export const searchPlannerStore = {
       droneCount: sol.droneCount,
       radiusNm: Math.min(m.shortSideNm / 2, sol.pattern === "VS" ? 5 : m.shortSideNm / 2),
     });
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
     return tracks;
   },
@@ -766,6 +830,32 @@ export const searchPlannerStore = {
     });
     notify();
     return mcResult;
+  },
+
+  /** 突穿機率分析（需先產生航線、設定船舶位置） */
+  runTransit(): TransitResult | null {
+    const sol = solve();
+    const box = areaBox();
+    if (!sol || tracks.length === 0 || !box || !inputs.transitPos) return null;
+    const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
+    transitResult = runTransitAnalysis({
+      box, polygon: polygon ?? undefined, tracks,
+      sweepWidthNm: W,
+      speedKn: inputs.speedKn,
+      navErrorSigmaNm: inputs.mcNavErrorSigmaNm,
+      sensorAvailability: inputs.mcSensorAvailability,
+      ship: {
+        position: inputs.transitPos,
+        sigmaNm: inputs.transitSigmaNm,
+        courseDeg: inputs.transitCourseDeg, courseSigmaDeg: inputs.transitCourseSigmaDeg,
+        speedKn: inputs.transitSpeedKn, speedSigmaKn: inputs.transitSpeedSigmaKn,
+        reportToStartHr: inputs.transitReportToStartHr,
+      },
+      trials: inputs.mcTrials,
+      seed: inputs.mcSeed,
+    });
+    notify();
+    return transitResult;
   },
 
   // ── Stone §2/§6/§7：事前分布、貝氏更新、停止準則 ─────────
@@ -844,7 +934,7 @@ export const searchPlannerStore = {
     cornerA = [cLng - dLng, cLat - dLat];
     cornerB = [cLng + dLng, cLat + dLat];
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
     return true;
   },
@@ -871,6 +961,7 @@ export const searchPlannerStore = {
     lkpPickTarget = null;
     const p: LngLat = [lng, lat];
     if (!target || target.kind === "mc") this.patch({ mcLkp: p });
+    else if (target.kind === "transit") this.patch({ transitPos: p });
     else if (target.kind === "priorAll") this.setAllScenarioDatums(p);
     else this.updateScenario(target.id, { datum: p });
   },

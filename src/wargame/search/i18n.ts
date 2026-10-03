@@ -161,6 +161,12 @@ export interface SearchStrings {
   lkpAtStart: string; lkpAtEnd: string; lkpOutside: string; lkpNote: string; lkpPickHint: string;
   lkpFromPrior: string; lkpFromPriorNote: string; lkpFromMc: string; lkpEdit: string;
   priorLkpTitle: string; priorLkpDiffer: string; priorLkpNote: string;
+  secTransit: string; transitEnable: string; transitShipPos: string; transitReportToStart: string;
+  transitNominalEntry: string; transitNominalExit: string; transitNominalMiss: string; transitBeforeStart: string;
+  transitNeedPos: string; transitRun: string; transitPen: string; transitPenGivenEnter: string; transitPenGivenEnterNote: string;
+  transitDetected: string; transitEnter: string; transitMedianEntry: string; transitMissed: string; transitLoiter: string;
+  transitTiming: string; transitBefore: string; transitDuring: string; transitAfter: string; transitSearchDuration: string;
+  transitTimingWarn: string; transitNote: string;
   expPlatform: string; expPlatformPlaceholder: string; expRange: string; expRefVisibility: string;
   expNote: string; expVisReduced: string; expExceedsPhysics: string; expNoDiscount: string;
   navError: string; sweepSpread: string;
@@ -287,6 +293,28 @@ const ZH: SearchStrings = {
   lkpPickHint: "點地圖設定最後已知位置（LKP）",
   lkpFromPrior: "帶入事前分布 LKP", lkpFromPriorNote: "取事前分布中權重最高情境的 LKP",
   lkpFromMc: "帶入蒙地卡羅 LKP", lkpEdit: "修改",
+  secTransit: "⑪ 突穿機率（船舶航經搜索區未被發現）",
+  transitEnable: "啟用突穿分析",
+  transitShipPos: "船舶回報位置",
+  transitReportToStart: "回報 → 開始搜索",
+  transitNominalEntry: "名目航線進入搜索區", transitNominalExit: "離開",
+  transitNominalMiss: "⚠ 依名目航向航速，船舶不會經過搜索區",
+  transitBeforeStart: "搜索前",
+  transitNeedPos: "請先設定船舶回報位置",
+  transitRun: "計算突穿機率",
+  transitPen: "突穿機率",
+  transitPenGivenEnter: "進入後突穿",
+  transitPenGivenEnterNote: "若船確實經過搜索區，未被發現的機率（屏障漏失率）",
+  transitDetected: "被發現",
+  transitEnter: "經過搜索區",
+  transitMedianEntry: "進入時刻中位數",
+  transitMissed: "未經過搜索區",
+  transitLoiter: "停留區內未發現",
+  transitTiming: "突穿發生時機",
+  transitBefore: "搜索前已通過", transitDuring: "搜索期間", transitAfter: "航線結束後",
+  transitSearchDuration: "航線飛完需",
+  transitTimingWarn: "⚠ 多數突穿發生在搜索時段之外 —— 時間沒對上：調整開始時間、加長航線或增加架數，比加密航跡更有效",
+  transitNote: "每次試驗抽船舶位置 / 航向 / 航速，直線航行；搜索期間以各架航線逐步偵測（掃掠寬、導航誤差、感測器可用率、試驗次數沿用 ⑥ 蒙地卡羅設定）。只計離開搜索區前的偵測。",
   priorLkpTitle: "最後已知位置（LKP）—— 套用到所有情境",
   priorLkpDiffer: "目前各情境的 LKP 不同（見下方各情境）；設定後會統一成同一點",
   priorLkpNote: "事前分布以各情境的 LKP 為中心、依位置誤差 σ 撒粒子，再依漂流推算到搜索期中點。各情境也可在下方個別修改 LKP。",
@@ -463,6 +491,28 @@ const EN: SearchStrings = {
   lkpPickHint: "Click the map to set the last known position (LKP)",
   lkpFromPrior: "Use prior LKP", lkpFromPriorNote: "Takes the LKP of the highest-weight prior scenario",
   lkpFromMc: "Use Monte Carlo LKP", lkpEdit: "Edit",
+  secTransit: "11. Penetration probability (ship transits undetected)",
+  transitEnable: "Enable penetration analysis",
+  transitShipPos: "Ship reported position",
+  transitReportToStart: "Report → search start",
+  transitNominalEntry: "Nominal track enters the area", transitNominalExit: "exits",
+  transitNominalMiss: "⚠ On its nominal course and speed the ship does not cross the search area",
+  transitBeforeStart: "before search",
+  transitNeedPos: "Set the ship's reported position first",
+  transitRun: "Compute penetration probability",
+  transitPen: "Penetration probability",
+  transitPenGivenEnter: "Penetration if it enters",
+  transitPenGivenEnterNote: "probability of slipping through undetected given it crosses the area (barrier leakage)",
+  transitDetected: "Detected",
+  transitEnter: "Crosses the area",
+  transitMedianEntry: "median entry time",
+  transitMissed: "Does not cross the area",
+  transitLoiter: "Stays inside undetected",
+  transitTiming: "When penetrations happen",
+  transitBefore: "before search", transitDuring: "during search", transitAfter: "after tracks end",
+  transitSearchDuration: "Tracks take",
+  transitTimingWarn: "⚠ Most penetrations happen outside the search window — the timing is off: shift the start, lengthen the tracks or add aircraft rather than tightening track spacing",
+  transitNote: "Each trial samples the ship's position, course and speed and runs it in a straight line; during the search each aircraft's track is stepped for detection (sweep width, navigation error, sensor availability and trial count come from the Monte Carlo settings in 6). Only detections before the ship leaves the area count.",
   priorLkpTitle: "Last known position (LKP) — apply to all scenarios",
   priorLkpDiffer: "Scenarios currently have different LKPs (see each scenario below); setting one here unifies them",
   priorLkpNote: "The prior scatters particles around each scenario's LKP with its position σ, then drifts them to mid-search. Each scenario's LKP can also be edited individually below.",

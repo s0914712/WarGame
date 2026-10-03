@@ -8,7 +8,7 @@
  */
 import type { Map as MapboxMap } from "mapbox-gl";
 import type { LngLat } from "../wargame/types";
-import { lkpProjection, searchPlannerStore, solve } from "../wargame/search/searchPlannerStore";
+import { lkpProjection, searchPlannerStore, solve, transitProjection } from "../wargame/search/searchPlannerStore";
 import { measureBox, boxFromCorners, polygonAreaNm2, TRACK_COLORS } from "../wargame/search/tracks";
 import { SEARCH_PATTERNS } from "../wargame/search/patterns";
 import { langStore } from "../wargame/i18n/lang";
@@ -101,8 +101,16 @@ function buildLkp(): GeoJSON.FeatureCollection {
       geometry: { type: "Point" as const, coordinates: sc.datum },
     }))
     : [];
+  // 突穿分析：船舶名目航跡（紅）+ 回報位置 / 進入 / 離開點
+  const tp = transitProjection();
+  const transitFeats: GeoJSON.Feature[] = tp ? [
+    { type: "Feature", properties: { color: "#f87171" }, geometry: { type: "LineString", coordinates: [tp.report, tp.end] } },
+    { type: "Feature", properties: { role: "lkp", label: en ? "Ship report" : "船舶回報位置" }, geometry: { type: "Point", coordinates: tp.report } },
+    ...(tp.entry ? [{ type: "Feature" as const, properties: { role: "end", label: en ? "Enters" : "進入" }, geometry: { type: "Point" as const, coordinates: tp.entry } }] : []),
+    ...(tp.exit ? [{ type: "Feature" as const, properties: { role: "end", label: en ? "Exits" : "離開" }, geometry: { type: "Point" as const, coordinates: tp.exit } }] : []),
+  ] : [];
   const p = lkpProjection();
-  if (!p) return { type: "FeatureCollection", features: priorPts };
+  if (!p) return { type: "FeatureCollection", features: [...priorPts, ...transitFeats] };
   const line: LngLat[] = [p.lkp, p.atStart, ...(p.atEnd ? [p.atEnd] : [])];
   const pt = (c: LngLat, role: string, label: string): GeoJSON.Feature => ({
     type: "Feature", properties: { role, label }, geometry: { type: "Point", coordinates: c },
@@ -115,6 +123,7 @@ function buildLkp(): GeoJSON.FeatureCollection {
       pt(p.atStart, "start", en ? "Search start" : "開始搜索"),
       ...(p.atEnd ? [pt(p.atEnd, "end", en ? "Tracks end" : "航線結束")] : []),
       ...priorPts,
+      ...transitFeats,
     ],
   };
 }
@@ -372,7 +381,7 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   map.addLayer({
     id: LAYER_LKP_LINE, type: "line", source: SRC_LKP,
     filter: ["==", ["geometry-type"], "LineString"],
-    paint: { "line-color": "#38bdf8", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.9 },
+    paint: { "line-color": ["coalesce", ["get", "color"], "#38bdf8"], "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.9 },
   });
   map.addLayer({
     id: LAYER_LKP_PTS, type: "circle", source: SRC_LKP,
