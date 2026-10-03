@@ -69,7 +69,12 @@ function subscribe(cb: () => void): () => void {
   return () => { u1(); window.clearInterval(t); };
 }
 
-export function BattleStatsHud({ isMobile = false, embedded = false }: { isMobile?: boolean; embedded?: boolean } = {}) {
+/** inBar：桌面頂部列內單行顯示（不換行） */
+export function BattleStatsHud({ isMobile = false, embedded = false, inBar = false, hideNames = false }: {
+  isMobile?: boolean; embedded?: boolean; inBar?: boolean;
+  /** 窄螢幕頂部列：只留陣營色盾牌 + 數字（陣營名放 tooltip） */
+  hideNames?: boolean;
+} = {}) {
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const s = getSnapshot();
 
@@ -109,7 +114,9 @@ export function BattleStatsHud({ isMobile = false, embedded = false }: { isMobil
       style={embedded ? {
         display: "flex",
         alignItems: "center",
-        flexWrap: "wrap",
+        flexWrap: inBar ? "nowrap" : "wrap",
+        whiteSpace: inBar ? "nowrap" : undefined,
+        flexShrink: 0,
         gap: 12,
         color: "#e2e8f0",
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
@@ -132,13 +139,13 @@ export function BattleStatsHud({ isMobile = false, embedded = false }: { isMobil
       }}
     >
       {s.sides.map((side, i) => (
-        <div key={side.id} style={{ display: "flex", alignItems: "center", gap: isMobile ? 6 : 10 }}>
+        <div key={side.id} title={side.stats.displayName} style={{ display: "flex", alignItems: "center", gap: isMobile ? 6 : 10 }}>
           {i > 0 && (
             <span style={{ color: "#475569", fontSize: isMobile ? 12 : 17, marginRight: isMobile ? 6 : 10, fontWeight: 700 }}>VS</span>
           )}
           <Shield size={isMobile ? 14 : 20} color={side.stats.color} fill={side.stats.color} fillOpacity={0.2} />
           <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", alignItems: "center", gap: isMobile ? 5 : 0, lineHeight: 1.2 }}>
-            <span style={{ fontSize: isMobile ? 11 : 15, color: "#94a3b8" }}>{side.stats.displayName}</span>
+            {!hideNames && <span style={{ fontSize: isMobile ? 11 : 15, color: "#94a3b8" }}>{side.stats.displayName}</span>}
             <span style={{ fontSize: isMobile ? 14 : 22, fontWeight: 600, fontFamily: "ui-monospace, monospace", display: "flex", alignItems: "center", gap: isMobile ? 5 : 8 }}>
               <PopNumber value={side.stats.alive} color={side.stats.color} />
               <span style={{ color: "#64748b", fontSize: isMobile ? 11 : 17, display: "flex", alignItems: "center", gap: 3 }}>

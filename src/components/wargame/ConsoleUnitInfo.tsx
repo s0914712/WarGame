@@ -211,6 +211,13 @@ export function ConsoleUnitInfo() {
                 <Chip k={t("Current Route")} v={unit.waypoints.length === 0 ? "—"
                   : `${unit.waypoints.length} ${t("waypoints")} · ${v.totalKm.toFixed(0)} km · ETA ${formatEta(v.totalSec)}`} />
                 <EngagingChip unit={unit} />
+                {typeof unit.extensions.endurance === "number" && (
+                  <Chip k={t("Endurance")} v={`${unit.extensions.endurance} hr`} />
+                )}
+                {typeof unit.extensions.commandRadiusKm === "number" && (
+                  <Chip k={t("Combat radius")}
+                    v={`${unit.extensions.commandRadiusKm.toFixed(0)} km (${(unit.extensions.commandRadiusKm / 1.852).toFixed(0)} nm)`} />
+                )}
                 {unit.activeSonar && <Chip k="主動聲納" v="ON·曝露" color="#7dd3fc" />}
               </div>
               {cat.domain === "subsurface" && <DepthRow unitId={unit.id} />}

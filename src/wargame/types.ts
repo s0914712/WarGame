@@ -24,20 +24,25 @@ export type SideId = "blue" | "red" | "neutral" | "us" | "japan";
 export type CommandId = string;
 export type LngLat = [number, number];
 
-// ── v4 catalog（10 種） ──────────────────────────────────
+// ── v4 catalog（14 種） ──────────────────────────────────
 export type UnitKind =
-  | "missile_launcher" // 反艦飛彈車（雄三 / DF-26）
+  | "missile_launcher" // 機動飛彈車（射程 70 浬 ≈ 129.6 km）
   | "drone"            // 無人機（偵察 / 攻擊）
   | "ship_surface"     // 水面艦
   | "submarine"        // 潛艦
   | "fighter"          // 戰機
   | "radar_station"    // 固定雷達站（樂山、PAVE PAWS）
   | "sam_coastal"      // 中程機動 SAM（天弓 II / 海弓 III / TC-2N）
-  | "mobile_radar"     // 機動雷達車（YLC-2 / 蜂眼）
+  | "mobile_radar"     // 機動雷達車（偵蒐 50 浬 ≈ 92.6 km）
   | "sam_patriot"      // 重型 SAM（Patriot PAC-3 / 天弓 III）
   | "supply_ship"      // 補給艦（RAS 補油料 + 彈藥；無武器）
   | "airbase"          // 空軍基地（戰機 RTB 目標；大範圍 supply）
-  | "asw_helo";        // 反潛直升機（吊放聲納 dipping sonar 點偵測 + 輕型魚雷）
+  | "asw_helo"         // 反潛直升機（吊放聲納 dipping sonar 點偵測 + 輕型魚雷）
+  | "uav_ruiyuan"      // 無人機 銳鳶（滯空 12 hr、作戰半徑 70 浬 ≈ 129.6 km）
+  | "uav_ruihuo"       // 無人機 銳穫（滯空 6 hr、作戰半徑 50 浬 ≈ 92.6 km）
+  | "sowa"             // 小型一次性攻擊無人機（Small One-Way Attack）
+  | "mowa"             // 中型一次性攻擊無人機（Medium One-Way Attack）
+  | "landing_ship";    // 登陸艦（075 / 071 / 072 等兩棲艦）
 export type Domain = "land" | "air" | "sea" | "subsurface";
 
 export interface UnitCatalogEntry {
@@ -47,6 +52,11 @@ export interface UnitCatalogEntry {
   defaultAltitudeM: number;
   iconShape: "cone" | "triangle_inverted" | "diamond";
   defaultCore: CoreAttributes;
+  /**
+   * 放置新單位時預填的 extension 值（滯空時數 endurance、控制半徑 commandRadiusKm ...）。
+   * 省略 → 空物件。場景檔可在 Unit.extensions 覆寫。
+   */
+  defaultExtensions?: ExtensionAttributes;
   uiRanges: Record<keyof CoreAttributes, { min: number; max: number; step: number; unit: string }>;
   /**
    * 規劃 / 移動限制（v1 用於 validatePlan，engine 暫不強制）。
@@ -131,6 +141,8 @@ export interface WeaponSpec {
   cooldownSec?: number;
   /** 命中傷害（target.hpMax 比例）；省略 = 0.6 */
   damageFrac?: number;
+  /** 一次性攻擊（自殺無人機）：發射即載台本身撲向目標 — 載台從戰場移除、飛行速度 = 載台最大速度 */
+  oneWay?: boolean;
 }
 
 /** 武器彈艙（runtime，per unit）。每種武器獨立計彈。 */

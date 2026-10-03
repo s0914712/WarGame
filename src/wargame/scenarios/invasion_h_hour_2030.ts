@@ -4,7 +4,7 @@
  * 高難度全面入侵情境。紅方總兵力 ~38 單位（含 13 兩棲艦 + 護衛艦群 + 戰機 + 彈道飛彈），
  * 藍方 ~40 單位（含 4 機場 / 3 Patriot / 6 雄三 / 全艦隊），美軍 4 單位有限介入。
  *
- * 紅方戰略目標：3 個兩棲艦群分別在台中、台南、桃園外海登陸 → hold_area
+ * 紅方戰略目標：3 個兩棲艦群分別在台中、台南、桃園外海登陸 → hold_area（限登陸艦 landing_ship）
  * 藍方戰略目標：殲滅紅方兩棲艦群（075/071/072）阻止登陸 → 任一艦隊全滅 = 勝
  *
  * 戰術設計：
@@ -12,6 +12,7 @@
  *   - 紅方 8 J-20 突防爭取制空，4 J-16 對陸地目標 SEAD
  *   - 紅方 3 SSN 從南北包夾藍方艦隊
  *   - 藍方海軍向中線推進反艦戰 + 雄三飽和射擊
+ *   - 藍方 6 SOWA 守灘岸、3 MOWA 自內陸撲擊接近中的登陸艦（一次性，擊發即消耗）
  *   - 美軍 2 DDG（Aegis BMD）+ 1 SSN 從東部進入支援
  *
  * 預期時長：60+ 分鐘。建議速率 30×。
@@ -158,6 +159,18 @@ const BLUE_UNITS: Unit[] = [
     coreOverride: { hpMax: 500 },
     waypoints: [[121.90, 24.30], [121.80, 24.50], [121.85, 24.40]],
   }),
+
+  // ── 一次性攻擊無人機（灘岸反登陸）──
+  // SOWA 部署在三處登陸灘岸；MOWA 置於內陸，撲擊接近中的兩棲艦
+  mkUnit("BLUE-SOWA-TY1", "blue", "sowa", "SOWA-桃1", "SOWA 桃園灘岸 1", 121.06, 25.04),
+  mkUnit("BLUE-SOWA-TY2", "blue", "sowa", "SOWA-桃2", "SOWA 桃園灘岸 2", 121.02, 24.98),
+  mkUnit("BLUE-SOWA-TC1", "blue", "sowa", "SOWA-中1", "SOWA 台中灘岸 1", 120.60, 24.25),
+  mkUnit("BLUE-SOWA-TC2", "blue", "sowa", "SOWA-中2", "SOWA 台中灘岸 2", 120.55, 24.15),
+  mkUnit("BLUE-SOWA-TN1", "blue", "sowa", "SOWA-南1", "SOWA 台南灘岸 1", 120.17, 23.10),
+  mkUnit("BLUE-SOWA-TN2", "blue", "sowa", "SOWA-南2", "SOWA 台南灘岸 2", 120.15, 23.00),
+  mkUnit("BLUE-MOWA-N", "blue", "mowa", "MOWA-北", "MOWA 北部發射群", 121.20, 24.90),
+  mkUnit("BLUE-MOWA-C", "blue", "mowa", "MOWA-中", "MOWA 中部發射群", 120.70, 24.10),
+  mkUnit("BLUE-MOWA-S", "blue", "mowa", "MOWA-南", "MOWA 南部發射群", 120.35, 23.00),
 ];
 
 // ════════════════════════════════════════════════
@@ -200,58 +213,58 @@ const RED_UNITS: Unit[] = [
 
   // ══════════ 兩棲艦群 A：北線（桃園外海登陸）══════════
   // 4 LHA + LPD + LST 編隊
-  mkUnit("RED-LHA-A1", "red", "ship_surface", "075-A1", "075 兩棲攻擊艦 A1", 118.50, 25.10, {
+  mkUnit("RED-LHA-A1", "red", "landing_ship", "075-A1", "075 兩棲攻擊艦 A1", 118.50, 25.10, {
     speedKnots: 18,
-    coreOverride: { rangeKm: 100, hpMax: 700 },
+    coreOverride: { hpMax: 700 },
     waypoints: [[119.50, 25.05], [120.30, 25.00], [120.80, 25.00]],
   }),
-  mkUnit("RED-LPD-A2", "red", "ship_surface", "071-A2", "071 船塢登陸艦 A2", 118.40, 25.00, {
+  mkUnit("RED-LPD-A2", "red", "landing_ship", "071-A2", "071 船塢登陸艦 A2", 118.40, 25.00, {
     speedKnots: 18,
-    coreOverride: { rangeKm: 60, hpMax: 600 },
+    coreOverride: { hpMax: 600 },
     waypoints: [[119.40, 25.00], [120.30, 24.95], [120.80, 24.95]],
   }),
-  mkUnit("RED-LST-A3", "red", "ship_surface", "072-A3", "072 戰車登陸艦 A3", 118.35, 25.15, {
+  mkUnit("RED-LST-A3", "red", "landing_ship", "072-A3", "072 戰車登陸艦 A3", 118.35, 25.15, {
     speedKnots: 16,
-    coreOverride: { rangeKm: 40, hpMax: 450 },
+    coreOverride: { hpMax: 450 },
     waypoints: [[119.30, 25.10], [120.20, 25.05], [120.80, 25.05]],
   }),
 
   // ══════════ 兩棲艦群 B：中線（台中外海登陸）══════════
-  mkUnit("RED-LHA-B1", "red", "ship_surface", "075-B1", "075 兩棲攻擊艦 B1", 118.50, 24.30, {
+  mkUnit("RED-LHA-B1", "red", "landing_ship", "075-B1", "075 兩棲攻擊艦 B1", 118.50, 24.30, {
     speedKnots: 18,
-    coreOverride: { rangeKm: 100, hpMax: 700 },
+    coreOverride: { hpMax: 700 },
     waypoints: [[119.30, 24.30], [120.10, 24.25], [120.50, 24.20]],
   }),
-  mkUnit("RED-LPD-B2", "red", "ship_surface", "071-B2", "071 船塢登陸艦 B2", 118.40, 24.20, {
+  mkUnit("RED-LPD-B2", "red", "landing_ship", "071-B2", "071 船塢登陸艦 B2", 118.40, 24.20, {
     speedKnots: 18,
-    coreOverride: { rangeKm: 60, hpMax: 600 },
+    coreOverride: { hpMax: 600 },
     waypoints: [[119.20, 24.20], [120.00, 24.20], [120.50, 24.15]],
   }),
-  mkUnit("RED-LST-B3", "red", "ship_surface", "072-B3", "072 戰車登陸艦 B3", 118.35, 24.40, {
+  mkUnit("RED-LST-B3", "red", "landing_ship", "072-B3", "072 戰車登陸艦 B3", 118.35, 24.40, {
     speedKnots: 16,
-    coreOverride: { rangeKm: 40, hpMax: 450 },
+    coreOverride: { hpMax: 450 },
     waypoints: [[119.20, 24.35], [120.00, 24.25], [120.50, 24.25]],
   }),
-  mkUnit("RED-LST-B4", "red", "ship_surface", "072-B4", "072 戰車登陸艦 B4", 118.40, 24.15, {
+  mkUnit("RED-LST-B4", "red", "landing_ship", "072-B4", "072 戰車登陸艦 B4", 118.40, 24.15, {
     speedKnots: 16,
-    coreOverride: { rangeKm: 40, hpMax: 450 },
+    coreOverride: { hpMax: 450 },
     waypoints: [[119.25, 24.15], [120.05, 24.10], [120.50, 24.10]],
   }),
 
   // ══════════ 兩棲艦群 C：南線（台南外海登陸）══════════
-  mkUnit("RED-LHA-C1", "red", "ship_surface", "075-C1", "075 兩棲攻擊艦 C1", 118.50, 23.20, {
+  mkUnit("RED-LHA-C1", "red", "landing_ship", "075-C1", "075 兩棲攻擊艦 C1", 118.50, 23.20, {
     speedKnots: 18,
-    coreOverride: { rangeKm: 100, hpMax: 700 },
+    coreOverride: { hpMax: 700 },
     waypoints: [[119.30, 23.15], [120.00, 23.10], [120.30, 23.05]],
   }),
-  mkUnit("RED-LPD-C2", "red", "ship_surface", "071-C2", "071 船塢登陸艦 C2", 118.40, 23.10, {
+  mkUnit("RED-LPD-C2", "red", "landing_ship", "071-C2", "071 船塢登陸艦 C2", 118.40, 23.10, {
     speedKnots: 18,
-    coreOverride: { rangeKm: 60, hpMax: 600 },
+    coreOverride: { hpMax: 600 },
     waypoints: [[119.20, 23.10], [119.90, 23.10], [120.30, 23.10]],
   }),
-  mkUnit("RED-LST-C3", "red", "ship_surface", "072-C3", "072 戰車登陸艦 C3", 118.30, 23.25, {
+  mkUnit("RED-LST-C3", "red", "landing_ship", "072-C3", "072 戰車登陸艦 C3", 118.30, 23.25, {
     speedKnots: 16,
-    coreOverride: { rangeKm: 40, hpMax: 450 },
+    coreOverride: { hpMax: 450 },
     waypoints: [[119.20, 23.20], [120.00, 23.15], [120.30, 23.10]],
   }),
 
@@ -427,8 +440,8 @@ export const INVASION_H_HOUR_2030: Scenario = {
   id: "invasion_h_hour_2030",
   displayName: "H 時 — 共軍登島作戰 2030",
   briefing: {
-    zh: "解放軍三線兩棲艦群（13 艦）同時逼近台灣西部三處登陸區（桃園、台中、台南），含 8 J-20 + 4 J-16 制空、3 SSN 潛伏、8 彈道飛彈壓制。藍方全面動員 + 美軍 4 單位介入。高難度全要素戰場。",
-    en: "PLA three-axis amphibious task force (13 ships) simultaneously approaches Taiwan's western landing zones (Taoyuan, Taichung, Tainan). Includes 8 J-20 + 4 J-16 air superiority, 3 SSN lurking, 8 ballistic missiles for suppression. Blue full mobilization + 4 USN assets engaged. Highest difficulty, all-elements battlefield.",
+    zh: "解放軍三線兩棲艦群（13 艦）同時逼近台灣西部三處登陸區（桃園、台中、台南），含 8 J-20 + 4 J-16 制空、3 SSN 潛伏、8 彈道飛彈壓制。藍方全面動員（含 SOWA / MOWA 自殺無人機灘岸反登陸）+ 美軍 4 單位介入。登陸艦須進入登陸區並守住 20 分鐘才算登陸成功。高難度全要素戰場。",
+    en: "PLA three-axis amphibious task force (13 ships) simultaneously approaches Taiwan's western landing zones (Taoyuan, Taichung, Tainan). Includes 8 J-20 + 4 J-16 air superiority, 3 SSN lurking, 8 ballistic missiles for suppression. Blue full mobilization (incl. SOWA / MOWA one-way attack drones for anti-landing defense) + 4 USN assets engaged. Landing ships must enter a landing zone and hold for 20 minutes. Highest difficulty, all-elements battlefield.",
   },
   startSimTimeSec: 0,
   durationSec: 5400,    // 90 分鐘
@@ -444,11 +457,11 @@ export const INVASION_H_HOUR_2030: Scenario = {
   victoryConditions: [
     // 紅方任一登陸區 hold 20 分鐘 = 紅勝（登陸成功）
     { kind: "hold_area", centerLngLat: [120.85, 25.00], radiusKm: 25, sideId: "red", forSec: 1200,
-      label: "紅方桃園登陸成立（hold 20 分）" },
+      requireKinds: ["landing_ship"], label: "紅方桃園登陸成立（登陸艦 hold 20 分）" },
     { kind: "hold_area", centerLngLat: [120.55, 24.20], radiusKm: 25, sideId: "red", forSec: 1200,
-      label: "紅方台中登陸成立（hold 20 分）" },
+      requireKinds: ["landing_ship"], label: "紅方台中登陸成立（登陸艦 hold 20 分）" },
     { kind: "hold_area", centerLngLat: [120.30, 23.10], radiusKm: 25, sideId: "red", forSec: 1200,
-      label: "紅方台南登陸成立（hold 20 分）" },
+      requireKinds: ["landing_ship"], label: "紅方台南登陸成立（登陸艦 hold 20 分）" },
     // 殲滅紅方所有兩棲艦 = 藍方戰略勝（無兵可登）
     // （非完美 — 用 eliminate_side 簡化，紅方水面艦全沒了就贏）
     { kind: "eliminate_side", targetSideId: "red", sideId: "blue",

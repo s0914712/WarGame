@@ -19,7 +19,8 @@ import { getTerrainProbe } from "./terrain";
 export type RouteIssueType =
   | "fuel_exceeded"
   | "time_exceeded"
-  | "domain_invalid";
+  | "domain_invalid"
+  | "command_radius_exceeded";
 
 export interface RouteIssue {
   type: RouteIssueType;
@@ -39,6 +40,13 @@ export interface RouteValidation {
   withinTime: boolean;
   /** 哪些 waypoint 違反 domain 限制（0-based set，方便 UI 標紅） */
   invalidWaypointIdx: number[];
+  /**
+   * 管制 / 資料鏈半徑（km）— 來自 unit.extensions.commandRadiusKm（如 UAV 作戰半徑）。
+   * 沒設此 extension 的單位為 undefined（不檢查）。
+   */
+  commandRadiusKm?: number;
+  /** 航線上離出發點最遠的距離（km）— 與 commandRadiusKm 比對 */
+  maxRadiusKm: number;
   issues: RouteIssue[];
   /** 沒有 error 級 issue 才為 true。warning 不影響此值 */
   ok: boolean;
@@ -72,6 +80,17 @@ export function validatePlan(
 
   const remainingFuelKm = unit.core.movementRangeKm - unit.distanceTravelledKm;
   const withinFuel = totalKm <= remainingFuelKm;
+
+  // ── 管制 / 資料鏈半徑（UAV 作戰半徑）──
+  // 從規劃當下的位置（= 發航 / 起飛點）量到每個航點的直線距離，取最大值。
+  const origin: LngLat = [unit.position.lng, unit.position.lat];
+  let maxRadiusKm = 0;
+  for (const wp of waypoints) {
+    const d = haversineKm(origin, wp);
+    if (d > maxRadiusKm) maxRadiusKm = d;
+  }
+  const rawRadius = unit.extensions.commandRadiusKm;
+  const commandRadiusKm = typeof rawRadius === "number" && rawRadius > 0 ? rawRadius : undefined;
 
   // ── 時間 budget ──
   const currentSec = opts.currentSimSec ?? 0;
@@ -110,6 +129,14 @@ export function validatePlan(
     });
   }
 
+  if (commandRadiusKm !== undefined && maxRadiusKm > commandRadiusKm) {
+    issues.push({
+      type: "command_radius_exceeded",
+      severity: "warning",     // 超出即失去管制鏈路，但不阻擋規劃
+      message: `最遠航點 ${maxRadiusKm.toFixed(0)} km 超出作戰半徑 ${commandRadiusKm.toFixed(0)} km`,
+    });
+  }
+
   for (const idx of invalidWaypointIdx) {
     issues.push({
       type: "domain_invalid",
@@ -127,6 +154,8 @@ export function validatePlan(
     withinFuel,
     withinTime,
     invalidWaypointIdx,
+    commandRadiusKm,
+    maxRadiusKm,
     issues,
     ok: !hasError,
   };

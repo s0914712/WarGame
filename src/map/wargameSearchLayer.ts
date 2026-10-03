@@ -1,0 +1,431 @@
+/**
+ * 搜索規劃圖層 — 搜索區框 + 掃掠帶 + 產生的搜索航線。
+ *
+ * 訂閱 searchPlannerStore：
+ *   - 搜索區（兩角框或多邊形）+ 面積 / POD 標籤
+ *   - 各架無人機的搜索航線（依序號分色）
+ *   - 掃掠帶（沿航線加寬 W，直觀顯示覆蓋率）
+ */
+import type { Map as MapboxMap } from "mapbox-gl";
+import type { LngLat } from "../wargame/types";
+import { lkpProjection, searchPlannerStore, solve, transitProjection } from "../wargame/search/searchPlannerStore";
+import { measureBox, boxFromCorners, polygonAreaNm2, TRACK_COLORS } from "../wargame/search/tracks";
+import { SEARCH_PATTERNS } from "../wargame/search/patterns";
+import { langStore } from "../wargame/i18n/lang";
+import { attachSearchAreaDraw } from "./searchAreaDraw";
+import { searchStrings } from "../wargame/search/i18n";
+import { podForDisplay, POD_DISPLAY_CAP } from "../wargame/search/pod";
+
+const SRC_BANDS = "wg-search-bands-src";
+const SRC_CONTACTS = "wg-search-contacts-src";
+const SRC_PROB = "wg-search-prob-src";
+const SRC_OPT = "wg-search-opt-src";
+const SRC_BOX = "wg-search-box-src";
+const SRC_SWEEP = "wg-search-sweep-src";
+const SRC_TRACKS = "wg-search-tracks-src";
+const SRC_LKP = "wg-search-lkp-src";
+const LAYER_LKP_LINE = "wg-search-lkp-line";
+const LAYER_LKP_PTS = "wg-search-lkp-pts";
+const LAYER_LKP_LABEL = "wg-search-lkp-label";
+
+const LAYER_BANDS = "wg-search-bands";
+const LAYER_CONTACTS = "wg-search-contacts";
+const LAYER_CONTACT_LABEL = "wg-search-contact-label";
+const LAYER_PROB = "wg-search-prob";
+const LAYER_OPT = "wg-search-opt";
+const LAYER_SWEEP = "wg-search-sweep";
+const LAYER_BOX = "wg-search-box";
+const LAYER_TRACKS = "wg-search-tracks";
+const LAYER_TRACK_PTS = "wg-search-track-pts";
+const LAYER_LABEL = "wg-search-label";
+const LAYER_VERTEX = "wg-search-vertex";
+
+const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+
+const lang = (): "zh" | "en" => (langStore.get() === "en" ? "en" : "zh");
+
+function buildBox(): GeoJSON.FeatureCollection {
+  const { a, b } = searchPlannerStore.getCorners();
+  if (!a) return EMPTY;
+  if (!b) {
+    // 只點了第一角 → 畫一個標記點
+    return { type: "FeatureCollection", features: [
+      { type: "Feature", properties: { label: searchStrings(lang()).pickSecondCorner }, geometry: { type: "Point", coordinates: a } },
+    ] };
+  }
+  const box = boxFromCorners(a, b);
+  const polygon = searchPlannerStore.getPolygon();
+  const ring: [number, number][] = polygon
+    ? [...polygon, polygon[0] as LngLat]
+    : [
+      [box.west, box.south], [box.east, box.south],
+      [box.east, box.north], [box.west, box.north], [box.west, box.south],
+    ];
+  const m = measureBox(box);
+  const sol = solve();
+
+  const t = searchStrings(lang());
+  const areaName = t.secArea.replace(/^[①1][. ]*/, "");
+  let label = polygon
+    ? `${areaName} ${t.polyArea} ${polygon.length} ${t.polyVertices} · ${polygonAreaNm2(polygon).toFixed(0)} nm²`
+    : `${areaName} ${m.widthNm.toFixed(1)}×${m.heightNm.toFixed(1)} nm · ${m.areaNm2.toFixed(0)} nm²`;
+  if (sol) {
+    const pat = SEARCH_PATTERNS[sol.pattern][lang()];
+    const pod = sol.forward ? sol.forward.pod : sol.inverse?.achievedPod ?? 0;
+    const hrs = sol.forward ? sol.forward.timeHr : sol.inverse?.actualTimeHr ?? 0;
+    label += `\n${pat.name} · ${sol.droneCount}× · S=${sol.trackSpacingNm.toFixed(2)} nm`;
+    const shown = podForDisplay(pod);
+    label += `\n${hrs.toFixed(1)} hr · POD ${shown >= POD_DISPLAY_CAP ? ">99.9" : (shown * 100).toFixed(0)}%`;
+  }
+
+  return {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } },
+      // 多邊形頂點標記
+      ...(polygon ?? []).map((p, i): GeoJSON.Feature => ({
+        type: "Feature", properties: { vertex: i + 1 }, geometry: { type: "Point", coordinates: p },
+      })),
+      { type: "Feature", properties: { label }, geometry: { type: "Point", coordinates: [(box.west + box.east) / 2, box.north] } },
+    ],
+  };
+}
+
+/** 蒙地卡羅 LKP：最後已知位置 → 開始搜索時 → 航線飛完時 的推算航跡 */
+function buildLkp(): GeoJSON.FeatureCollection {
+  const en = lang() === "en";
+  // 事前分布各情境的 LKP（橘點、標情境名）
+  const inp = searchPlannerStore.getInputs();
+  // 依 LKP 建事前分布時 LKP 已由下方推算航跡標出，不重複
+  const priorPts: GeoJSON.Feature[] = inp.bayesEnabled && !inp.priorFromLkp
+    ? searchPlannerStore.getScenarios().map((sc) => ({
+      type: "Feature" as const,
+      properties: { role: "prior", label: `LKP · ${en ? (sc.labelEn ?? sc.label) : sc.label}` },
+      geometry: { type: "Point" as const, coordinates: sc.datum },
+    }))
+    : [];
+  // 突穿分析：船舶名目航跡（紅）+ 回報位置 / 進入 / 離開點
+  const tp = transitProjection();
+  const transitFeats: GeoJSON.Feature[] = tp ? [
+    { type: "Feature", properties: { color: "#f87171" }, geometry: { type: "LineString", coordinates: [tp.report, tp.end] } },
+    { type: "Feature", properties: { role: "lkp", label: en ? "Ship report" : "船舶回報位置" }, geometry: { type: "Point", coordinates: tp.report } },
+    ...(tp.entry ? [{ type: "Feature" as const, properties: { role: "end", label: en ? "Enters" : "進入" }, geometry: { type: "Point" as const, coordinates: tp.entry } }] : []),
+    ...(tp.exit ? [{ type: "Feature" as const, properties: { role: "end", label: en ? "Exits" : "離開" }, geometry: { type: "Point" as const, coordinates: tp.exit } }] : []),
+  ] : [];
+  const p = lkpProjection();
+  if (!p) return { type: "FeatureCollection", features: [...priorPts, ...transitFeats] };
+  const line: LngLat[] = [p.lkp, p.atStart, ...(p.atEnd ? [p.atEnd] : [])];
+  const pt = (c: LngLat, role: string, label: string): GeoJSON.Feature => ({
+    type: "Feature", properties: { role, label }, geometry: { type: "Point", coordinates: c },
+  });
+  return {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } },
+      pt(p.lkp, "lkp", "LKP"),
+      pt(p.atStart, "start", en ? "Search start" : "開始搜索"),
+      ...(p.atEnd ? [pt(p.atEnd, "end", en ? "Tracks end" : "航線結束")] : []),
+      ...priorPts,
+      ...transitFeats,
+    ],
+  };
+}
+
+function buildTracks(): GeoJSON.FeatureCollection {
+  const tracks = searchPlannerStore.getTracks();
+  const features: GeoJSON.Feature[] = [];
+  tracks.forEach((t) => {
+    const start = t.waypoints[0];
+    if (t.waypoints.length < 2 || !start) return;
+    const color = TRACK_COLORS[t.index % TRACK_COLORS.length] ?? "#38bdf8";
+    features.push({
+      type: "Feature",
+      properties: { color, idx: t.index },
+      geometry: { type: "LineString", coordinates: t.waypoints as LngLat[] },
+    });
+    // 起點標記
+    features.push({
+      type: "Feature",
+      properties: { color, start: 1 },
+      geometry: { type: "Point", coordinates: start },
+    });
+  });
+  return { type: "FeatureCollection", features };
+}
+
+/** 掃掠帶：航線以 W 寬度加粗顯示（用 line-width 的公尺換算，隨 zoom 縮放） */
+function buildSweep(): GeoJSON.FeatureCollection {
+  const tracks = searchPlannerStore.getTracks();
+  const sol = solve();
+  if (tracks.length === 0 || !sol) return EMPTY;
+  const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
+  if (!(W > 0)) return EMPTY;
+  return {
+    type: "FeatureCollection",
+    features: tracks.filter((t) => t.waypoints.length >= 2).map((t) => ({
+      type: "Feature" as const,
+      properties: { sweepNm: W },
+      geometry: { type: "LineString" as const, coordinates: t.waypoints as LngLat[] },
+    })),
+  };
+}
+
+/** 目標機率圖熱區（粒子柵格化）—— Stone §2 的 probability map */
+function buildProbability(): GeoJSON.FeatureCollection {
+  const cells = searchPlannerStore.getProbabilityCells(3);
+  if (cells.length === 0) return EMPTY;
+  const max = cells[0]?.probability ?? 1;
+  if (!(max > 0)) return EMPTY;
+  const dLat = (3 * 1.852) / 111.32;
+  return {
+    type: "FeatureCollection",
+    features: cells.slice(0, 1200).map((c) => {
+      const dLng = (3 * 1.852) / (111.32 * Math.cos((c.lat * Math.PI) / 180));
+      const h = dLat / 2, w = dLng / 2;
+      return {
+        type: "Feature" as const,
+        properties: { intensity: c.probability / max },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [[
+            [c.lng - w, c.lat - h], [c.lng + w, c.lat - h],
+            [c.lng + w, c.lat + h], [c.lng - w, c.lat + h], [c.lng - w, c.lat - h],
+          ]],
+        },
+      };
+    }),
+  };
+}
+
+/** Stone §5 的最佳搜索矩形（與使用者畫的框並列，看得出差多少） */
+function buildOptimalRect(): GeoJSON.FeatureCollection {
+  const sol = solve();
+  if (!sol?.rectangle || !sol.stats) return EMPTY;
+  const [cLng, cLat] = sol.stats.meanLngLat;
+  const dLat = (sol.rectangle.best.length2Nm / 2 * 1.852) / 111.32;
+  const dLng = (sol.rectangle.best.length1Nm / 2 * 1.852) / (111.32 * Math.cos((cLat * Math.PI) / 180));
+  return {
+    type: "FeatureCollection",
+    features: [{
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [cLng - dLng, cLat - dLat], [cLng + dLng, cLat - dLat],
+          [cLng + dLng, cLat + dLat], [cLng - dLng, cLat + dLat], [cLng - dLng, cLat - dLat],
+        ],
+      },
+    }],
+  };
+}
+
+/** 假目標密度帶（航道 / 漂流帶）—— 空間化的 δ(j) */
+function buildBands(): GeoJSON.FeatureCollection {
+  const inputs = searchPlannerStore.getInputs();
+  if (!inputs.falseTargetsEnabled || !inputs.densityBandsEnabled) return EMPTY;
+  return {
+    type: "FeatureCollection",
+    features: searchPlannerStore.getDensityBands().map((b) => ({
+      type: "Feature" as const,
+      properties: { widthNm: b.widthNm, mult: b.multiplier },
+      geometry: { type: "LineString" as const, coordinates: b.path },
+    })),
+  };
+}
+
+/** 已記錄的接觸，依 Stone 式(5) 的查證順序編號 */
+function buildContacts(): GeoJSON.FeatureCollection {
+  const inputs = searchPlannerStore.getInputs();
+  if (!inputs.falseTargetsEnabled) return EMPTY;
+  const ranked = searchPlannerStore.rankLoggedContacts(4);
+  if (ranked.length === 0) return EMPTY;
+  return {
+    type: "FeatureCollection",
+    features: ranked.map((c) => ({
+      type: "Feature" as const,
+      properties: { rank: c.rank, label: `${c.rank}`, top: c.rank === 1 ? 1 : 0 },
+      geometry: { type: "Point" as const, coordinates: [c.lng, c.lat] },
+    })),
+  };
+}
+
+export function attachWargameSearchLayer(map: MapboxMap): () => void {
+  const all = [LAYER_LKP_LABEL, LAYER_LKP_PTS, LAYER_LKP_LINE, LAYER_CONTACT_LABEL, LAYER_CONTACTS, LAYER_LABEL, LAYER_VERTEX, LAYER_TRACK_PTS, LAYER_TRACKS,
+    LAYER_OPT, LAYER_BOX, LAYER_SWEEP, LAYER_BANDS, LAYER_PROB];
+  for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
+  for (const id of [SRC_LKP, SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
+    if (map.getSource(id)) map.removeSource(id);
+  }
+
+  map.addSource(SRC_LKP, { type: "geojson", data: buildLkp() });
+  map.addSource(SRC_BANDS, { type: "geojson", data: buildBands() });
+  map.addSource(SRC_CONTACTS, { type: "geojson", data: buildContacts() });
+  map.addSource(SRC_PROB, { type: "geojson", data: buildProbability() });
+  map.addSource(SRC_OPT, { type: "geojson", data: buildOptimalRect() });
+  map.addSource(SRC_SWEEP, { type: "geojson", data: buildSweep() });
+  map.addSource(SRC_BOX, { type: "geojson", data: buildBox() });
+  map.addSource(SRC_TRACKS, { type: "geojson", data: buildTracks() });
+
+  // 目標機率圖熱區（畫在最底層）
+  map.addLayer({
+    id: LAYER_PROB, type: "fill", source: SRC_PROB,
+    paint: {
+      "fill-color": [
+        "interpolate", ["linear"], ["get", "intensity"],
+        0, "#1e3a8a", 0.35, "#7c3aed", 0.7, "#f59e0b", 1, "#fca5a5",
+      ],
+      "fill-opacity": ["interpolate", ["linear"], ["get", "intensity"], 0, 0.05, 1, 0.45],
+    },
+  });
+
+  // 假目標密度帶（畫在機率圖之上、掃掠帶之下）
+  map.addLayer({
+    id: LAYER_BANDS, type: "line", source: SRC_BANDS,
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": "#fb923c",
+      "line-opacity": 0.16,
+      "line-width": [
+        "interpolate", ["exponential", 2], ["zoom"],
+        4, ["*", ["get", "widthNm"], 2 * 1852 / (156543 / Math.pow(2, 4))],
+        14, ["*", ["get", "widthNm"], 2 * 1852 / (156543 / Math.pow(2, 14))],
+      ],
+    },
+  });
+
+  // 掃掠帶 — 用 W（浬）換算成螢幕寬度：1 浬 ≈ 1852 m，line-width 隨 zoom 內插
+  map.addLayer({
+    id: LAYER_SWEEP, type: "line", source: SRC_SWEEP,
+    layout: { "line-cap": "butt", "line-join": "round" },
+    paint: {
+      "line-color": "#22d3ee",
+      "line-opacity": 0.13,
+      // 依緯度 0 的公尺/像素關係近似：width_px = W_nm × 1852 / (156543 / 2^zoom)
+      "line-width": [
+        "interpolate", ["exponential", 2], ["zoom"],
+        4,  ["*", ["get", "sweepNm"], 1852 / (156543 / Math.pow(2, 4))],
+        14, ["*", ["get", "sweepNm"], 1852 / (156543 / Math.pow(2, 14))],
+      ],
+    },
+  });
+
+  // 搜索區框
+  map.addLayer({
+    id: LAYER_BOX, type: "line", source: SRC_BOX,
+    paint: { "line-color": "#facc15", "line-width": 2, "line-dasharray": [3, 2], "line-opacity": 0.95 },
+  });
+
+  // Stone §5 最佳搜索矩形（綠色虛線，與使用者黃框對照）
+  map.addLayer({
+    id: LAYER_OPT, type: "line", source: SRC_OPT,
+    paint: { "line-color": "#4ade80", "line-width": 2, "line-dasharray": [1.5, 1.5], "line-opacity": 0.9 },
+  });
+
+  // 搜索航線
+  map.addLayer({
+    id: LAYER_TRACKS, type: "line", source: SRC_TRACKS,
+    filter: ["==", ["geometry-type"], "LineString"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": ["get", "color"], "line-width": 1.8, "line-opacity": 0.9 },
+  });
+
+  // 航線起點
+  map.addLayer({
+    id: LAYER_TRACK_PTS, type: "circle", source: SRC_TRACKS,
+    filter: ["==", ["geometry-type"], "Point"],
+    paint: {
+      "circle-radius": 5, "circle-color": ["get", "color"],
+      "circle-stroke-color": "#0f172a", "circle-stroke-width": 1.5,
+    },
+  });
+
+  // 接觸標記（依查證順序編號；第 1 順位綠色）
+  map.addLayer({
+    id: LAYER_CONTACTS, type: "circle", source: SRC_CONTACTS,
+    paint: {
+      "circle-radius": ["case", ["==", ["get", "top"], 1], 11, 9],
+      "circle-color": ["case", ["==", ["get", "top"], 1], "#4ade80", "#94a3b8"],
+      "circle-stroke-color": "#0f172a", "circle-stroke-width": 2,
+    },
+  });
+  map.addLayer({
+    id: LAYER_CONTACT_LABEL, type: "symbol", source: SRC_CONTACTS,
+    layout: {
+      "text-field": ["get", "label"], "text-size": 12, "text-allow-overlap": true,
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+    },
+    paint: { "text-color": "#0f172a" },
+  });
+
+  // 多邊形頂點
+  map.addLayer({
+    id: LAYER_VERTEX, type: "circle", source: SRC_BOX,
+    filter: ["has", "vertex"],
+    paint: {
+      "circle-radius": 4, "circle-color": "#facc15",
+      "circle-stroke-color": "#0f172a", "circle-stroke-width": 1.5,
+    },
+  });
+
+  // 區域標籤
+  map.addLayer({
+    id: LAYER_LABEL, type: "symbol", source: SRC_BOX,
+    filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "vertex"]]],
+    layout: {
+      "text-field": ["get", "label"], "text-size": 13, "text-anchor": "bottom",
+      "text-offset": [0, -0.6], "text-allow-overlap": true, "text-line-height": 1.3,
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+    },
+    paint: { "text-color": "#fef9c3", "text-halo-color": "rgba(15,23,42,0.92)", "text-halo-width": 2 },
+  });
+
+  // LKP 推算航跡（虛線）+ 三個位置點
+  map.addLayer({
+    id: LAYER_LKP_LINE, type: "line", source: SRC_LKP,
+    filter: ["==", ["geometry-type"], "LineString"],
+    paint: { "line-color": ["coalesce", ["get", "color"], "#38bdf8"], "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.9 },
+  });
+  map.addLayer({
+    id: LAYER_LKP_PTS, type: "circle", source: SRC_LKP,
+    filter: ["==", ["geometry-type"], "Point"],
+    paint: {
+      "circle-radius": ["match", ["get", "role"], "lkp", 7, 5],
+      "circle-color": ["match", ["get", "role"], "lkp", "#f87171", "start", "#38bdf8", "prior", "#fb923c", "#94a3b8"],
+      "circle-stroke-color": "#0f172a", "circle-stroke-width": 2,
+    },
+  });
+  map.addLayer({
+    id: LAYER_LKP_LABEL, type: "symbol", source: SRC_LKP,
+    filter: ["==", ["geometry-type"], "Point"],
+    layout: {
+      "text-field": ["get", "label"], "text-size": 12, "text-anchor": "left", "text-offset": [0.9, 0],
+      "text-allow-overlap": true, "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+    },
+    paint: { "text-color": "#bae6fd", "text-halo-color": "rgba(15,23,42,0.92)", "text-halo-width": 2 },
+  });
+
+  const refresh = () => {
+    (map.getSource(SRC_LKP) as mapboxgl.GeoJSONSource | undefined)?.setData(buildLkp());
+    (map.getSource(SRC_PROB) as mapboxgl.GeoJSONSource | undefined)?.setData(buildProbability());
+    (map.getSource(SRC_BANDS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildBands());
+    (map.getSource(SRC_CONTACTS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildContacts());
+    (map.getSource(SRC_OPT) as mapboxgl.GeoJSONSource | undefined)?.setData(buildOptimalRect());
+    (map.getSource(SRC_SWEEP) as mapboxgl.GeoJSONSource | undefined)?.setData(buildSweep());
+    (map.getSource(SRC_BOX) as mapboxgl.GeoJSONSource | undefined)?.setData(buildBox());
+    (map.getSource(SRC_TRACKS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildTracks());
+  };
+  const unsub = searchPlannerStore.subscribe(refresh);
+  const unsubLang = langStore.subscribe(refresh);
+  // 地圖繪製搜索區（多點、雙擊完成）+ 點地圖模式的座標提示
+  const detachDraw = attachSearchAreaDraw(map, lang);
+
+  return () => {
+    detachDraw();
+    unsub(); unsubLang();
+    for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
+    for (const id of [SRC_LKP, SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
+      if (map.getSource(id)) map.removeSource(id);
+    }
+  };
+}

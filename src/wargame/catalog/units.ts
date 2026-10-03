@@ -14,13 +14,14 @@ import { applyKindOverrides } from "./assetOverrides";
 export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
   missile_launcher: {
     kind: "missile_launcher",
-    displayName: "飛彈發射車",
+    displayName: "機動飛彈車",
     domain: "land",
     defaultAltitudeM: 0,
     iconShape: "cone",
-    // 雄三 ASM 射程 150–400 km / TEL 道路 50–80 km/h / 自有感測弱
+    // 射程 70 浬 = 70 × 1.852 = 129.6 km（機動反艦飛彈車）
+    // TEL 道路 50–80 km/h / 自有感測弱（靠外部雷達給目獲）
     defaultCore: {
-      rangeKm: 250,
+      rangeKm: 129.6,
       speedKnots: 60,
       movementRangeKm: 800,
       detectionRangeKm: 30,
@@ -271,19 +272,20 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
     domain: "land",
     defaultAltitudeM: 0,
     iconShape: "cone",
-    // YLC-2 / 蜂眼 / TPS-77 機動版；可移動但偵測範圍比固定雷達站小
+    // 蜂眼 / TPS-77 機動版；可移動但偵蒐範圍遠比固定雷達站小
+    // 偵蒐範圍 50 浬 = 50 × 1.852 = 92.6 km
     defaultCore: {
       rangeKm: 0,
       speedKnots: 50,
       movementRangeKm: 600,
-      detectionRangeKm: 350,
+      detectionRangeKm: 92.6,
       hpMax: 100,
     },
     uiRanges: {
       rangeKm:          { min: 0,   max: 20,     step: 5,   unit: "km" },
       speedKnots:       { min: 0,   max: 80,     step: 1,   unit: "kn" },
       movementRangeKm:  { min: 100, max: 2000,   step: 50,  unit: "km" },
-      detectionRangeKm: { min: 100, max: 600,    step: 20,  unit: "km" },
+      detectionRangeKm: { min: 20,  max: 600,    step: 10,  unit: "km" },
       hpMax:            { min: 50,  max: 300,    step: 10,  unit: "點" },
     },
     constraints: {
@@ -430,6 +432,174 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       active: { sourceLevelDb: 212 },
     },
   },
+
+  uav_ruiyuan: {
+    kind: "uav_ruiyuan",
+    displayName: "銳鳶 UAV",
+    domain: "air",
+    defaultAltitudeM: 3000,
+    iconShape: "triangle_inverted",
+    // 銳鳶（Albatross）戰術偵察 UAV：滯空 12 hr、作戰半徑 70 浬 = 129.6 km
+    // 巡航 60 kn → 12 hr 可飛 60 × 1.852 × 12 ≈ 1330 km（油料上限）
+    // 半徑 129.6 km 是資料鏈 / 管制限制，存在 extensions.commandRadiusKm，由 validatePlan 檢查
+    // 無武裝：EO/IR + 小型海面搜索雷達，只做偵蒐 / 目獲，rangeKm = 0
+    defaultCore: {
+      rangeKm: 0,
+      speedKnots: 60,
+      movementRangeKm: 1330,
+      detectionRangeKm: 120,
+      hpMax: 15,
+    },
+    defaultExtensions: {
+      endurance: 12,                   // 滯空 12 小時
+      commandRadiusKm: 129.6,          // 作戰半徑 70 浬
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 50,     step: 5,   unit: "km" },
+      speedKnots:       { min: 30,  max: 110,    step: 5,   unit: "kn" },
+      movementRangeKm:  { min: 200, max: 2000,   step: 50,  unit: "km" },
+      detectionRangeKm: { min: 20,  max: 250,    step: 10,  unit: "km" },
+      hpMax:            { min: 10,  max: 60,     step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 43200,  // 滯空 12 hr
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 0,                 // 無武裝偵察機
+  },
+
+  uav_ruihuo: {
+    kind: "uav_ruihuo",
+    displayName: "銳穫 UAV",
+    domain: "air",
+    defaultAltitudeM: 2500,
+    iconShape: "triangle_inverted",
+    // 銳穫 短程戰術 UAV：滯空 6 hr、作戰半徑 50 浬 = 92.6 km
+    // 巡航 55 kn → 6 hr 可飛 55 × 1.852 × 6 ≈ 610 km（油料上限）
+    // 比銳鳶小一號：航時 / 半徑 / 感測皆較短；同樣無武裝
+    defaultCore: {
+      rangeKm: 0,
+      speedKnots: 55,
+      movementRangeKm: 610,
+      detectionRangeKm: 80,
+      hpMax: 12,
+    },
+    defaultExtensions: {
+      endurance: 6,                    // 滯空 6 小時
+      commandRadiusKm: 92.6,           // 作戰半徑 50 浬
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 50,     step: 5,   unit: "km" },
+      speedKnots:       { min: 30,  max: 100,    step: 5,   unit: "kn" },
+      movementRangeKm:  { min: 100, max: 1200,   step: 50,  unit: "km" },
+      detectionRangeKm: { min: 20,  max: 200,    step: 10,  unit: "km" },
+      hpMax:            { min: 10,  max: 60,     step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 21600,  // 滯空 6 hr
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 0,                 // 無武裝偵察機
+  },
+
+  // 一次性攻擊無人機：數值為遊戲預設，請依需求在 wargame-assets.xlsx 調整。
+  // 打擊距離 = 發現目標後可撲擊的距離；撲擊時載台本身即彈體（見 weapons.ts oneWay）。
+  sowa: {
+    kind: "sowa",
+    displayName: "SOWA 小型自殺無人機",
+    domain: "air",
+    defaultAltitudeM: 300,
+    iconShape: "triangle_inverted",
+    defaultCore: {
+      rangeKm: 20,
+      speedKnots: 60,
+      movementRangeKm: 40,
+      detectionRangeKm: 8,
+      hpMax: 3,
+    },
+    defaultExtensions: { stealth: 0.6 },   // 小型機體雷達截面極小
+    uiRanges: {
+      rangeKm:          { min: 0,  max: 60,   step: 5,  unit: "km" },
+      speedKnots:       { min: 20, max: 150,  step: 5,  unit: "kn" },
+      movementRangeKm:  { min: 10, max: 200,  step: 5,  unit: "km" },
+      detectionRangeKm: { min: 1,  max: 40,   step: 1,  unit: "km" },
+      hpMax:            { min: 1,  max: 20,   step: 1,  unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 2700,   // 滯空約 45 分
+      requireRoundTrip: false,         // 一次性：不需返航
+    },
+    defaultAmmoMax: 1,
+    defaultLoadout: [{ weaponId: "owa_small", ammoMax: 1 }],
+  },
+
+  mowa: {
+    kind: "mowa",
+    displayName: "MOWA 中型自殺無人機",
+    domain: "air",
+    defaultAltitudeM: 1000,
+    iconShape: "triangle_inverted",
+    defaultCore: {
+      rangeKm: 150,
+      speedKnots: 100,
+      movementRangeKm: 300,
+      detectionRangeKm: 15,
+      hpMax: 6,
+    },
+    defaultExtensions: { stealth: 0.4 },
+    uiRanges: {
+      rangeKm:          { min: 0,  max: 400,  step: 10, unit: "km" },
+      speedKnots:       { min: 40, max: 250,  step: 5,  unit: "kn" },
+      movementRangeKm:  { min: 50, max: 1000, step: 25, unit: "km" },
+      detectionRangeKm: { min: 1,  max: 80,   step: 1,  unit: "km" },
+      hpMax:            { min: 1,  max: 40,   step: 1,  unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 10800,  // 滯空約 3 hr
+      requireRoundTrip: false,
+    },
+    defaultAmmoMax: 1,
+    defaultLoadout: [{ weaponId: "owa_medium", ammoMax: 1 }],
+  },
+
+  // 登陸艦（解放軍 075 兩棲攻擊艦 / 071 船塢登陸艦 / 072 戰車登陸艦）：
+  // 船體大、防護弱；只有自衛火砲 + 近迫點防禦，無反艦飛彈。
+  landing_ship: {
+    kind: "landing_ship",
+    displayName: "登陸艦",
+    domain: "sea",
+    defaultAltitudeM: 0,
+    iconShape: "diamond",
+    defaultCore: {
+      rangeKm: 15,
+      speedKnots: 18,
+      movementRangeKm: 8000,
+      detectionRangeKm: 60,
+      hpMax: 450,
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 60,    step: 5,   unit: "km" },
+      speedKnots:       { min: 5,   max: 30,    step: 1,   unit: "kn" },
+      movementRangeKm:  { min: 500, max: 15000, step: 100, unit: "km" },
+      detectionRangeKm: { min: 10,  max: 200,   step: 5,   unit: "km" },
+      hpMax:            { min: 100, max: 1200,  step: 25,  unit: "點" },
+    },
+    constraints: {
+      forbidDomains: ["land"],
+      defaultPlanTimeLimitSec: 14400,
+    },
+    defaultAmmoMax: 220,
+    defaultLoadout: [
+      { weaponId: "ciws", ammoMax: 200 },
+      { weaponId: "gun", ammoMax: 20, rangeKm: "core" },
+    ],
+    // 大型兩棲艦噪音大、無反潛聲納
+    acoustics: {
+      sourceLevelDb: 155,
+      noisePerKnotDb: 1.0,
+      targetStrengthDb: 30,
+    },
+  },
 };
 
 /** 內建數值快照（套用資產表覆寫前）— assets:import 用來算差異 */
@@ -454,9 +624,9 @@ export const CORE_ATTRIBUTE_LABELS_EN: Record<keyof UnitCatalogEntry["defaultCor
   hpMax: "HP",
 };
 
-/** 11 個 unit kind 的英文 displayName — 集中在這裡比加 displayNameEn 到每個 catalog entry 簡潔 */
+/** 14 個 unit kind 的英文 displayName — 集中在這裡比加 displayNameEn 到每個 catalog entry 簡潔 */
 export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
-  missile_launcher: "Missile Launcher",
+  missile_launcher: "Mobile Missile Launcher",
   drone: "Drone",
   ship_surface: "Surface Ship",
   submarine: "Submarine",
@@ -468,4 +638,9 @@ export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
   supply_ship: "Supply Ship",
   airbase: "Airbase",
   asw_helo: "ASW Helicopter",
+  uav_ruiyuan: "Ruiyuan UAV",
+  uav_ruihuo: "Ruihuo UAV",
+  sowa: "SOWA Loitering Munition",
+  mowa: "MOWA Loitering Munition",
+  landing_ship: "Landing Ship",
 };
