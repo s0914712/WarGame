@@ -159,6 +159,8 @@ export interface SearchStrings {
   lkpUseCentre: string; lkpUnset: string; lkpSigma: string; lkpElapsed: string;
   targetCourse: string; targetCourseSigma: string; targetSpeed: string; targetSpeedSigma: string;
   lkpAtStart: string; lkpAtEnd: string; lkpOutside: string; lkpNote: string; lkpPickHint: string;
+  lkpFromPrior: string; lkpFromPriorNote: string; lkpFromMc: string; lkpEdit: string;
+  priorLkpTitle: string; priorLkpDiffer: string; priorLkpNote: string;
   expPlatform: string; expPlatformPlaceholder: string; expRange: string; expRefVisibility: string;
   expNote: string; expVisReduced: string; expExceedsPhysics: string; expNoDiscount: string;
   navError: string; sweepSpread: string;
@@ -283,6 +285,11 @@ const ZH: SearchStrings = {
   lkpOutside: "⚠ 開始搜索時目標預估位置不在搜索區內 —— 搜索區可能需要往目標航向方向移動",
   lkpNote: "每次試驗：起點 ~ LKP ± σ、航向 / 航速各自抽樣，推算到開始搜索，搜索期間目標持續以該航向航速移動（再疊加上方的漂移）。",
   lkpPickHint: "點地圖設定最後已知位置（LKP）",
+  lkpFromPrior: "帶入事前分布 LKP", lkpFromPriorNote: "取事前分布中權重最高情境的 LKP",
+  lkpFromMc: "帶入蒙地卡羅 LKP", lkpEdit: "修改",
+  priorLkpTitle: "最後已知位置（LKP）—— 套用到所有情境",
+  priorLkpDiffer: "目前各情境的 LKP 不同（見下方各情境）；設定後會統一成同一點",
+  priorLkpNote: "事前分布以各情境的 LKP 為中心、依位置誤差 σ 撒粒子，再依漂流推算到搜索期中點。各情境也可在下方個別修改 LKP。",
   expPlatform: "載台名稱", expPlatformPlaceholder: "例：瑞鳶",
   expRange: "可分辨距離", expRefVisibility: "經驗時能見度",
   expNote: "輸入此載台在該高度、經驗時能見度下，目視可分辨船隻的距離 R。以定距律換算 Wu = 2R，再套天候 / 速度 / 疲勞修正 → 用於 POD。",
@@ -454,6 +461,11 @@ const EN: SearchStrings = {
   lkpOutside: "⚠ The target's expected position at search start is outside the search area — the area may need to move along the target's course",
   lkpNote: "Each trial: start ~ LKP ± σ, course and speed sampled independently, dead-reckoned to search start; during the search the target keeps that course and speed (plus the drift above).",
   lkpPickHint: "Click the map to set the last known position (LKP)",
+  lkpFromPrior: "Use prior LKP", lkpFromPriorNote: "Takes the LKP of the highest-weight prior scenario",
+  lkpFromMc: "Use Monte Carlo LKP", lkpEdit: "Edit",
+  priorLkpTitle: "Last known position (LKP) — apply to all scenarios",
+  priorLkpDiffer: "Scenarios currently have different LKPs (see each scenario below); setting one here unifies them",
+  priorLkpNote: "The prior scatters particles around each scenario's LKP with its position σ, then drifts them to mid-search. Each scenario's LKP can also be edited individually below.",
   expPlatform: "Platform", expPlatformPlaceholder: "e.g. Chung-Shyang II",
   expRange: "Recognition range", expRefVisibility: "Visibility at the time",
   expNote: "Enter the range R at which this platform, at this altitude and visibility, can visually recognise a ship. Converted with the definite-range law Wu = 2R, then weather / speed / fatigue corrections → used for POD.",

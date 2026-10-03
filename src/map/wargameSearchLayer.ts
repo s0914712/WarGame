@@ -92,9 +92,17 @@ function buildBox(): GeoJSON.FeatureCollection {
 
 /** 蒙地卡羅 LKP：最後已知位置 → 開始搜索時 → 航線飛完時 的推算航跡 */
 function buildLkp(): GeoJSON.FeatureCollection {
-  const p = lkpProjection();
-  if (!p) return EMPTY;
   const en = lang() === "en";
+  // 事前分布各情境的 LKP（橘點、標情境名）
+  const priorPts: GeoJSON.Feature[] = searchPlannerStore.getInputs().bayesEnabled
+    ? searchPlannerStore.getScenarios().map((sc) => ({
+      type: "Feature" as const,
+      properties: { role: "prior", label: `LKP · ${en ? (sc.labelEn ?? sc.label) : sc.label}` },
+      geometry: { type: "Point" as const, coordinates: sc.datum },
+    }))
+    : [];
+  const p = lkpProjection();
+  if (!p) return { type: "FeatureCollection", features: priorPts };
   const line: LngLat[] = [p.lkp, p.atStart, ...(p.atEnd ? [p.atEnd] : [])];
   const pt = (c: LngLat, role: string, label: string): GeoJSON.Feature => ({
     type: "Feature", properties: { role, label }, geometry: { type: "Point", coordinates: c },
@@ -106,6 +114,7 @@ function buildLkp(): GeoJSON.FeatureCollection {
       pt(p.lkp, "lkp", "LKP"),
       pt(p.atStart, "start", en ? "Search start" : "開始搜索"),
       ...(p.atEnd ? [pt(p.atEnd, "end", en ? "Tracks end" : "航線結束")] : []),
+      ...priorPts,
     ],
   };
 }
@@ -370,7 +379,7 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
     filter: ["==", ["geometry-type"], "Point"],
     paint: {
       "circle-radius": ["match", ["get", "role"], "lkp", 7, 5],
-      "circle-color": ["match", ["get", "role"], "lkp", "#f87171", "start", "#38bdf8", "#94a3b8"],
+      "circle-color": ["match", ["get", "role"], "lkp", "#f87171", "start", "#38bdf8", "prior", "#fb923c", "#94a3b8"],
       "circle-stroke-color": "#0f172a", "circle-stroke-width": 2,
     },
   });

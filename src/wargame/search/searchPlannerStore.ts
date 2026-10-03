@@ -278,8 +278,17 @@ let sortiePos: number[] = [];
 let loggedContacts: { id: string; lng: number; lat: number }[] = [];
 /** 是否處於「點地圖記錄接觸」模式 */
 let loggingContact = false;
-/** 是否處於「點地圖設定 LKP」模式 */
-let pickingLkp = false;
+/**
+ * 「點地圖設定 LKP」的目標；null = 未在點選。
+ *   mc        → 蒙地卡羅的 LKP
+ *   priorAll  → 事前分布所有情境共用的 LKP
+ *   scenario  → 事前分布某一情境的 LKP
+ */
+export type LkpPickTarget =
+  | { kind: "mc" }
+  | { kind: "priorAll" }
+  | { kind: "scenario"; id: string };
+let lkpPickTarget: LkpPickTarget | null = null;
 let densityBands: DensityField["bands"] = DEFAULT_DENSITY_BANDS.map((b) => ({ ...b }));
 
 const listeners = new Set<Listener>();
@@ -594,9 +603,10 @@ export const searchPlannerStore = {
   getSortiePos: () => sortiePos,
   getLoggedContacts: () => loggedContacts,
   isLoggingContact: () => loggingContact,
-  isPickingLkp: () => pickingLkp,
+  isPickingLkp: () => lkpPickTarget !== null,
+  getLkpPickTarget: () => lkpPickTarget,
   /** 任一「點地圖」模式啟用中（游標改十字、右鍵指令讓路） */
-  isMapClickMode: () => picking || loggingContact || pickingLkp,
+  isMapClickMode: () => picking || loggingContact || lkpPickTarget !== null,
   getDensityBands: () => densityBands,
   getAssignedUnitIds: () => assignedUnitIds,
 
@@ -611,7 +621,7 @@ export const searchPlannerStore = {
   startPickArea(): void {
     picking = true;
     loggingContact = false;
-    pickingLkp = false;
+    lkpPickTarget = null;
     cornerA = null;
     cornerB = null;
     polygon = null;
@@ -844,22 +854,42 @@ export const searchPlannerStore = {
   setLoggingContact(on: boolean): void {
     if (loggingContact === on) return;
     loggingContact = on;
-    if (on) { picking = false; pickingLkp = false; }   // 點地圖模式互斥
+    if (on) { picking = false; lkpPickTarget = null; }   // 點地圖模式互斥
     notify();
   },
 
-  /** 進入 / 離開「點地圖設定 LKP」模式 */
-  setPickingLkp(on: boolean): void {
-    if (pickingLkp === on) return;
-    pickingLkp = on;
-    if (on) { picking = false; loggingContact = false; }
+  /** 進入「點地圖設定 LKP」模式（target = 要設定哪一個 LKP）；null = 離開 */
+  setPickingLkp(target: LkpPickTarget | null): void {
+    lkpPickTarget = target;
+    if (target) { picking = false; loggingContact = false; }
     notify();
   },
 
-  /** 地圖點擊設定 LKP（點一次即結束） */
+  /** 地圖點擊設定 LKP（點一次即結束），依點選目標寫入對應欄位 */
   setLkpAt(lng: number, lat: number): void {
-    pickingLkp = false;
-    this.patch({ mcLkp: [lng, lat] });
+    const target = lkpPickTarget;
+    lkpPickTarget = null;
+    const p: LngLat = [lng, lat];
+    if (!target || target.kind === "mc") this.patch({ mcLkp: p });
+    else if (target.kind === "priorAll") this.setAllScenarioDatums(p);
+    else this.updateScenario(target.id, { datum: p });
+  },
+
+  /** 所有情境共用同一個 LKP（事前分布） */
+  setAllScenarioDatums(p: LngLat): void {
+    scenarios = scenarios.map((x) => ({ ...x, datum: [p[0], p[1]] as LngLat }));
+    if (inputs.bayesEnabled) this.rebuildDistribution();
+    else notify();
+  },
+
+  /**
+   * 事前分布的代表 LKP —— 權重最高情境的基準點。
+   * 給「帶入事前分布 LKP」用（蒙地卡羅只有單一 LKP）。
+   */
+  primaryScenarioDatum(): LngLat | null {
+    let best: SearchScenario | null = null;
+    for (const sc of scenarios) if (!best || sc.weight > best.weight) best = sc;
+    return best ? best.datum : null;
   },
 
   addContactAt(lng: number, lat: number): void {

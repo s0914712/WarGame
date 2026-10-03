@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
-  currentRangeLimits, lkpProjection,
+  currentRangeLimits, lkpProjection, type LkpPickTarget,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
@@ -650,7 +650,7 @@ export function SearchPlannerPanel(
                   </select>
                 </Row>
                 {inputs.mcDistributionKind === "lkp" && (
-                  <LkpEditor key={JSON.stringify(inputs.mcLkp)} t={t} fmtHr={fmtHr} />
+                  <LkpEditor t={t} fmtHr={fmtHr} />
                 )}
                 {inputs.mcDistributionKind === "gaussian" && (
                   <NumField label={t.mcSigma} value={inputs.mcSigmaNm} min={0.5} max={40} step={0.5} unit="nm"
@@ -700,6 +700,7 @@ export function SearchPlannerPanel(
               <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
                 {t.midSearchNote} → T+{midSearchElapsedHr().toFixed(1)} hr
               </div>
+              <PriorLkp t={t} />
               <div style={{ fontSize: 15, color: "#94a3b8", marginTop: 4 }}>{t.scenarios}</div>
               {scenarios.map((sc) => (
                 <div key={sc.id} style={{
@@ -709,6 +710,7 @@ export function SearchPlannerPanel(
                   <div style={{ fontSize: 15, color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>
                     {lang === "en" ? (sc.labelEn ?? sc.label) : sc.label}
                   </div>
+                  <ScenarioLkp t={t} id={sc.id} datum={sc.datum} />
                   <MiniField label={t.scenarioWeight} value={sc.weight} min={0} max={1} step={0.05} unit=""
                     onChange={(v) => searchPlannerStore.updateScenario(sc.id, { weight: v })} />
                   <MiniField label={t.scenarioSigma} value={sc.positionSigmaNm} min={0.5} max={40} step={0.5} unit="nm"
@@ -976,6 +978,29 @@ function loadOrder(): CoordOrder {
   try { return localStorage.getItem(ORDER_KEY) === "latlng" ? "latlng" : "lnglat"; } catch { return "lnglat"; }
 }
 
+/**
+ * 座標書寫順序（經度在前 / 緯度在前）—— 多邊形頂點與所有 LKP 欄位共用，
+ * 在任一處切換，其他輸入列同步改排列。
+ */
+let coordOrder: CoordOrder = loadOrder();
+const orderListeners = new Set<() => void>();
+const coordOrderStore = {
+  get: () => coordOrder,
+  set(o: CoordOrder): void {
+    if (coordOrder === o) return;
+    coordOrder = o;
+    try { localStorage.setItem(ORDER_KEY, o); } catch { /* 只是不記住 */ }
+    for (const cb of orderListeners) cb();
+  },
+  subscribe(cb: () => void): () => void {
+    orderListeners.add(cb);
+    return () => { orderListeners.delete(cb); };
+  },
+};
+function useCoordOrder(): CoordOrder {
+  return useSyncExternalStore(coordOrderStore.subscribe, coordOrderStore.get, coordOrderStore.get);
+}
+
 /** 觸發瀏覽器下載文字檔 */
 function downloadText(filename: string, mime: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
@@ -1009,13 +1034,10 @@ function PolygonEditor({ t, polygon, corners }: {
   const [pasteText, setPasteText] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   /** 座標書寫順序：決定輸入列排列、貼上 / 匯入純數字的解讀、CSV 匯出欄位順序 */
-  const [order, setOrderState] = useState<CoordOrder>(loadOrder);
+  const order = useCoordOrder();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const setOrder = (o: CoordOrder) => {
-    setOrderState(o);
-    try { localStorage.setItem(ORDER_KEY, o); } catch { /* 只是不記住 */ }
-  };
+  const setOrder = (o: CoordOrder) => coordOrderStore.set(o);
   const say = (err: string | null, ok: string | null = null) => { setError(err); setNotice(ok); };
 
   const setPart = (i: number, axis: CoordAxis, p: Partial<DmsText>) => {
@@ -1245,52 +1267,143 @@ function DmsFields({ t, axis, value: x, onChange }: {
 }
 
 /**
- * 蒙地卡羅「最後已知位置」輸入：LKP（度分秒 / 點地圖 / 搜索區中心）+ 目標航向航速。
- * 父層以 mcLkp 當 key —— 地圖點選改了 LKP 時本元件重掛，欄位跟著同步。
+ * 一組 LKP 輸入：度分秒（依共用的經緯順序排列）+ 設定 / 地圖點選 / 搜索區中心 + 額外按鈕。
+ * 由父層以目前值當 key —— 值從外部改變（地圖點選、帶入）時重掛，欄位跟著同步。
  */
-function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
-  const inputs = searchPlannerStore.getInputs();
-  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
-  const picking = searchPlannerStore.isPickingLkp();
-  const [lng, setLng] = useState<DmsText>(() => (inputs.mcLkp ? dmsTextFrom(inputs.mcLkp[0]) : { ...EMPTY_DMS }));
-  const [lat, setLat] = useState<DmsText>(() => (inputs.mcLkp ? dmsTextFrom(inputs.mcLkp[1]) : { ...EMPTY_DMS }));
+function LkpInput({ t, title, value, onApply, pickTarget, extra, accent = "#38bdf8", unsetText }: {
+  t: SearchStrings;
+  title?: string;
+  /** value 為 null 時顯示的文字；預設「尚未設定」 */
+  unsetText?: string;
+  value: LngLat | null;
+  onApply: (p: LngLat) => void;
+  pickTarget: LkpPickTarget;
+  /** 額外按鈕（例：帶入另一處的 LKP） */
+  extra?: React.ReactNode;
+  accent?: string;
+}) {
+  const order = useCoordOrder();
+  const pick = searchPlannerStore.getLkpPickTarget();
+  const picking = pick !== null && JSON.stringify(pick) === JSON.stringify(pickTarget);
+  const [lng, setLng] = useState<DmsText>(() => (value ? dmsTextFrom(value[0]) : { ...EMPTY_DMS }));
+  const [lat, setLat] = useState<DmsText>(() => (value ? dmsTextFrom(value[1]) : { ...EMPTY_DMS }));
   const [error, setError] = useState<string | null>(null);
-  const proj = lkpProjection();
 
   const apply = () => {
     const x = dmsTextToDecimal(lng, "lng"), y = dmsTextToDecimal(lat, "lat");
     if (x === null || y === null) { setError(t.polyIssue.invalid_coord); return; }
     setError(null);
-    patch({ mcLkp: [x, y] });
+    onApply([x, y]);
   };
   const useCentre = () => {
     const { a, b } = searchPlannerStore.getCorners();
     if (!a || !b) return;
-    patch({ mcLkp: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+    onApply([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
   };
+  const field = (axis: CoordAxis) => axis === "lng"
+    ? <DmsFields key="lng" t={t} axis="lng" value={lng} onChange={(p) => { setLng((v) => ({ ...v, ...p })); setError(null); }} />
+    : <DmsFields key="lat" t={t} axis="lat" value={lat} onChange={(p) => { setLat((v) => ({ ...v, ...p })); setError(null); }} />;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {title && <div style={{ fontSize: 14, fontWeight: 600, color: accent }}>{title}</div>}
+      {(order === "lnglat" ? ["lng", "lat"] as const : ["lat", "lng"] as const).map(field)}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button className="wg-btn" style={smallBtn} onClick={apply}><MapPin size={12} /> {t.lkpApply}</button>
+        <button className="wg-btn" style={{ ...smallBtn, ...(picking ? { borderColor: accent, color: "#e0f2fe" } : {}) }}
+          onClick={() => searchPlannerStore.setPickingLkp(picking ? null : pickTarget)}>
+          <Crosshair size={12} /> {picking ? t.lkpPicking : t.lkpPickOnMap}
+        </button>
+        <button className="wg-btn" style={smallBtn} onClick={useCentre}>{t.lkpUseCentre}</button>
+        {extra}
+      </div>
+      {error && <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>}
+      <div style={{ fontSize: 13, color: value ? "#e2e8f0" : "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
+        LKP: {value ? fmtLngLat(value, order) : (unsetText ?? t.lkpUnset)}
+      </div>
+    </div>
+  );
+}
+
+/** 事前分布：所有情境共用的 LKP（套用後各情境的基準點都改成這一點） */
+function PriorLkp({ t }: { t: SearchStrings }) {
+  const inputs = searchPlannerStore.getInputs();
+  const scenarios = searchPlannerStore.getScenarios();
+  // 所有情境基準點相同時顯示該點，否則顯示「各情境不同」
+  const first = scenarios[0]?.datum ?? null;
+  const shared = first && scenarios.every((x) => x.datum[0] === first[0] && x.datum[1] === first[1]) ? first : null;
+  const mcLkp = inputs.mcLkp;
+  return (
+    <div style={{
+      padding: "7px 9px", borderRadius: 4, marginTop: 4,
+      background: "rgba(251,146,60,0.06)", border: "1px solid rgba(251,146,60,0.3)",
+    }}>
+      <LkpInput key={JSON.stringify(shared)} t={t} title={t.priorLkpTitle} accent="#fdba74"
+        value={shared} unsetText={t.priorLkpDiffer}
+        onApply={(p) => searchPlannerStore.setAllScenarioDatums(p)} pickTarget={{ kind: "priorAll" }}
+        extra={mcLkp && (
+          <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.setAllScenarioDatums(mcLkp)}>
+            {t.lkpFromMc}
+          </button>
+        )} />
+      <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5, marginTop: 3 }}>{t.priorLkpNote}</div>
+    </div>
+  );
+}
+
+/** 單一情境的 LKP：平常只顯示一行，按「修改」展開完整輸入 */
+function ScenarioLkp({ t, id, datum }: { t: SearchStrings; id: string; datum: LngLat }) {
+  const order = useCoordOrder();
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+        <span style={{ color: "#94a3b8", width: 36, flexShrink: 0 }}>LKP</span>
+        <span style={{ flex: 1, minWidth: 0, color: "#fdba74", fontFamily: "ui-monospace, monospace" }}>
+          {fmtLngLat(datum, order)}
+        </span>
+        <button className="wg-btn" style={{ ...smallBtn, padding: "2px 7px", fontSize: 12 }} onClick={() => setOpen((v) => !v)}>
+          {open ? t.close : t.lkpEdit}
+        </button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 4 }}>
+          <LkpInput key={JSON.stringify(datum)} t={t} accent="#fdba74"
+            value={datum} onApply={(p) => searchPlannerStore.updateScenario(id, { datum: p })}
+            pickTarget={{ kind: "scenario", id }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 依共用經緯順序顯示一點的度分秒 */
+function fmtLngLat(p: LngLat, order: CoordOrder): string {
+  const lng = formatDms(p[0], "lng"), lat = formatDms(p[1], "lat");
+  return order === "lnglat" ? `${lng} ${lat}` : `${lat} ${lng}`;
+}
+
+/**
+ * 蒙地卡羅「最後已知位置」輸入：LKP（度分秒 / 點地圖 / 搜索區中心 / 帶入事前分布）+ 目標航向航速。
+ */
+function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
+  const inputs = searchPlannerStore.getInputs();
+  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
+  const order = useCoordOrder();
+  const proj = lkpProjection();
+  const priorDatum = inputs.bayesEnabled ? searchPlannerStore.primaryScenarioDatum() : null;
 
   return (
     <div style={{
       padding: "7px 9px", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4,
       background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.3)",
     }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#bae6fd" }}>{t.lkpTitle}</div>
-      <DmsFields t={t} axis="lng" value={lng} onChange={(p) => { setLng((v) => ({ ...v, ...p })); setError(null); }} />
-      <DmsFields t={t} axis="lat" value={lat} onChange={(p) => { setLat((v) => ({ ...v, ...p })); setError(null); }} />
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <button className="wg-btn" style={smallBtn} onClick={apply}><MapPin size={12} /> {t.lkpApply}</button>
-        <button className="wg-btn" style={{ ...smallBtn, ...(picking ? { borderColor: "#38bdf8", color: "#bae6fd" } : {}) }}
-          onClick={() => searchPlannerStore.setPickingLkp(!picking)}>
-          <Crosshair size={12} /> {picking ? t.lkpPicking : t.lkpPickOnMap}
-        </button>
-        <button className="wg-btn" style={smallBtn} onClick={useCentre}>{t.lkpUseCentre}</button>
-      </div>
-      {error && <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>}
-      <div style={{ fontSize: 13, color: inputs.mcLkp ? "#e2e8f0" : "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
-        LKP: {inputs.mcLkp
-          ? `${formatDms(inputs.mcLkp[0], "lng")} ${formatDms(inputs.mcLkp[1], "lat")}`
-          : t.lkpUnset}
-      </div>
+      <LkpInput key={JSON.stringify(inputs.mcLkp)} t={t} title={t.lkpTitle}
+        value={inputs.mcLkp} onApply={(p) => patch({ mcLkp: p })} pickTarget={{ kind: "mc" }}
+        extra={priorDatum && (
+          <button className="wg-btn" style={smallBtn} title={t.lkpFromPriorNote}
+            onClick={() => patch({ mcLkp: [priorDatum[0], priorDatum[1]] })}>{t.lkpFromPrior}</button>
+        )} />
 
       <NumField label={t.lkpSigma} value={inputs.mcSigmaNm} min={0} max={40} step={0.5} unit="nm"
         onChange={(v) => patch({ mcSigmaNm: v })} />
@@ -1310,7 +1423,7 @@ function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => strin
           <div>
             {t.lkpAtStart}（+{fmtHr(inputs.mcLkpElapsedHr)}）:{" "}
             <span style={{ fontFamily: "ui-monospace, monospace" }}>
-              {formatDms(proj.atStart[0], "lng")} {formatDms(proj.atStart[1], "lat")}
+              {fmtLngLat(proj.atStart, order)}
             </span>
             {" · "}{(inputs.mcTargetSpeedKn * inputs.mcLkpElapsedHr).toFixed(1)} nm
           </div>
@@ -1318,7 +1431,7 @@ function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => strin
             <div>
               {t.lkpAtEnd}:{" "}
               <span style={{ fontFamily: "ui-monospace, monospace" }}>
-                {formatDms(proj.atEnd[0], "lng")} {formatDms(proj.atEnd[1], "lat")}
+                {fmtLngLat(proj.atEnd, order)}
               </span>
             </div>
           )}
