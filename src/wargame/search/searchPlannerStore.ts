@@ -27,7 +27,7 @@ import {
   polygonAreaNm2, validatePolygon,
   type DroneTrack, type PolygonIssue, type SearchBox,
 } from "./tracks";
-import { runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
+import { deadReckon, runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
 import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
 import {
   DEFAULT_EOIR, rangeLimits, TARGET_GEOMETRY,
@@ -86,11 +86,32 @@ export interface PlannerInputs {
   mcDriftBearingDeg: number | null;
   mcNavErrorSigmaNm: number;
   mcSensorAvailability: number;
-  mcDistributionKind: "uniform" | "gaussian";
+  mcDistributionKind: "uniform" | "gaussian" | "lkp";
+  /** gaussian：散布 σ；lkp：LKP 位置誤差 σ */
   mcSigmaNm: number;
+  // ── 蒙地卡羅：最後已知位置（LKP）+ 目標航向航速 ──
+  /** null = 尚未輸入（執行時以搜索區中心代替） */
+  mcLkp: LngLat | null;
+  /** 目標航向（度，真北）與其不確定性 1σ */
+  mcTargetCourseDeg: number;
+  mcTargetCourseSigmaDeg: number;
+  /** 目標航速（節）與其不確定性 1σ */
+  mcTargetSpeedKn: number;
+  mcTargetSpeedSigmaKn: number;
+  /** LKP 時刻到搜索開始（航線起點）的時數 */
+  mcLkpElapsedHr: number;
   mcSeed: number;
   // ── Stone §3：感測器實戰效能折扣 ──
   sensorTested: boolean;
+  // ── 載台經驗值（取代 Wu 查表）──
+  /** 掃掠寬度來源：table = 文件查表；experience = 使用者載台經驗 */
+  sweepSource: "table" | "experience";
+  /** 載台名稱（僅標示用，例：瑞鳶） */
+  experiencePlatform: string;
+  /** 經驗：目視可分辨船隻的距離（浬） */
+  experienceRangeNm: number;
+  /** 經驗值記錄時的能見度（公里）—— 「能見度良好」預設 20 km */
+  experienceRefVisibilityKm: number;
   // ── Stone §4：航跡放置誤差 σ 與掃掠寬度不確定性 ──
   navErrorSigmaNm: number;
   sweepWidthSpread: number;
@@ -131,6 +152,7 @@ const GEOMETRY_KEYS = new Set<string>([
   "direction", "droneCount", "availableHr", "targetPod", "speedKn",
   // 影響掃掠寬 W → 影響自動航跡間距 S
   "targetClass", "visibilityKm", "altitudeFt", "corrections", "sensorTested", "windKn", "eoir",
+  "sweepSource", "experienceRangeNm", "experienceRefVisibilityKm",
   // 直接決定 S / 圖形
   "trackSpacingOverrideNm", "coverageOverride", "patternOverride", "podModel",
   "datumUncertaintyNm", "targetBiasedToOneEnd", "hasKnownTrackLine",
@@ -174,8 +196,18 @@ const DEFAULT_INPUTS: PlannerInputs = {
   mcSensorAvailability: 1,
   mcDistributionKind: "uniform",
   mcSigmaNm: 5,
+  mcLkp: null,
+  mcTargetCourseDeg: 0,
+  mcTargetCourseSigmaDeg: 10,
+  mcTargetSpeedKn: 5,
+  mcTargetSpeedSigmaKn: 1,
+  mcLkpElapsedHr: 1,
   mcSeed: 20260906,
   sensorTested: false,
+  sweepSource: "table",
+  experiencePlatform: "",
+  experienceRangeNm: 8,
+  experienceRefVisibilityKm: 20,
   navErrorSigmaNm: 0,
   sweepWidthSpread: 0,
   bayesEnabled: false,
@@ -246,6 +278,8 @@ let sortiePos: number[] = [];
 let loggedContacts: { id: string; lng: number; lat: number }[] = [];
 /** 是否處於「點地圖記錄接觸」模式 */
 let loggingContact = false;
+/** 是否處於「點地圖設定 LKP」模式 */
+let pickingLkp = false;
 let densityBands: DensityField["bands"] = DEFAULT_DENSITY_BANDS.map((b) => ({ ...b }));
 
 const listeners = new Set<Listener>();
@@ -310,10 +344,14 @@ function sensor(): SensorConditions {
     corrections: {
       ...inputs.corrections,
       // Stone §3 / Koopman [1980]：未實測的感測器規格通常偏樂觀
-      operational: inputs.sensorTested
+      // 經驗值本身就是實飛結果 → 不再套「未實測」折扣
+      operational: inputs.sensorTested || inputs.sweepSource === "experience"
         ? OPERATIONAL_DEGRADATION.tested
         : OPERATIONAL_DEGRADATION.untested,
     },
+    experience: inputs.sweepSource === "experience"
+      ? { rangeNm: inputs.experienceRangeNm, referenceVisibilityKm: inputs.experienceRefVisibilityKm }
+      : undefined,
     navErrorSigmaNm: inputs.navErrorSigmaNm,
     sweepWidthSpread: inputs.sweepWidthSpread,
   };
@@ -514,6 +552,30 @@ export function solve(): PlannerSolution | null {
   };
 }
 
+/**
+ * LKP 推算結果（不含誤差的期望位置）—— 給面板與地圖顯示。
+ * atStart：搜索開始時；atEnd：航線飛完時（若已產生航線）。
+ * insideAtStart：開始時期望位置是否落在搜索區內（不在 → 搜索區可能畫錯位置）。
+ */
+export function lkpProjection(): {
+  lkp: LngLat; atStart: LngLat; atEnd: LngLat | null; insideAtStart: boolean | null;
+} | null {
+  if (inputs.mcDistributionKind !== "lkp" || !inputs.mcLkp) return null;
+  const { mcLkp: lkp, mcTargetCourseDeg: c, mcTargetSpeedKn: v, mcLkpElapsedHr: T } = inputs;
+  const atStart = deadReckon(lkp, c, v, T);
+  // 航線飛完所需時數 = 最長一條航線 / 速度
+  const longestNm = tracks.reduce((mx, tr) => Math.max(mx, tr.trackNm), 0);
+  const atEnd = longestNm > 0 && inputs.speedKn > 0 ? deadReckon(lkp, c, v, T + longestNm / inputs.speedKn) : null;
+  const box = areaBox();
+  let insideAtStart: boolean | null = null;
+  if (box) {
+    insideAtStart = polygon
+      ? pointInPolygon(atStart[0], atStart[1], polygon)
+      : atStart[0] >= box.west && atStart[0] <= box.east && atStart[1] >= box.south && atStart[1] <= box.north;
+  }
+  return { lkp, atStart, atEnd, insideAtStart };
+}
+
 export const searchPlannerStore = {
   /** useSyncExternalStore 的 snapshot —— 每次狀態變動都會遞增 */
   getVersion: () => version,
@@ -530,6 +592,9 @@ export const searchPlannerStore = {
   getSortiePos: () => sortiePos,
   getLoggedContacts: () => loggedContacts,
   isLoggingContact: () => loggingContact,
+  isPickingLkp: () => pickingLkp,
+  /** 任一「點地圖」模式啟用中（游標改十字、右鍵指令讓路） */
+  isMapClickMode: () => picking || loggingContact || pickingLkp,
   getDensityBands: () => densityBands,
   getAssignedUnitIds: () => assignedUnitIds,
 
@@ -544,6 +609,7 @@ export const searchPlannerStore = {
   startPickArea(): void {
     picking = true;
     loggingContact = false;
+    pickingLkp = false;
     cornerA = null;
     cornerB = null;
     polygon = null;
@@ -663,9 +729,16 @@ export const searchPlannerStore = {
     if (!sol || tracks.length === 0 || !box) return null;
     const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
     const centre = measureBox(box).centre;
-    const distribution: TargetDistribution = inputs.mcDistributionKind === "gaussian"
-      ? { kind: "gaussian", datum: centre, sigmaNm: inputs.mcSigmaNm }
-      : { kind: "uniform" };
+    const distribution: TargetDistribution = inputs.mcDistributionKind === "lkp"
+      ? {
+        kind: "lkp", lkp: inputs.mcLkp ?? centre, sigmaNm: inputs.mcSigmaNm,
+        courseDeg: inputs.mcTargetCourseDeg, courseSigmaDeg: inputs.mcTargetCourseSigmaDeg,
+        speedKn: inputs.mcTargetSpeedKn, speedSigmaKn: inputs.mcTargetSpeedSigmaKn,
+        elapsedHr: inputs.mcLkpElapsedHr,
+      }
+      : inputs.mcDistributionKind === "gaussian"
+        ? { kind: "gaussian", datum: centre, sigmaNm: inputs.mcSigmaNm }
+        : { kind: "uniform" };
     mcResult = runMonteCarlo({
       box, tracks,
       polygon: polygon ?? undefined,
@@ -769,8 +842,22 @@ export const searchPlannerStore = {
   setLoggingContact(on: boolean): void {
     if (loggingContact === on) return;
     loggingContact = on;
-    if (on) picking = false;          // 兩種點地圖模式互斥
+    if (on) { picking = false; pickingLkp = false; }   // 點地圖模式互斥
     notify();
+  },
+
+  /** 進入 / 離開「點地圖設定 LKP」模式 */
+  setPickingLkp(on: boolean): void {
+    if (pickingLkp === on) return;
+    pickingLkp = on;
+    if (on) { picking = false; loggingContact = false; }
+    notify();
+  },
+
+  /** 地圖點擊設定 LKP（點一次即結束） */
+  setLkpAt(lng: number, lat: number): void {
+    pickingLkp = false;
+    this.patch({ mcLkp: [lng, lat] });
   },
 
   addContactAt(lng: number, lat: number): void {

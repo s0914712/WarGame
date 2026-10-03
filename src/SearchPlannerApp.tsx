@@ -40,6 +40,7 @@ export default function SearchPlannerApp() {
 
   useSyncExternalStore(searchPlannerStore.subscribe, searchPlannerStore.getVersion, searchPlannerStore.getVersion);
   const picking = searchPlannerStore.isPicking();
+  const pickingLkp = searchPlannerStore.isPickingLkp();
 
   useEffect(() => {
     document.title = `${t.title} · ${t.subtitle}`;
@@ -49,7 +50,7 @@ export default function SearchPlannerApp() {
   useEffect(() => { searchPlannerStore.setOpen(true); }, []);
 
   // 手機版開始框選 → 收起抽屜，整個畫面讓給地圖
-  useEffect(() => { if (isMobile && picking) setSheetOpen(false); }, [isMobile, picking]);
+  useEffect(() => { if (isMobile && (picking || pickingLkp)) setSheetOpen(false); }, [isMobile, picking, pickingLkp]);
 
   // 地圖容器尺寸隨抽屜開合改變 → 通知 mapbox 重算
   useEffect(() => {
@@ -85,12 +86,14 @@ export default function SearchPlannerApp() {
       map.on("click", (e) => {
         if (searchPlannerStore.isPicking()) {
           searchPlannerStore.setCorner(e.lngLat.lng, e.lngLat.lat);
+        } else if (searchPlannerStore.isPickingLkp()) {
+          searchPlannerStore.setLkpAt(e.lngLat.lng, e.lngLat.lat);
         } else if (searchPlannerStore.isLoggingContact()) {
           searchPlannerStore.addContactAt(e.lngLat.lng, e.lngLat.lat);
         }
       });
       const cursor = () => {
-        const active = searchPlannerStore.isPicking() || searchPlannerStore.isLoggingContact();
+        const active = searchPlannerStore.isMapClickMode();
         map.getCanvas().style.cursor = active ? "crosshair" : "";
       };
       searchPlannerStore.subscribe(cursor);
@@ -133,9 +136,9 @@ export default function SearchPlannerApp() {
     </button>
   );
 
-  const pickHintEl = picking && !mapFailed && (
+  const pickHintEl = (picking || pickingLkp) && !mapFailed && (
     <div style={pickHint}>
-      {searchPlannerStore.getCorners().a ? t.pickSecondCorner : t.pickFirstCorner}
+      {pickingLkp ? t.lkpPickHint : searchPlannerStore.getCorners().a ? t.pickSecondCorner : t.pickFirstCorner}
     </div>
   );
 

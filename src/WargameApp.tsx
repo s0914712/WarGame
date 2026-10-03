@@ -132,6 +132,10 @@ export default function WargameApp() {
           searchPlannerStore.addContactAt(e.lngLat.lng, e.lngLat.lat);
           return;
         }
+        if (searchPlannerStore.isPickingLkp()) {
+          searchPlannerStore.setLkpAt(e.lngLat.lng, e.lngLat.lat);
+          return;
+        }
         const mode = editorStore.getMode();
         if (mode === "planRoute") {
           editorStore.appendWaypoint(e.lngLat.lng, e.lngLat.lat);
@@ -163,7 +167,7 @@ export default function WargameApp() {
       //   右鍵點空白海面 → 移動（Shift = 接續排隊航點）
       map.on("contextmenu", (e) => {
         if (editorStore.getMode() !== "view") return;   // 規劃 / 放置模式不攔右鍵
-        if (searchPlannerStore.isPicking() || searchPlannerStore.isLoggingContact()) return;
+        if (searchPlannerStore.isMapClickMode()) return;
         const unitId = scenarioStore.getSelectedUnitId();
         if (!unitId) return;
         e.preventDefault();
@@ -180,7 +184,7 @@ export default function WargameApp() {
         const canvas = map.getCanvas();
         const mode = editorStore.getMode();
         if (hexStore.getBrush()) { canvas.style.cursor = "crosshair"; return; }
-        const picking = searchPlannerStore.isPicking() || searchPlannerStore.isLoggingContact();
+        const picking = searchPlannerStore.isMapClickMode();
         canvas.style.cursor = (picking || mode === "planRoute" || mode === "placeUnit" || mode === "defineSonobuoyArea") ? "crosshair" : "";
       };
       editorStore.subscribe(updateCursor);

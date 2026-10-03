@@ -8,7 +8,7 @@
  */
 import type { Map as MapboxMap } from "mapbox-gl";
 import type { LngLat } from "../wargame/types";
-import { searchPlannerStore, solve } from "../wargame/search/searchPlannerStore";
+import { lkpProjection, searchPlannerStore, solve } from "../wargame/search/searchPlannerStore";
 import { measureBox, boxFromCorners, polygonAreaNm2, TRACK_COLORS } from "../wargame/search/tracks";
 import { SEARCH_PATTERNS } from "../wargame/search/patterns";
 import { langStore } from "../wargame/i18n/lang";
@@ -22,6 +22,10 @@ const SRC_OPT = "wg-search-opt-src";
 const SRC_BOX = "wg-search-box-src";
 const SRC_SWEEP = "wg-search-sweep-src";
 const SRC_TRACKS = "wg-search-tracks-src";
+const SRC_LKP = "wg-search-lkp-src";
+const LAYER_LKP_LINE = "wg-search-lkp-line";
+const LAYER_LKP_PTS = "wg-search-lkp-pts";
+const LAYER_LKP_LABEL = "wg-search-lkp-label";
 
 const LAYER_BANDS = "wg-search-bands";
 const LAYER_CONTACTS = "wg-search-contacts";
@@ -82,6 +86,26 @@ function buildBox(): GeoJSON.FeatureCollection {
         type: "Feature", properties: { vertex: i + 1 }, geometry: { type: "Point", coordinates: p },
       })),
       { type: "Feature", properties: { label }, geometry: { type: "Point", coordinates: [(box.west + box.east) / 2, box.north] } },
+    ],
+  };
+}
+
+/** 蒙地卡羅 LKP：最後已知位置 → 開始搜索時 → 航線飛完時 的推算航跡 */
+function buildLkp(): GeoJSON.FeatureCollection {
+  const p = lkpProjection();
+  if (!p) return EMPTY;
+  const en = lang() === "en";
+  const line: LngLat[] = [p.lkp, p.atStart, ...(p.atEnd ? [p.atEnd] : [])];
+  const pt = (c: LngLat, role: string, label: string): GeoJSON.Feature => ({
+    type: "Feature", properties: { role, label }, geometry: { type: "Point", coordinates: c },
+  });
+  return {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } },
+      pt(p.lkp, "lkp", "LKP"),
+      pt(p.atStart, "start", en ? "Search start" : "開始搜索"),
+      ...(p.atEnd ? [pt(p.atEnd, "end", en ? "Tracks end" : "航線結束")] : []),
     ],
   };
 }
@@ -206,13 +230,14 @@ function buildContacts(): GeoJSON.FeatureCollection {
 }
 
 export function attachWargameSearchLayer(map: MapboxMap): () => void {
-  const all = [LAYER_CONTACT_LABEL, LAYER_CONTACTS, LAYER_LABEL, LAYER_VERTEX, LAYER_TRACK_PTS, LAYER_TRACKS,
+  const all = [LAYER_LKP_LABEL, LAYER_LKP_PTS, LAYER_LKP_LINE, LAYER_CONTACT_LABEL, LAYER_CONTACTS, LAYER_LABEL, LAYER_VERTEX, LAYER_TRACK_PTS, LAYER_TRACKS,
     LAYER_OPT, LAYER_BOX, LAYER_SWEEP, LAYER_BANDS, LAYER_PROB];
   for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
-  for (const id of [SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
+  for (const id of [SRC_LKP, SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
     if (map.getSource(id)) map.removeSource(id);
   }
 
+  map.addSource(SRC_LKP, { type: "geojson", data: buildLkp() });
   map.addSource(SRC_BANDS, { type: "geojson", data: buildBands() });
   map.addSource(SRC_CONTACTS, { type: "geojson", data: buildContacts() });
   map.addSource(SRC_PROB, { type: "geojson", data: buildProbability() });
@@ -334,7 +359,33 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
     paint: { "text-color": "#fef9c3", "text-halo-color": "rgba(15,23,42,0.92)", "text-halo-width": 2 },
   });
 
+  // LKP 推算航跡（虛線）+ 三個位置點
+  map.addLayer({
+    id: LAYER_LKP_LINE, type: "line", source: SRC_LKP,
+    filter: ["==", ["geometry-type"], "LineString"],
+    paint: { "line-color": "#38bdf8", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.9 },
+  });
+  map.addLayer({
+    id: LAYER_LKP_PTS, type: "circle", source: SRC_LKP,
+    filter: ["==", ["geometry-type"], "Point"],
+    paint: {
+      "circle-radius": ["match", ["get", "role"], "lkp", 7, 5],
+      "circle-color": ["match", ["get", "role"], "lkp", "#f87171", "start", "#38bdf8", "#94a3b8"],
+      "circle-stroke-color": "#0f172a", "circle-stroke-width": 2,
+    },
+  });
+  map.addLayer({
+    id: LAYER_LKP_LABEL, type: "symbol", source: SRC_LKP,
+    filter: ["==", ["geometry-type"], "Point"],
+    layout: {
+      "text-field": ["get", "label"], "text-size": 12, "text-anchor": "left", "text-offset": [0.9, 0],
+      "text-allow-overlap": true, "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+    },
+    paint: { "text-color": "#bae6fd", "text-halo-color": "rgba(15,23,42,0.92)", "text-halo-width": 2 },
+  });
+
   const refresh = () => {
+    (map.getSource(SRC_LKP) as mapboxgl.GeoJSONSource | undefined)?.setData(buildLkp());
     (map.getSource(SRC_PROB) as mapboxgl.GeoJSONSource | undefined)?.setData(buildProbability());
     (map.getSource(SRC_BANDS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildBands());
     (map.getSource(SRC_CONTACTS) as mapboxgl.GeoJSONSource | undefined)?.setData(buildContacts());
@@ -349,7 +400,7 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   return () => {
     unsub(); unsubLang();
     for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
-    for (const id of [SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
+    for (const id of [SRC_LKP, SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {
       if (map.getSource(id)) map.removeSource(id);
     }
   };

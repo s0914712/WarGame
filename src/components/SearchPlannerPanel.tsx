@@ -14,14 +14,17 @@ import { useState, useSyncExternalStore } from "react";
 import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste } from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
-  currentRangeLimits,
+  currentRangeLimits, lkpProjection,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
 import { MAX_POLYGON_VERTICES, TRACK_COLORS } from "../wargame/search/tracks";
 import type { LngLat } from "../wargame/types";
 import type { SearchStrings } from "../wargame/search/i18n";
-import { suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
+import {
+  decimalToDms, dmsToDecimal, formatDms, parseLngLatLine, validateDms, DMS_SEC_DECIMALS, type CoordAxis,
+} from "../wargame/search/dms";
+import { nearestTabulatedAltitudeFt, suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
 import { useLang } from "../wargame/i18n/lang";
 import {
@@ -116,6 +119,7 @@ export function SearchPlannerPanel(
   const limits = currentRangeLimits();
   const tableWu = W?.uncorrectedNm ?? 0;
   const sweepExceedsPhysics = tableWu > limits.sweepWidthCapNm + 1e-9;
+  const useExperience = inputs.sweepSource === "experience";
   const analyticPod = sol
     ? (fwd?.pod ?? inv?.achievedPod ?? podFromCoverage(sol.trackSpacingNm > 0 ? (W?.correctedNm ?? 0) / sol.trackSpacingNm : 0, inputs.podModel))
     : 0;
@@ -219,12 +223,41 @@ export function SearchPlannerPanel(
               <option value="ship_over_91m">{t.targetLarge}</option>
             </select>
           </Row>
-          <Row label={t.altitude}>
-            <select value={inputs.altitudeFt} style={select}
-              onChange={(e) => patch({ altitudeFt: Number(e.target.value) })}>
-              {[500, 1000, 1500, 2000].map((ft) => <option key={ft} value={ft}>{ft.toLocaleString()} ft</option>)}
-            </select>
+          <Row label={t.sweepSource}>
+            <div style={{ display: "flex", gap: 6, flex: 1 }}>
+              {/* 切回查表時把高度吸附到表列值，避免 select 顯示不到 */}
+              <Toggle active={!useExperience} label={t.sweepSourceTable}
+                onClick={() => patch({ sweepSource: "table", altitudeFt: nearestTabulatedAltitudeFt(inputs.altitudeFt) })} />
+              <Toggle active={useExperience} label={t.sweepSourceExperience}
+                onClick={() => patch({ sweepSource: "experience" })} />
+            </div>
           </Row>
+          {useExperience ? (
+            <div style={{
+              padding: "7px 9px", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4,
+              background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.3)",
+            }}>
+              <Row label={t.expPlatform}>
+                <input value={inputs.experiencePlatform} placeholder={t.expPlatformPlaceholder}
+                  onChange={(e) => patch({ experiencePlatform: e.target.value })}
+                  style={{ ...numInput, flex: 1, width: "auto", fontFamily: "inherit" }} />
+              </Row>
+              <NumField label={t.altitude} value={inputs.altitudeFt} min={100} max={20000} step={100} unit="ft"
+                onChange={(v) => patch({ altitudeFt: v })} />
+              <NumField label={t.expRange} value={inputs.experienceRangeNm} min={0.5} max={40} step={0.5} unit="nm"
+                onChange={(v) => patch({ experienceRangeNm: v })} />
+              <NumField label={t.expRefVisibility} value={inputs.experienceRefVisibilityKm} min={2} max={40} step={1} unit="km"
+                onChange={(v) => patch({ experienceRefVisibilityKm: v })} />
+              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{t.expNote}</div>
+            </div>
+          ) : (
+            <Row label={t.altitude}>
+              <select value={inputs.altitudeFt} style={select}
+                onChange={(e) => patch({ altitudeFt: Number(e.target.value) })}>
+                {[500, 1000, 1500, 2000].map((ft) => <option key={ft} value={ft}>{ft.toLocaleString()} ft</option>)}
+              </select>
+            </Row>
+          )}
           <div style={{
             padding: "7px 9px", borderRadius: 4, marginTop: 2,
             background: "rgba(30,41,59,0.5)", fontSize: 13, lineHeight: 1.6, color: "#94a3b8",
@@ -239,7 +272,7 @@ export function SearchPlannerPanel(
               {" · "}{t.gsdAtMax} {limits.gsdAtMaxM.toFixed(2)} m/px
             </div>
             {sweepExceedsPhysics && (
-              <div style={{ color: "#fed7aa", marginTop: 3 }}>{t.sweepCapped}</div>
+              <div style={{ color: "#fed7aa", marginTop: 3 }}>{useExperience ? t.expExceedsPhysics : t.sweepCapped}</div>
             )}
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{t.rangeNote}</div>
           </div>
@@ -270,12 +303,16 @@ export function SearchPlannerPanel(
               onChange={(e) => patch({ corrections: { ...inputs.corrections, fatigued: e.target.checked } })} />
             {t.fatigued}
           </label>
+          {useExperience ? (
+            <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>{t.expNoDiscount}</div>
+          ) : (
           <label style={checkRow}>
             <input type="checkbox" checked={inputs.sensorTested}
               onChange={(e) => patch({ sensorTested: e.target.checked })} />
             {t.sensorTested}
           </label>
-          {!inputs.sensorTested && (
+          )}
+          {!useExperience && !inputs.sensorTested && (
             <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5, paddingLeft: 22 }}>
               {t.sensorTestedNote}
             </div>
@@ -385,7 +422,14 @@ export function SearchPlannerPanel(
           <div style={resultBox}>
             <div style={resultTitle}>{t.results}</div>
             <KV k={t.sweepWidth} v={`${W.correctedNm.toFixed(2)} nm`}
-              note={`Wu ${W.uncorrectedNm.toFixed(1)} × Fw ${W.corrections.weather} × Fv ${W.corrections.speed}${W.corrections.fatigued ? " × Ff 0.9" : ""}`} />
+              note={(W.source === "experience"
+                ? `${inputs.experiencePlatform ? `${inputs.experiencePlatform} · ` : ""}Wu = 2 × ${W.experienceRangeNm ?? 0} nm`
+                  + ((W.visibilityFactor ?? 1) < 1 ? ` × ${(W.visibilityFactor ?? 1).toFixed(2)}` : "")
+                  + ` = ${W.uncorrectedNm.toFixed(1)}`
+                : `Wu ${W.uncorrectedNm.toFixed(1)}`)
+                + ` × Fw ${W.corrections.weather} × Fv ${W.corrections.speed}${W.corrections.fatigued ? " × Ff 0.9" : ""}`
+                + ((W.corrections.operational ?? 1) < 1 ? ` × Fo ${W.corrections.operational}` : "")
+                + ((W.visibilityFactor ?? 1) < 1 ? ` · ${t.expVisReduced}` : "")} />
             <KV k={t.trackSpacing} v={`${sol.trackSpacingNm.toFixed(2)} nm`} />
             <KV k={t.coverage} v={(fwd?.coverage ?? inv?.achievedCoverage ?? 0).toFixed(2)}
               note={level ? coverageNote(level, lang) : undefined} />
@@ -575,11 +619,23 @@ export function SearchPlannerPanel(
                   onChange={(v) => patch({ mcSensorAvailability: v / 100 })} />
                 <Row label={t.mcDistribution}>
                   <select value={inputs.mcDistributionKind} style={select}
-                    onChange={(e) => patch({ mcDistributionKind: e.target.value as "uniform" | "gaussian" })}>
+                    onChange={(e) => {
+                      const kind = e.target.value as "uniform" | "gaussian" | "lkp";
+                      // 首次切到 LKP 且尚未輸入 → 以搜索區中心起頭
+                      if (kind === "lkp" && !inputs.mcLkp && a && b) {
+                        patch({ mcDistributionKind: kind, mcLkp: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+                      } else {
+                        patch({ mcDistributionKind: kind });
+                      }
+                    }}>
                     <option value="uniform">{t.mcUniform}</option>
                     <option value="gaussian">{t.mcGaussian}</option>
+                    <option value="lkp">{t.mcLkp}</option>
                   </select>
                 </Row>
+                {inputs.mcDistributionKind === "lkp" && (
+                  <LkpEditor key={JSON.stringify(inputs.mcLkp)} t={t} fmtHr={fmtHr} />
+                )}
                 {inputs.mcDistributionKind === "gaussian" && (
                   <NumField label={t.mcSigma} value={inputs.mcSigmaNm} min={0.5} max={40} step={0.5} unit="nm"
                     onChange={(v) => patch({ mcSigmaNm: v })} />
@@ -871,64 +927,84 @@ function PodCurve({ data, title, hoursLabel }: {
 }
 
 // ── 小元件 ────────────────────────────────────────────────
+/** 一個座標分量的輸入欄（度 / 分 / 秒以字串保存，允許輸入中途的不完整值） */
+interface DmsText { d: string; m: string; s: string; neg: boolean }
+interface VertexText { lng: DmsText; lat: DmsText }
+
+const EMPTY_DMS: DmsText = { d: "", m: "", s: "", neg: false };
+const emptyVertex = (): VertexText => ({ lng: { ...EMPTY_DMS }, lat: { ...EMPTY_DMS } });
+
+function dmsTextFrom(value: number): DmsText {
+  const x = decimalToDms(value);
+  return { d: String(x.deg), m: String(x.min), s: x.sec.toFixed(DMS_SEC_DECIMALS), neg: x.neg };
+}
+const vertexFrom = ([lng, lat]: LngLat): VertexText => ({ lng: dmsTextFrom(lng), lat: dmsTextFrom(lat) });
+
+const isBlank = (x: DmsText) => x.d.trim() === "" && x.m.trim() === "" && x.s.trim() === "";
+
+/** 欄位 → 十進位度；分、秒空白視為 0。不合法回 null */
+function dmsTextToDecimal(x: DmsText, axis: CoordAxis): number | null {
+  if (x.d.trim() === "") return null;
+  const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
+  const dms = { deg: num(x.d), min: num(x.m), sec: num(x.s), neg: x.neg };
+  return validateDms(dms, axis) ? null : dmsToDecimal(dms);
+}
+
 /**
- * 手動輸入多邊形頂點（3–10 點）建立搜索區。
- * 欄位以字串保存，允許輸入過程中出現「-」「119.」等暫時不合法的值；
+ * 手動輸入多邊形頂點（3–10 點）建立搜索區 —— 以度分秒（60 進位）輸入。
+ * 欄位以字串保存，允許輸入過程中出現暫時不合法的值；
  * 按「建立搜索區」時才解析並交給 store 驗證（自相交、面積 0 等）。
  */
 function PolygonEditor({ t, polygon, corners }: {
   t: SearchStrings; polygon: LngLat[] | null; corners: [LngLat, LngLat] | null;
 }) {
-  const initial = (): [string, string][] => {
-    if (polygon) return polygon.map(([lng, lat]) => [String(lng), String(lat)]);
+  const initial = (): VertexText[] => {
+    if (polygon) return polygon.map(vertexFrom);
     if (corners) {
       // 以目前框的四角起頭，方便在其上修改
       const [[x1, y1], [x2, y2]] = corners;
       const w = Math.min(x1, x2), e = Math.max(x1, x2), s = Math.min(y1, y2), n = Math.max(y1, y2);
-      return ([[w, s], [e, s], [e, n], [w, n]] as LngLat[]).map(([lng, lat]) => [lng.toFixed(4), lat.toFixed(4)]);
+      return ([[w, s], [e, s], [e, n], [w, n]] as LngLat[]).map(vertexFrom);
     }
-    return [["", ""], ["", ""], ["", ""]];
+    return [emptyVertex(), emptyVertex(), emptyVertex()];
   };
-  const [rows, setRows] = useState<[string, string][]>(initial);
+  const [rows, setRows] = useState<VertexText[]>(initial);
   const [error, setError] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
 
-  const setCell = (i: number, col: 0 | 1, v: string) => {
-    setRows((rs) => rs.map((r, k) => (k === i ? (col === 0 ? [v, r[1]] : [r[0], v]) : r)));
+  const setPart = (i: number, axis: CoordAxis, p: Partial<DmsText>) => {
+    setRows((rs) => rs.map((r, k) => (k === i ? { ...r, [axis]: { ...r[axis], ...p } } : r)));
     setError(null);
   };
   const removeRow = (i: number) => { setRows((rs) => rs.filter((_, k) => k !== i)); setError(null); };
   const addRow = () => {
     if (rows.length >= MAX_POLYGON_VERTICES) return;
-    setRows((rs) => [...rs, ["", ""]]);
+    setRows((rs) => [...rs, emptyVertex()]);
   };
 
   const apply = () => {
-    // 全空的列直接忽略，方便保留多餘空白列
-    const filled = rows.filter(([x, y]) => x.trim() !== "" || y.trim() !== "");
-    const pts: LngLat[] = filled.map(([x, y]) => [Number(x), Number(y)]);
-    if (filled.some(([x, y]) => x.trim() === "" || y.trim() === "")) {
-      setError(t.polyIssue.invalid_coord);
-      return;
+    // 全空的頂點直接忽略，方便保留多餘空白列
+    const filled = rows.filter((r) => !isBlank(r.lng) || !isBlank(r.lat));
+    const pts: LngLat[] = [];
+    for (const r of filled) {
+      const lng = dmsTextToDecimal(r.lng, "lng");
+      const lat = dmsTextToDecimal(r.lat, "lat");
+      if (lng === null || lat === null) { setError(t.polyIssue.invalid_coord); return; }
+      pts.push([lng, lat]);
     }
     const issue = searchPlannerStore.setPolygon(pts);
     setError(issue ? t.polyIssue[issue] : null);
   };
 
-  /** 解析貼上的文字：每行「經度, 緯度」（逗號 / 空白 / tab 分隔皆可） */
+  /** 解析貼上的文字：每行一點，度分秒或十進位度皆可（見 parseLngLatLine） */
   const loadPaste = () => {
-    const parsed: [string, string][] = [];
+    const parsed: VertexText[] = [];
     for (const line of pasteText.split(/\r?\n/)) {
-      const parts = line.trim().split(/[\s,，;；]+/).filter(Boolean);
-      if (parts.length === 0) continue;
-      const [x, y] = parts;
-      if (parts.length !== 2 || x === undefined || y === undefined
-        || !Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) {
-        setError(t.polyIssue.parse_failed);
-        return;
-      }
-      parsed.push([x, y]);
+      if (!line.trim()) continue;
+      const pt = parseLngLatLine(line);
+      if (!pt) { setError(t.polyIssue.parse_failed); return; }
+      parsed.push(vertexFrom(pt));
     }
     if (parsed.length > MAX_POLYGON_VERTICES) { setError(t.polyIssue.too_many); return; }
     if (parsed.length === 0) { setError(t.polyIssue.parse_failed); return; }
@@ -937,7 +1013,9 @@ function PolygonEditor({ t, polygon, corners }: {
     setError(null);
   };
 
-  const cellInput: React.CSSProperties = { ...numInput, flex: 1, width: "auto", minWidth: 0 };
+  const dmsLine = (i: number, axis: CoordAxis, x: DmsText) => (
+    <DmsFields t={t} axis={axis} value={x} onChange={(p) => setPart(i, axis, p)} />
+  );
 
   return (
     <div style={{
@@ -945,18 +1023,21 @@ function PolygonEditor({ t, polygon, corners }: {
       background: "rgba(30,41,59,0.5)", border: "1px solid rgba(148,163,184,0.2)",
     }}>
       <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5, marginBottom: 6 }}>{t.polyHint}</div>
-      <div style={{ display: "flex", gap: 6, fontSize: 13, color: "#64748b", marginBottom: 3, paddingLeft: 22 }}>
-        <span style={{ flex: 1 }}>{t.polyLng}</span>
-        <span style={{ flex: 1 }}>{t.polyLat}</span>
-        <span style={{ width: 26 }} />
+      <div style={{ display: "flex", gap: 5, fontSize: 12, color: "#64748b", marginBottom: 3, paddingLeft: 61, paddingRight: 64 }}>
+        <span style={{ flex: 1 }}>{t.polyDeg}</span>
+        <span style={{ flex: 1 }}>{t.polyMin}</span>
+        <span style={{ flex: 1 }}>{t.polySec}</span>
       </div>
-      {rows.map(([x, y], i) => (
-        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-          <span style={{ width: 16, fontSize: 13, color: "#94a3b8", textAlign: "right" }}>{i + 1}</span>
-          <input style={cellInput} inputMode="decimal" value={x} placeholder="119.50"
-            onChange={(e) => setCell(i, 0, e.target.value)} />
-          <input style={cellInput} inputMode="decimal" value={y} placeholder="23.20"
-            onChange={(e) => setCell(i, 1, e.target.value)} />
+      {rows.map((r, i) => (
+        <div key={i} style={{
+          display: "flex", gap: 6, alignItems: "center", marginBottom: 5, paddingBottom: 5,
+          borderBottom: i < rows.length - 1 ? "1px dashed rgba(148,163,184,0.15)" : "none",
+        }}>
+          <span style={{ width: 16, fontSize: 13, color: "#94a3b8", textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+            {dmsLine(i, "lng", r.lng)}
+            {dmsLine(i, "lat", r.lat)}
+          </div>
           <button className="wg-btn" style={{ ...smallBtn, padding: "4px 6px" }}
             onClick={() => removeRow(i)} disabled={rows.length <= 1} aria-label="remove">
             <X size={12} />
@@ -984,6 +1065,120 @@ function PolygonEditor({ t, polygon, corners }: {
       <button className="wg-btn" style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={apply}>
         <Hexagon size={13} /> {t.polyApply}
       </button>
+    </div>
+  );
+}
+
+/** 一個座標分量的 度 / 分 / 秒 + 半球 輸入列（多邊形頂點與 LKP 共用） */
+function DmsFields({ t, axis, value: x, onChange }: {
+  t: SearchStrings; axis: CoordAxis; value: DmsText; onChange: (p: Partial<DmsText>) => void;
+}) {
+  const cellInput: React.CSSProperties = { ...numInput, flex: 1, width: "auto", minWidth: 0, padding: "4px 5px" };
+  const unit: React.CSSProperties = { fontSize: 14, color: "#94a3b8", marginLeft: -3 };
+  const hemi = axis === "lng" ? (x.neg ? "W" : "E") : (x.neg ? "S" : "N");
+  return (
+    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+      <span style={{ width: 34, fontSize: 13, color: "#94a3b8", flexShrink: 0 }}>
+        {axis === "lng" ? t.polyLng : t.polyLat}
+      </span>
+      <input style={cellInput} inputMode="numeric" value={x.d} placeholder={axis === "lng" ? "119" : "23"}
+        aria-label={`${axis} ${t.polyDeg}`} onChange={(e) => onChange({ d: e.target.value })} />
+      <span style={unit}>°</span>
+      <input style={cellInput} inputMode="numeric" value={x.m} placeholder="0"
+        aria-label={`${axis} ${t.polyMin}`} onChange={(e) => onChange({ m: e.target.value })} />
+      <span style={unit}>′</span>
+      <input style={cellInput} inputMode="decimal" value={x.s} placeholder="0"
+        aria-label={`${axis} ${t.polySec}`} onChange={(e) => onChange({ s: e.target.value })} />
+      <span style={unit}>″</span>
+      <button className="wg-btn" title={t.polyHemiToggle}
+        style={{ ...smallBtn, padding: "3px 0", width: 26, justifyContent: "center", fontFamily: "ui-monospace, monospace" }}
+        onClick={() => onChange({ neg: !x.neg })}>{hemi}</button>
+    </div>
+  );
+}
+
+/**
+ * 蒙地卡羅「最後已知位置」輸入：LKP（度分秒 / 點地圖 / 搜索區中心）+ 目標航向航速。
+ * 父層以 mcLkp 當 key —— 地圖點選改了 LKP 時本元件重掛，欄位跟著同步。
+ */
+function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
+  const inputs = searchPlannerStore.getInputs();
+  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
+  const picking = searchPlannerStore.isPickingLkp();
+  const [lng, setLng] = useState<DmsText>(() => (inputs.mcLkp ? dmsTextFrom(inputs.mcLkp[0]) : { ...EMPTY_DMS }));
+  const [lat, setLat] = useState<DmsText>(() => (inputs.mcLkp ? dmsTextFrom(inputs.mcLkp[1]) : { ...EMPTY_DMS }));
+  const [error, setError] = useState<string | null>(null);
+  const proj = lkpProjection();
+
+  const apply = () => {
+    const x = dmsTextToDecimal(lng, "lng"), y = dmsTextToDecimal(lat, "lat");
+    if (x === null || y === null) { setError(t.polyIssue.invalid_coord); return; }
+    setError(null);
+    patch({ mcLkp: [x, y] });
+  };
+  const useCentre = () => {
+    const { a, b } = searchPlannerStore.getCorners();
+    if (!a || !b) return;
+    patch({ mcLkp: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+  };
+
+  return (
+    <div style={{
+      padding: "7px 9px", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4,
+      background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.3)",
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: "#bae6fd" }}>{t.lkpTitle}</div>
+      <DmsFields t={t} axis="lng" value={lng} onChange={(p) => { setLng((v) => ({ ...v, ...p })); setError(null); }} />
+      <DmsFields t={t} axis="lat" value={lat} onChange={(p) => { setLat((v) => ({ ...v, ...p })); setError(null); }} />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button className="wg-btn" style={smallBtn} onClick={apply}><MapPin size={12} /> {t.lkpApply}</button>
+        <button className="wg-btn" style={{ ...smallBtn, ...(picking ? { borderColor: "#38bdf8", color: "#bae6fd" } : {}) }}
+          onClick={() => searchPlannerStore.setPickingLkp(!picking)}>
+          <Crosshair size={12} /> {picking ? t.lkpPicking : t.lkpPickOnMap}
+        </button>
+        <button className="wg-btn" style={smallBtn} onClick={useCentre}>{t.lkpUseCentre}</button>
+      </div>
+      {error && <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>}
+      <div style={{ fontSize: 13, color: inputs.mcLkp ? "#e2e8f0" : "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
+        LKP: {inputs.mcLkp
+          ? `${formatDms(inputs.mcLkp[0], "lng")} ${formatDms(inputs.mcLkp[1], "lat")}`
+          : t.lkpUnset}
+      </div>
+
+      <NumField label={t.lkpSigma} value={inputs.mcSigmaNm} min={0} max={40} step={0.5} unit="nm"
+        onChange={(v) => patch({ mcSigmaNm: v })} />
+      <NumField label={t.lkpElapsed} value={inputs.mcLkpElapsedHr} min={0} max={72} step={0.25} unit="hr"
+        onChange={(v) => patch({ mcLkpElapsedHr: v })} />
+      <NumField label={t.targetCourse} value={inputs.mcTargetCourseDeg} min={0} max={359} step={1} unit="°"
+        onChange={(v) => patch({ mcTargetCourseDeg: v })} />
+      <NumField label={t.targetCourseSigma} value={inputs.mcTargetCourseSigmaDeg} min={0} max={180} step={1} unit="°"
+        onChange={(v) => patch({ mcTargetCourseSigmaDeg: v })} />
+      <NumField label={t.targetSpeed} value={inputs.mcTargetSpeedKn} min={0} max={40} step={0.5} unit="kn"
+        onChange={(v) => patch({ mcTargetSpeedKn: v })} />
+      <NumField label={t.targetSpeedSigma} value={inputs.mcTargetSpeedSigmaKn} min={0} max={10} step={0.1} unit="kn"
+        onChange={(v) => patch({ mcTargetSpeedSigmaKn: v })} />
+
+      {proj && (
+        <div style={{ fontSize: 13, lineHeight: 1.55, color: "#cbd5e1", marginTop: 2 }}>
+          <div>
+            {t.lkpAtStart}（+{fmtHr(inputs.mcLkpElapsedHr)}）:{" "}
+            <span style={{ fontFamily: "ui-monospace, monospace" }}>
+              {formatDms(proj.atStart[0], "lng")} {formatDms(proj.atStart[1], "lat")}
+            </span>
+            {" · "}{(inputs.mcTargetSpeedKn * inputs.mcLkpElapsedHr).toFixed(1)} nm
+          </div>
+          {proj.atEnd && (
+            <div>
+              {t.lkpAtEnd}:{" "}
+              <span style={{ fontFamily: "ui-monospace, monospace" }}>
+                {formatDms(proj.atEnd[0], "lng")} {formatDms(proj.atEnd[1], "lat")}
+              </span>
+            </div>
+          )}
+          {proj.insideAtStart === false && <div style={{ ...warnBox, marginTop: 4 }}>{t.lkpOutside}</div>}
+        </div>
+      )}
+      <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>{t.lkpNote}</div>
     </div>
   );
 }
