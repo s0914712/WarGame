@@ -153,6 +153,75 @@ export function measureBox(box: SearchBox): {
   };
 }
 
+/** 凸包（Andrew monotone chain），輸入輸出皆為局部平面座標 */
+function convexHull(pts: [number, number][]): [number, number][] {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2]!, lower[lower.length - 1]!, q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper: [number, number][] = [];
+  for (let i = p.length - 1; i >= 0; i--) {
+    const q = p[i]!;
+    while (upper.length >= 2 && cross(upper[upper.length - 2]!, upper[upper.length - 1]!, q) <= 0) upper.pop();
+    upper.push(q);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+/**
+ * 最小面積外接矩形（旋轉卡尺：最佳矩形必有一邊與凸包某邊共線）。
+ * 回傳長邊方向單位向量 u（局部平面，東 = x、北 = y）與長 / 短邊長（浬）。
+ * 外接框（正南北）與最小矩形面積相差 < 0.5% 時，沿用正南北方向 ——
+ * 正矩形的多邊形維持原本的航線方向，不會因數值誤差轉一個極小角度。
+ */
+function orientedRectLocal(local: [number, number][]): { u: [number, number]; longNm: number; shortNm: number } {
+  const xs = local.map((q) => q[0]), ys = local.map((q) => q[1]);
+  const bw = Math.max(...xs) - Math.min(...xs), bh = Math.max(...ys) - Math.min(...ys);
+  const axis = { u: (bw >= bh ? [1, 0] : [0, 1]) as [number, number], longNm: Math.max(bw, bh), shortNm: Math.min(bw, bh) };
+  const hull = convexHull(local);
+  if (hull.length < 3) return axis;
+  let best: { u: [number, number]; a: number; b: number } | null = null;
+  for (let i = 0; i < hull.length; i++) {
+    const p = hull[i]!, q = hull[(i + 1) % hull.length]!;
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (len < 1e-9) continue;
+    const e: [number, number] = [(q[0] - p[0]) / len, (q[1] - p[1]) / len];
+    let aMin = Infinity, aMax = -Infinity, bMin = Infinity, bMax = -Infinity;
+    for (const h of hull) {
+      const a = h[0] * e[0] + h[1] * e[1];
+      const b = -h[0] * e[1] + h[1] * e[0];
+      aMin = Math.min(aMin, a); aMax = Math.max(aMax, a);
+      bMin = Math.min(bMin, b); bMax = Math.max(bMax, b);
+    }
+    const A = aMax - aMin, B = bMax - bMin;
+    if (!best || A * B < best.a * best.b - 1e-12) best = { u: e, a: A, b: B };
+  }
+  if (!best || best.a * best.b >= bw * bh * 0.995) return axis;
+  // 長邊方向；統一指向東半平面（北向時指北），讓結果不受頂點順序影響
+  let u: [number, number] = best.a >= best.b ? best.u : [-best.u[1], best.u[0]];
+  if (u[0] < -1e-9 || (Math.abs(u[0]) <= 1e-9 && u[1] < 0)) u = [-u[0], -u[1]];
+  return { u, longNm: Math.max(best.a, best.b), shortNm: Math.min(best.a, best.b) };
+}
+
+/**
+ * 多邊形搜索區的主軸（最小面積外接矩形）。
+ * angleDeg：長邊的方位角（0 = 正北、90 = 正東）。
+ */
+export function polygonOrientation(poly: LngLat[]): { angleDeg: number; longNm: number; shortNm: number } {
+  const box = boxFromPolygon(poly);
+  const kx = kmPerDegLng((box.north + box.south) / 2) / KM_PER_NM;
+  const ky = KM_PER_DEG_LAT / KM_PER_NM;
+  const local = poly.map(([lng, lat]) => [(lng - box.west) * kx, (lat - box.south) * ky] as [number, number]);
+  const r = orientedRectLocal(local);
+  const ang = (Math.atan2(r.u[0], r.u[1]) * 180) / Math.PI;
+  return { angleDeg: (ang + 360) % 360, longNm: r.longNm, shortNm: r.shortNm };
+}
+
 /** 以 origin 為原點，偏移 (東 dxNm, 北 dyNm) 浬後的座標 */
 function offsetNm(origin: LngLat, dxNm: number, dyNm: number): LngLat {
   const [lng, lat] = origin;
@@ -230,13 +299,41 @@ function generateLadder(input: GenerateTracksInput, legsAlongLongAxis: boolean):
   const polyLocal = input.polygon && input.polygon.length >= 3
     ? input.polygon.map(([lng, lat]) => [(lng - sw[0]) * kx, (lat - sw[1]) * ky] as [number, number])
     : null;
+
+  /**
+   * 多邊形：航段方向取最小面積外接矩形的邊（PS 平行長邊、CS 平行短邊），
+   * 而非固定正南北 / 正東西 —— 斜放的搜索區才不會被斜切成長短不一的碎段。
+   * 在旋轉座標系（x' 沿航段、y' 沿推進）中裁切，再轉回經緯度。
+   */
+  let rot: { d: [number, number]; c: [number, number]; cMin: number; poly: [number, number][]; creepLen: number } | null = null;
+  if (polyLocal) {
+    const { u } = orientedRectLocal(polyLocal);
+    const d: [number, number] = legsAlongLongAxis ? u : [-u[1], u[0]];
+    // 推進方向：與航段垂直，統一指向東（正東西航段時指北），與矩形版的推進方向一致
+    let c: [number, number] = [-d[1], d[0]];
+    if (c[0] < -1e-9 || (Math.abs(c[0]) <= 1e-9 && c[1] < 0)) c = [-c[0], -c[1]];
+    const ys = polyLocal.map((q) => q[0] * c[0] + q[1] * c[1]);
+    const cMin = Math.min(...ys);
+    rot = {
+      d, c, cMin,
+      creepLen: Math.max(...ys) - cMin,
+      // 旋轉後：x' = 沿航段、y' = 沿推進（自最靠推進起點的頂點起算）
+      poly: polyLocal.map((q, i) => [q[0] * d[0] + q[1] * d[1], (ys[i] ?? 0) - cMin] as [number, number]),
+    };
+  }
   /** 第 legIdx 條航段在區內的區間（矩形時就是整條） */
   const intervalsFor = (creepOff: number): [number, number][] =>
-    polyLocal ? legIntervalsInPolygon(polyLocal, legIsEastWest, creepOff) : [[0, legLenNm]];
-  const at = (along: number, creepOff: number): LngLat =>
-    legIsEastWest ? offsetNm(sw, along, creepOff) : offsetNm(sw, creepOff, along);
+    rot ? legIntervalsInPolygon(rot.poly, true, creepOff) : [[0, legLenNm]];
+  const at = (along: number, creepOff: number): LngLat => {
+    if (rot) {
+      const y = creepOff + rot.cMin;
+      return offsetNm(sw, rot.d[0] * along + rot.c[0] * y, rot.d[1] * along + rot.c[1] * y);
+    }
+    return legIsEastWest ? offsetNm(sw, along, creepOff) : offsetNm(sw, creepOff, along);
+  };
+  const creepSpan = rot ? rot.creepLen : creepLenNm;
 
-  const totalLegs = Math.max(1, Math.ceil(creepLenNm / S));
+  const totalLegs = Math.max(1, Math.ceil(creepSpan / S));
   const n = Math.max(1, Math.floor(input.droneCount));
   const tracks: DroneTrack[] = [];
 
@@ -246,9 +343,9 @@ function generateLadder(input: GenerateTracksInput, legsAlongLongAxis: boolean):
     // 多邊形：最後一條若超出範圍，改放在剩餘條帶的中線 —— 夾到遠側邊上
     // 常常只碰到一個頂點（如三角形尖端），裁出來的航段長度趨近 0
     const nominal = (legIdx + 0.5) * S;
-    const creepOff = polyLocal && nominal > creepLenNm
-      ? (legIdx * S + creepLenNm) / 2
-      : Math.min(nominal, creepLenNm);
+    const creepOff = polyLocal && nominal > creepSpan
+      ? (legIdx * S + creepSpan) / 2
+      : Math.min(nominal, creepSpan);
     return { creepOff, intervals: intervalsFor(creepOff) };
   }).filter((l) => l.intervals.length > 0);   // 多邊形在該航段上沒有面積 → 略過
 

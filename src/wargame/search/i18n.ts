@@ -162,6 +162,7 @@ export interface SearchStrings {
   lkpAtStart: string; lkpAtEnd: string; lkpOutside: string; lkpNote: string; lkpPickHint: string;
   lkpFromPrior: string; lkpFromPriorNote: string; lkpFromMc: string; lkpEdit: string;
   priorLkpTitle: string; priorLkpDiffer: string; priorLkpNote: string;
+  priorModeLkp: string; priorModeScenarios: string; lkpSharedNote: string;
   secTransit: string; transitEnable: string; transitShipPos: string; transitReportToStart: string;
   transitNominalEntry: string; transitNominalExit: string; transitNominalMiss: string; transitBeforeStart: string;
   transitNeedPos: string; transitRun: string; transitPen: string; transitPenGivenEnter: string; transitPenGivenEnterNote: string;
@@ -296,6 +297,8 @@ const ZH: SearchStrings = {
   lkpPickHint: "點地圖設定最後已知位置（LKP）",
   lkpFromPrior: "帶入事前分布 LKP", lkpFromPriorNote: "取事前分布中權重最高情境的 LKP",
   lkpFromMc: "帶入蒙地卡羅 LKP", lkpEdit: "修改",
+  priorModeLkp: "依 LKP（與蒙地卡羅共用）", priorModeScenarios: "多情境手動設定",
+  lkpSharedNote: "⑥ 蒙地卡羅與 ⑧ 事前分布共用這組 LKP 參數 —— 在任一處修改，兩邊同步。",
   secTransit: "⑪ 突穿機率（船舶航經搜索區未被發現）",
   transitEnable: "啟用突穿分析",
   transitShipPos: "船舶回報位置",
@@ -496,6 +499,8 @@ const EN: SearchStrings = {
   lkpPickHint: "Click the map to set the last known position (LKP)",
   lkpFromPrior: "Use prior LKP", lkpFromPriorNote: "Takes the LKP of the highest-weight prior scenario",
   lkpFromMc: "Use Monte Carlo LKP", lkpEdit: "Edit",
+  priorModeLkp: "From LKP (shared with Monte Carlo)", priorModeScenarios: "Manual scenarios",
+  lkpSharedNote: "Monte Carlo (6) and the prior (8) share these LKP parameters — editing either updates both.",
   secTransit: "11. Penetration probability (ship transits undetected)",
   transitEnable: "Enable penetration analysis",
   transitShipPos: "Ship reported position",
