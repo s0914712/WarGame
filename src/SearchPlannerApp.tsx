@@ -20,6 +20,8 @@ import { langStore, useLang } from "./wargame/i18n/lang";
 import { DEFAULT_STYLE_ID, getStyleById } from "./wargame/mapStyles";
 import { MapStyleSwitcher } from "./components/MapStyleSwitcher";
 import { useIsMobile } from "./hooks/useIsMobile";
+import { attachRulerLayer, rulerStore } from "./map/rulerTool";
+import { RulerControl } from "./components/RulerControl";
 
 /** 台灣海峽預設視野 */
 const DEFAULT_CAMERA = { center: [120.0, 23.6] as [number, number], zoom: 7 };
@@ -28,6 +30,7 @@ export default function SearchPlannerApp() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const detachRef = useRef<(() => void) | null>(null);
+  const rulerDetachRef = useRef<(() => void) | null>(null);
   const [styleId, setStyleId] = useState(DEFAULT_STYLE_ID);
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
@@ -83,7 +86,9 @@ export default function SearchPlannerApp() {
 
     map.on("load", () => {
       detachRef.current = attachWargameSearchLayer(map);
+      rulerDetachRef.current = attachRulerLayer(map);
       map.on("click", (e) => {
+        if (rulerStore.isActive()) return;          // 尺規量測中：點擊由 rulerTool 處理
         if (searchPlannerStore.isPicking()) {
           searchPlannerStore.setCorner(e.lngLat.lng, e.lngLat.lat);
         } else if (searchPlannerStore.isPickingLkp()) {
@@ -103,6 +108,8 @@ export default function SearchPlannerApp() {
     return () => {
       detachRef.current?.();
       detachRef.current = null;
+      rulerDetachRef.current?.();
+      rulerDetachRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -114,8 +121,13 @@ export default function SearchPlannerApp() {
     if (!map || !mapReady) return;
     detachRef.current?.();
     detachRef.current = null;
+    rulerDetachRef.current?.();
+    rulerDetachRef.current = null;
     map.setStyle(getStyleById(styleId).url);
-    map.once("style.load", () => { detachRef.current = attachWargameSearchLayer(map); });
+    map.once("style.load", () => {
+      detachRef.current = attachWargameSearchLayer(map);
+      rulerDetachRef.current = attachRulerLayer(map);
+    });
   }, [styleId, mapReady]);
 
   const langButton = (
@@ -149,6 +161,7 @@ export default function SearchPlannerApp() {
       <div style={{ position: "relative", width: "100vw", height: "100dvh", background: "#020617", overflow: "hidden" }}>
         <div ref={mapContainerRef} style={{ position: "absolute", inset: 0 }} />
         {mapFailed && <NoMapFallback lang={lang} compact />}
+        {!mapFailed && <RulerControl lang={lang} style={{ top: 12, left: 12 }} />}
         {pickHintEl}
         {langButton}
 
@@ -198,6 +211,7 @@ export default function SearchPlannerApp() {
       <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
         <div ref={mapContainerRef} style={{ position: "absolute", inset: 0 }} />
         {mapFailed && <NoMapFallback lang={lang} />}
+        {!mapFailed && <RulerControl lang={lang} style={{ top: 12, left: 12 }} />}
         {pickHintEl}
         {langButton}
         {!mapFailed && <MapStyleSwitcher selectedId={styleId} onChange={setStyleId} />}
