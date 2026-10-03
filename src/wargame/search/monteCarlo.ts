@@ -49,7 +49,28 @@ export type TargetDistribution =
   /** 均勻散布於搜索區（解析式的假設） */
   | { kind: "uniform" }
   /** 以基準點為中心的二維常態分布，sigmaNm 為單軸標準差 */
-  | { kind: "gaussian"; datum: LngLat; sigmaNm: number };
+  | { kind: "gaussian"; datum: LngLat; sigmaNm: number }
+  /**
+   * 最後已知位置（LKP）+ 目標自身航向航速。
+   * 每次試驗：起點 ~ N(LKP, σ²)、航向 ~ N(course, σc²)、航速 ~ N(speed, σs²)（≥0），
+   * 先以該速度推算 elapsedHr 到搜索開始（t = 0 = 航線起點），搜索期間持續以同速度航行。
+   */
+  | { kind: "lkp"; lkp: LngLat; sigmaNm: number;
+      courseDeg: number; courseSigmaDeg: number;
+      speedKn: number; speedSigmaKn: number;
+      /** LKP 時刻 → 搜索開始的時數 */
+      elapsedHr: number };
+
+/**
+ * LKP 依航向航速推算 hours 後的位置（不含誤差；給地圖 / UI 顯示期望位置）。
+ */
+export function deadReckon(lkp: LngLat, courseDeg: number, speedKn: number, hours: number): LngLat {
+  const distNm = Math.max(0, speedKn) * Math.max(0, hours);
+  const brg = (courseDeg * Math.PI) / 180;
+  const dLat = (distNm * Math.cos(brg) * KM_PER_NM) / KM_PER_DEG_LAT;
+  const dLng = (distNm * Math.sin(brg) * KM_PER_NM) / kmPerDegLng(lkp[1]);
+  return [lkp[0] + dLng, lkp[1] + dLat];
+}
 
 export interface MonteCarloInput {
   box: SearchBox;
@@ -225,6 +246,8 @@ export function runMonteCarlo(input: MonteCarloInput): MonteCarloResult {
 
   const gaussianTarget = input.distribution.kind === "gaussian" ? input.distribution : null;
   const datumLocal = gaussianTarget ? toLocalNm(gaussianTarget.datum, origin) : null;
+  const lkpTarget = input.distribution.kind === "lkp" ? input.distribution : null;
+  const lkpLocal = lkpTarget ? toLocalNm(lkpTarget.lkp, origin) : null;
   const k = (input.sweepWidthNm * input.sweepWidthNm) / (4 * Math.PI);
   const polyLocal = input.polygon && input.polygon.length >= 3
     ? input.polygon.map((p) => toLocalNm(p, origin))
@@ -233,7 +256,18 @@ export function runMonteCarlo(input: MonteCarloInput): MonteCarloResult {
   for (let t = 0; t < trials; t++) {
     // ── 目標初始位置 ──
     let tx: number, ty: number;
-    if (gaussianTarget && datumLocal) {
+    // 目標自身速度（每步浬）；只有 LKP 分布才有
+    let ovx = 0, ovy = 0;
+    if (lkpTarget && lkpLocal) {
+      const course = ((lkpTarget.courseDeg + gaussian(rng) * lkpTarget.courseSigmaDeg) * Math.PI) / 180;
+      const speed = Math.max(0, lkpTarget.speedKn + gaussian(rng) * lkpTarget.speedSigmaKn);
+      const vx = Math.sin(course) * speed, vy = Math.cos(course) * speed;     // 浬/小時
+      const T = Math.max(0, lkpTarget.elapsedHr);
+      tx = lkpLocal[0] + gaussian(rng) * lkpTarget.sigmaNm + vx * T;
+      ty = lkpLocal[1] + gaussian(rng) * lkpTarget.sigmaNm + vy * T;
+      ovx = (vx * stepSec) / 3600;
+      ovy = (vy * stepSec) / 3600;
+    } else if (gaussianTarget && datumLocal) {
       tx = datumLocal[0] + gaussian(rng) * gaussianTarget.sigmaNm;
       ty = datumLocal[1] + gaussian(rng) * gaussianTarget.sigmaNm;
     } else {
@@ -271,7 +305,7 @@ export function runMonteCarlo(input: MonteCarloInput): MonteCarloResult {
     let detectedStep = -1;
     let prevTx = tx, prevTy = ty;
     for (let step = 1; step < maxSteps && detectedStep < 0; step++) {
-      tx += dvx; ty += dvy;
+      tx += dvx + ovx; ty += dvy + ovy;
       // 目標於該步的代表位置取步首步尾中點
       const mx = (prevTx + tx) / 2, my = (prevTy + ty) / 2;
       let exponent = 0;

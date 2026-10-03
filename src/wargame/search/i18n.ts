@@ -151,6 +151,10 @@ export interface SearchStrings {
   stoneSection: string;
   sensorTested: string; sensorTestedNote: string;
   sweepSource: string; sweepSourceTable: string; sweepSourceExperience: string;
+  mcLkp: string; lkpTitle: string; lkpApply: string; lkpPickOnMap: string; lkpPicking: string;
+  lkpUseCentre: string; lkpUnset: string; lkpSigma: string; lkpElapsed: string;
+  targetCourse: string; targetCourseSigma: string; targetSpeed: string; targetSpeedSigma: string;
+  lkpAtStart: string; lkpAtEnd: string; lkpOutside: string; lkpNote: string; lkpPickHint: string;
   expPlatform: string; expPlatformPlaceholder: string; expRange: string; expRefVisibility: string;
   expNote: string; expVisReduced: string; expExceedsPhysics: string; expNoDiscount: string;
   navError: string; sweepSpread: string;
@@ -255,6 +259,15 @@ const ZH: SearchStrings = {
   sensorTested: "感測器已在近似條件下實測",
   sensorTestedNote: "未實測時套 ×0.65 —— Koopman [1980]：二戰經驗顯示系統實戰只發揮設計能力的 60–70%",
   sweepSource: "掃幅來源", sweepSourceTable: "文件查表", sweepSourceExperience: "載台經驗值",
+  mcLkp: "最後已知位置 + 航向航速", lkpTitle: "最後已知位置（LKP）",
+  lkpApply: "設定 LKP", lkpPickOnMap: "在地圖上點選", lkpPicking: "點地圖中…（再按取消）",
+  lkpUseCentre: "用搜索區中心", lkpUnset: "尚未設定（以搜索區中心代替）",
+  lkpSigma: "位置誤差 σ", lkpElapsed: "LKP 至開始搜索",
+  targetCourse: "目標航向", targetCourseSigma: "航向誤差 σ", targetSpeed: "目標航速", targetSpeedSigma: "航速誤差 σ",
+  lkpAtStart: "開始搜索時預估位置", lkpAtEnd: "航線飛完時預估位置",
+  lkpOutside: "⚠ 開始搜索時目標預估位置不在搜索區內 —— 搜索區可能需要往目標航向方向移動",
+  lkpNote: "每次試驗：起點 ~ LKP ± σ、航向 / 航速各自抽樣，推算到開始搜索，搜索期間目標持續以該航向航速移動（再疊加上方的漂移）。",
+  lkpPickHint: "點地圖設定最後已知位置（LKP）",
   expPlatform: "載台名稱", expPlatformPlaceholder: "例：瑞鳶",
   expRange: "可分辨距離", expRefVisibility: "經驗時能見度",
   expNote: "輸入此載台在該高度、經驗時能見度下，目視可分辨船隻的距離 R。以定距律換算 Wu = 2R，再套天候 / 速度 / 疲勞修正 → 用於 POD。",
@@ -406,6 +419,15 @@ const EN: SearchStrings = {
   sensorTested: "Sensor tested under comparable conditions",
   sensorTestedNote: "Untested sensors get ×0.65 — Koopman [1980]: WWII experience showed systems performing at 60–70% of design capability",
   sweepSource: "Sweep width source", sweepSourceTable: "Reference table", sweepSourceExperience: "Platform experience",
+  mcLkp: "Last known position + course/speed", lkpTitle: "Last known position (LKP)",
+  lkpApply: "Set LKP", lkpPickOnMap: "Pick on map", lkpPicking: "Click the map… (press to cancel)",
+  lkpUseCentre: "Use area centre", lkpUnset: "Not set (search area centre is used)",
+  lkpSigma: "Position error σ", lkpElapsed: "LKP to search start",
+  targetCourse: "Target course", targetCourseSigma: "Course error σ", targetSpeed: "Target speed", targetSpeedSigma: "Speed error σ",
+  lkpAtStart: "Expected position at search start", lkpAtEnd: "Expected position when tracks finish",
+  lkpOutside: "⚠ The target's expected position at search start is outside the search area — the area may need to move along the target's course",
+  lkpNote: "Each trial: start ~ LKP ± σ, course and speed sampled independently, dead-reckoned to search start; during the search the target keeps that course and speed (plus the drift above).",
+  lkpPickHint: "Click the map to set the last known position (LKP)",
   expPlatform: "Platform", expPlatformPlaceholder: "e.g. Chung-Shyang II",
   expRange: "Recognition range", expRefVisibility: "Visibility at the time",
   expNote: "Enter the range R at which this platform, at this altitude and visibility, can visually recognise a ship. Converted with the definite-range law Wu = 2R, then weather / speed / fatigue corrections → used for POD.",

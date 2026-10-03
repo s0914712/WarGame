@@ -14,7 +14,7 @@ import { useState, useSyncExternalStore } from "react";
 import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste } from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
-  currentRangeLimits,
+  currentRangeLimits, lkpProjection,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
@@ -22,7 +22,7 @@ import { MAX_POLYGON_VERTICES, TRACK_COLORS } from "../wargame/search/tracks";
 import type { LngLat } from "../wargame/types";
 import type { SearchStrings } from "../wargame/search/i18n";
 import {
-  decimalToDms, dmsToDecimal, parseLngLatLine, validateDms, DMS_SEC_DECIMALS, type CoordAxis,
+  decimalToDms, dmsToDecimal, formatDms, parseLngLatLine, validateDms, DMS_SEC_DECIMALS, type CoordAxis,
 } from "../wargame/search/dms";
 import { nearestTabulatedAltitudeFt, suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
@@ -619,11 +619,23 @@ export function SearchPlannerPanel(
                   onChange={(v) => patch({ mcSensorAvailability: v / 100 })} />
                 <Row label={t.mcDistribution}>
                   <select value={inputs.mcDistributionKind} style={select}
-                    onChange={(e) => patch({ mcDistributionKind: e.target.value as "uniform" | "gaussian" })}>
+                    onChange={(e) => {
+                      const kind = e.target.value as "uniform" | "gaussian" | "lkp";
+                      // 首次切到 LKP 且尚未輸入 → 以搜索區中心起頭
+                      if (kind === "lkp" && !inputs.mcLkp && a && b) {
+                        patch({ mcDistributionKind: kind, mcLkp: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+                      } else {
+                        patch({ mcDistributionKind: kind });
+                      }
+                    }}>
                     <option value="uniform">{t.mcUniform}</option>
                     <option value="gaussian">{t.mcGaussian}</option>
+                    <option value="lkp">{t.mcLkp}</option>
                   </select>
                 </Row>
+                {inputs.mcDistributionKind === "lkp" && (
+                  <LkpEditor key={JSON.stringify(inputs.mcLkp)} t={t} fmtHr={fmtHr} />
+                )}
                 {inputs.mcDistributionKind === "gaussian" && (
                   <NumField label={t.mcSigma} value={inputs.mcSigmaNm} min={0.5} max={40} step={0.5} unit="nm"
                     onChange={(v) => patch({ mcSigmaNm: v })} />
@@ -1001,31 +1013,9 @@ function PolygonEditor({ t, polygon, corners }: {
     setError(null);
   };
 
-  const cellInput: React.CSSProperties = { ...numInput, flex: 1, width: "auto", minWidth: 0, padding: "4px 5px" };
-  const unit: React.CSSProperties = { fontSize: 14, color: "#94a3b8", marginLeft: -3 };
-
-  const dmsLine = (i: number, axis: CoordAxis, x: DmsText) => {
-    const hemi = axis === "lng" ? (x.neg ? "W" : "E") : (x.neg ? "S" : "N");
-    return (
-      <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-        <span style={{ width: 34, fontSize: 13, color: "#94a3b8", flexShrink: 0 }}>
-          {axis === "lng" ? t.polyLng : t.polyLat}
-        </span>
-        <input style={cellInput} inputMode="numeric" value={x.d} placeholder={axis === "lng" ? "119" : "23"}
-          aria-label={`${axis} ${t.polyDeg}`} onChange={(e) => setPart(i, axis, { d: e.target.value })} />
-        <span style={unit}>°</span>
-        <input style={cellInput} inputMode="numeric" value={x.m} placeholder="0"
-          aria-label={`${axis} ${t.polyMin}`} onChange={(e) => setPart(i, axis, { m: e.target.value })} />
-        <span style={unit}>′</span>
-        <input style={cellInput} inputMode="decimal" value={x.s} placeholder="0"
-          aria-label={`${axis} ${t.polySec}`} onChange={(e) => setPart(i, axis, { s: e.target.value })} />
-        <span style={unit}>″</span>
-        <button className="wg-btn" title={t.polyHemiToggle}
-          style={{ ...smallBtn, padding: "3px 0", width: 26, justifyContent: "center", fontFamily: "ui-monospace, monospace" }}
-          onClick={() => setPart(i, axis, { neg: !x.neg })}>{hemi}</button>
-      </div>
-    );
-  };
+  const dmsLine = (i: number, axis: CoordAxis, x: DmsText) => (
+    <DmsFields t={t} axis={axis} value={x} onChange={(p) => setPart(i, axis, p)} />
+  );
 
   return (
     <div style={{
@@ -1075,6 +1065,120 @@ function PolygonEditor({ t, polygon, corners }: {
       <button className="wg-btn" style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={apply}>
         <Hexagon size={13} /> {t.polyApply}
       </button>
+    </div>
+  );
+}
+
+/** 一個座標分量的 度 / 分 / 秒 + 半球 輸入列（多邊形頂點與 LKP 共用） */
+function DmsFields({ t, axis, value: x, onChange }: {
+  t: SearchStrings; axis: CoordAxis; value: DmsText; onChange: (p: Partial<DmsText>) => void;
+}) {
+  const cellInput: React.CSSProperties = { ...numInput, flex: 1, width: "auto", minWidth: 0, padding: "4px 5px" };
+  const unit: React.CSSProperties = { fontSize: 14, color: "#94a3b8", marginLeft: -3 };
+  const hemi = axis === "lng" ? (x.neg ? "W" : "E") : (x.neg ? "S" : "N");
+  return (
+    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+      <span style={{ width: 34, fontSize: 13, color: "#94a3b8", flexShrink: 0 }}>
+        {axis === "lng" ? t.polyLng : t.polyLat}
+      </span>
+      <input style={cellInput} inputMode="numeric" value={x.d} placeholder={axis === "lng" ? "119" : "23"}
+        aria-label={`${axis} ${t.polyDeg}`} onChange={(e) => onChange({ d: e.target.value })} />
+      <span style={unit}>°</span>
+      <input style={cellInput} inputMode="numeric" value={x.m} placeholder="0"
+        aria-label={`${axis} ${t.polyMin}`} onChange={(e) => onChange({ m: e.target.value })} />
+      <span style={unit}>′</span>
+      <input style={cellInput} inputMode="decimal" value={x.s} placeholder="0"
+        aria-label={`${axis} ${t.polySec}`} onChange={(e) => onChange({ s: e.target.value })} />
+      <span style={unit}>″</span>
+      <button className="wg-btn" title={t.polyHemiToggle}
+        style={{ ...smallBtn, padding: "3px 0", width: 26, justifyContent: "center", fontFamily: "ui-monospace, monospace" }}
+        onClick={() => onChange({ neg: !x.neg })}>{hemi}</button>
+    </div>
+  );
+}
+
+/**
+ * 蒙地卡羅「最後已知位置」輸入：LKP（度分秒 / 點地圖 / 搜索區中心）+ 目標航向航速。
+ * 父層以 mcLkp 當 key —— 地圖點選改了 LKP 時本元件重掛，欄位跟著同步。
+ */
+function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
+  const inputs = searchPlannerStore.getInputs();
+  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
+  const picking = searchPlannerStore.isPickingLkp();
+  const [lng, setLng] = useState<DmsText>(() => (inputs.mcLkp ? dmsTextFrom(inputs.mcLkp[0]) : { ...EMPTY_DMS }));
+  const [lat, setLat] = useState<DmsText>(() => (inputs.mcLkp ? dmsTextFrom(inputs.mcLkp[1]) : { ...EMPTY_DMS }));
+  const [error, setError] = useState<string | null>(null);
+  const proj = lkpProjection();
+
+  const apply = () => {
+    const x = dmsTextToDecimal(lng, "lng"), y = dmsTextToDecimal(lat, "lat");
+    if (x === null || y === null) { setError(t.polyIssue.invalid_coord); return; }
+    setError(null);
+    patch({ mcLkp: [x, y] });
+  };
+  const useCentre = () => {
+    const { a, b } = searchPlannerStore.getCorners();
+    if (!a || !b) return;
+    patch({ mcLkp: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+  };
+
+  return (
+    <div style={{
+      padding: "7px 9px", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4,
+      background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.3)",
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: "#bae6fd" }}>{t.lkpTitle}</div>
+      <DmsFields t={t} axis="lng" value={lng} onChange={(p) => { setLng((v) => ({ ...v, ...p })); setError(null); }} />
+      <DmsFields t={t} axis="lat" value={lat} onChange={(p) => { setLat((v) => ({ ...v, ...p })); setError(null); }} />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button className="wg-btn" style={smallBtn} onClick={apply}><MapPin size={12} /> {t.lkpApply}</button>
+        <button className="wg-btn" style={{ ...smallBtn, ...(picking ? { borderColor: "#38bdf8", color: "#bae6fd" } : {}) }}
+          onClick={() => searchPlannerStore.setPickingLkp(!picking)}>
+          <Crosshair size={12} /> {picking ? t.lkpPicking : t.lkpPickOnMap}
+        </button>
+        <button className="wg-btn" style={smallBtn} onClick={useCentre}>{t.lkpUseCentre}</button>
+      </div>
+      {error && <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>}
+      <div style={{ fontSize: 13, color: inputs.mcLkp ? "#e2e8f0" : "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
+        LKP: {inputs.mcLkp
+          ? `${formatDms(inputs.mcLkp[0], "lng")} ${formatDms(inputs.mcLkp[1], "lat")}`
+          : t.lkpUnset}
+      </div>
+
+      <NumField label={t.lkpSigma} value={inputs.mcSigmaNm} min={0} max={40} step={0.5} unit="nm"
+        onChange={(v) => patch({ mcSigmaNm: v })} />
+      <NumField label={t.lkpElapsed} value={inputs.mcLkpElapsedHr} min={0} max={72} step={0.25} unit="hr"
+        onChange={(v) => patch({ mcLkpElapsedHr: v })} />
+      <NumField label={t.targetCourse} value={inputs.mcTargetCourseDeg} min={0} max={359} step={1} unit="°"
+        onChange={(v) => patch({ mcTargetCourseDeg: v })} />
+      <NumField label={t.targetCourseSigma} value={inputs.mcTargetCourseSigmaDeg} min={0} max={180} step={1} unit="°"
+        onChange={(v) => patch({ mcTargetCourseSigmaDeg: v })} />
+      <NumField label={t.targetSpeed} value={inputs.mcTargetSpeedKn} min={0} max={40} step={0.5} unit="kn"
+        onChange={(v) => patch({ mcTargetSpeedKn: v })} />
+      <NumField label={t.targetSpeedSigma} value={inputs.mcTargetSpeedSigmaKn} min={0} max={10} step={0.1} unit="kn"
+        onChange={(v) => patch({ mcTargetSpeedSigmaKn: v })} />
+
+      {proj && (
+        <div style={{ fontSize: 13, lineHeight: 1.55, color: "#cbd5e1", marginTop: 2 }}>
+          <div>
+            {t.lkpAtStart}（+{fmtHr(inputs.mcLkpElapsedHr)}）:{" "}
+            <span style={{ fontFamily: "ui-monospace, monospace" }}>
+              {formatDms(proj.atStart[0], "lng")} {formatDms(proj.atStart[1], "lat")}
+            </span>
+            {" · "}{(inputs.mcTargetSpeedKn * inputs.mcLkpElapsedHr).toFixed(1)} nm
+          </div>
+          {proj.atEnd && (
+            <div>
+              {t.lkpAtEnd}:{" "}
+              <span style={{ fontFamily: "ui-monospace, monospace" }}>
+                {formatDms(proj.atEnd[0], "lng")} {formatDms(proj.atEnd[1], "lat")}
+              </span>
+            </div>
+          )}
+          {proj.insideAtStart === false && <div style={{ ...warnBox, marginTop: 4 }}>{t.lkpOutside}</div>}
+        </div>
+      )}
+      <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>{t.lkpNote}</div>
     </div>
   );
 }
