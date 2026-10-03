@@ -24,7 +24,7 @@ import type { SearchStrings } from "../wargame/search/i18n";
 import {
   decimalToDms, dmsToDecimal, parseLngLatLine, validateDms, DMS_SEC_DECIMALS, type CoordAxis,
 } from "../wargame/search/dms";
-import { suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
+import { nearestTabulatedAltitudeFt, suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
 import { useLang } from "../wargame/i18n/lang";
 import {
@@ -119,6 +119,7 @@ export function SearchPlannerPanel(
   const limits = currentRangeLimits();
   const tableWu = W?.uncorrectedNm ?? 0;
   const sweepExceedsPhysics = tableWu > limits.sweepWidthCapNm + 1e-9;
+  const useExperience = inputs.sweepSource === "experience";
   const analyticPod = sol
     ? (fwd?.pod ?? inv?.achievedPod ?? podFromCoverage(sol.trackSpacingNm > 0 ? (W?.correctedNm ?? 0) / sol.trackSpacingNm : 0, inputs.podModel))
     : 0;
@@ -222,12 +223,41 @@ export function SearchPlannerPanel(
               <option value="ship_over_91m">{t.targetLarge}</option>
             </select>
           </Row>
-          <Row label={t.altitude}>
-            <select value={inputs.altitudeFt} style={select}
-              onChange={(e) => patch({ altitudeFt: Number(e.target.value) })}>
-              {[500, 1000, 1500, 2000].map((ft) => <option key={ft} value={ft}>{ft.toLocaleString()} ft</option>)}
-            </select>
+          <Row label={t.sweepSource}>
+            <div style={{ display: "flex", gap: 6, flex: 1 }}>
+              {/* 切回查表時把高度吸附到表列值，避免 select 顯示不到 */}
+              <Toggle active={!useExperience} label={t.sweepSourceTable}
+                onClick={() => patch({ sweepSource: "table", altitudeFt: nearestTabulatedAltitudeFt(inputs.altitudeFt) })} />
+              <Toggle active={useExperience} label={t.sweepSourceExperience}
+                onClick={() => patch({ sweepSource: "experience" })} />
+            </div>
           </Row>
+          {useExperience ? (
+            <div style={{
+              padding: "7px 9px", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4,
+              background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.3)",
+            }}>
+              <Row label={t.expPlatform}>
+                <input value={inputs.experiencePlatform} placeholder={t.expPlatformPlaceholder}
+                  onChange={(e) => patch({ experiencePlatform: e.target.value })}
+                  style={{ ...numInput, flex: 1, width: "auto", fontFamily: "inherit" }} />
+              </Row>
+              <NumField label={t.altitude} value={inputs.altitudeFt} min={100} max={20000} step={100} unit="ft"
+                onChange={(v) => patch({ altitudeFt: v })} />
+              <NumField label={t.expRange} value={inputs.experienceRangeNm} min={0.5} max={40} step={0.5} unit="nm"
+                onChange={(v) => patch({ experienceRangeNm: v })} />
+              <NumField label={t.expRefVisibility} value={inputs.experienceRefVisibilityKm} min={2} max={40} step={1} unit="km"
+                onChange={(v) => patch({ experienceRefVisibilityKm: v })} />
+              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{t.expNote}</div>
+            </div>
+          ) : (
+            <Row label={t.altitude}>
+              <select value={inputs.altitudeFt} style={select}
+                onChange={(e) => patch({ altitudeFt: Number(e.target.value) })}>
+                {[500, 1000, 1500, 2000].map((ft) => <option key={ft} value={ft}>{ft.toLocaleString()} ft</option>)}
+              </select>
+            </Row>
+          )}
           <div style={{
             padding: "7px 9px", borderRadius: 4, marginTop: 2,
             background: "rgba(30,41,59,0.5)", fontSize: 13, lineHeight: 1.6, color: "#94a3b8",
@@ -242,7 +272,7 @@ export function SearchPlannerPanel(
               {" · "}{t.gsdAtMax} {limits.gsdAtMaxM.toFixed(2)} m/px
             </div>
             {sweepExceedsPhysics && (
-              <div style={{ color: "#fed7aa", marginTop: 3 }}>{t.sweepCapped}</div>
+              <div style={{ color: "#fed7aa", marginTop: 3 }}>{useExperience ? t.expExceedsPhysics : t.sweepCapped}</div>
             )}
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>{t.rangeNote}</div>
           </div>
@@ -273,12 +303,16 @@ export function SearchPlannerPanel(
               onChange={(e) => patch({ corrections: { ...inputs.corrections, fatigued: e.target.checked } })} />
             {t.fatigued}
           </label>
+          {useExperience ? (
+            <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>{t.expNoDiscount}</div>
+          ) : (
           <label style={checkRow}>
             <input type="checkbox" checked={inputs.sensorTested}
               onChange={(e) => patch({ sensorTested: e.target.checked })} />
             {t.sensorTested}
           </label>
-          {!inputs.sensorTested && (
+          )}
+          {!useExperience && !inputs.sensorTested && (
             <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5, paddingLeft: 22 }}>
               {t.sensorTestedNote}
             </div>
@@ -388,7 +422,14 @@ export function SearchPlannerPanel(
           <div style={resultBox}>
             <div style={resultTitle}>{t.results}</div>
             <KV k={t.sweepWidth} v={`${W.correctedNm.toFixed(2)} nm`}
-              note={`Wu ${W.uncorrectedNm.toFixed(1)} × Fw ${W.corrections.weather} × Fv ${W.corrections.speed}${W.corrections.fatigued ? " × Ff 0.9" : ""}`} />
+              note={(W.source === "experience"
+                ? `${inputs.experiencePlatform ? `${inputs.experiencePlatform} · ` : ""}Wu = 2 × ${W.experienceRangeNm ?? 0} nm`
+                  + ((W.visibilityFactor ?? 1) < 1 ? ` × ${(W.visibilityFactor ?? 1).toFixed(2)}` : "")
+                  + ` = ${W.uncorrectedNm.toFixed(1)}`
+                : `Wu ${W.uncorrectedNm.toFixed(1)}`)
+                + ` × Fw ${W.corrections.weather} × Fv ${W.corrections.speed}${W.corrections.fatigued ? " × Ff 0.9" : ""}`
+                + ((W.corrections.operational ?? 1) < 1 ? ` × Fo ${W.corrections.operational}` : "")
+                + ((W.visibilityFactor ?? 1) < 1 ? ` · ${t.expVisReduced}` : "")} />
             <KV k={t.trackSpacing} v={`${sol.trackSpacingNm.toFixed(2)} nm`} />
             <KV k={t.coverage} v={(fwd?.coverage ?? inv?.achievedCoverage ?? 0).toFixed(2)}
               note={level ? coverageNote(level, lang) : undefined} />

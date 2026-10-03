@@ -150,6 +150,9 @@ export interface SearchStrings {
   // ── Stone (1983) 擴充 ──
   stoneSection: string;
   sensorTested: string; sensorTestedNote: string;
+  sweepSource: string; sweepSourceTable: string; sweepSourceExperience: string;
+  expPlatform: string; expPlatformPlaceholder: string; expRange: string; expRefVisibility: string;
+  expNote: string; expVisReduced: string; expExceedsPhysics: string; expNoDiscount: string;
   navError: string; sweepSpread: string;
   podRange: string; podUpper: string; podNominal: string; podLower: string;
   sigmaOverW: string; sigmaOverWNote: string; eInvFloor: string;
@@ -251,6 +254,13 @@ const ZH: SearchStrings = {
   stoneSection: "Stone (1983) 擴充",
   sensorTested: "感測器已在近似條件下實測",
   sensorTestedNote: "未實測時套 ×0.65 —— Koopman [1980]：二戰經驗顯示系統實戰只發揮設計能力的 60–70%",
+  sweepSource: "掃幅來源", sweepSourceTable: "文件查表", sweepSourceExperience: "載台經驗值",
+  expPlatform: "載台名稱", expPlatformPlaceholder: "例：瑞鳶",
+  expRange: "可分辨距離", expRefVisibility: "經驗時能見度",
+  expNote: "輸入此載台在該高度、經驗時能見度下，目視可分辨船隻的距離 R。以定距律換算 Wu = 2R，再套天候 / 速度 / 疲勞修正 → 用於 POD。",
+  expVisReduced: "當前能見度低於經驗條件 → Wu 依查表比例折減",
+  expExceedsPhysics: "⚠ 經驗距離超過此高度／鏡頭的物理上限（地平線或解析度），請確認高度或距離",
+  expNoDiscount: "經驗值為實飛結果，不套未實測折扣 ×0.65",
   navError: "航跡放置誤差 σ",
   sweepSpread: "掃掠寬不確定性 ±",
   podRange: "發現機率區間",
@@ -395,6 +405,13 @@ const EN: SearchStrings = {
   stoneSection: "Stone (1983) extensions",
   sensorTested: "Sensor tested under comparable conditions",
   sensorTestedNote: "Untested sensors get ×0.65 — Koopman [1980]: WWII experience showed systems performing at 60–70% of design capability",
+  sweepSource: "Sweep width source", sweepSourceTable: "Reference table", sweepSourceExperience: "Platform experience",
+  expPlatform: "Platform", expPlatformPlaceholder: "e.g. Chung-Shyang II",
+  expRange: "Recognition range", expRefVisibility: "Visibility at the time",
+  expNote: "Enter the range R at which this platform, at this altitude and visibility, can visually recognise a ship. Converted with the definite-range law Wu = 2R, then weather / speed / fatigue corrections → used for POD.",
+  expVisReduced: "Current visibility is worse than the experience condition → Wu scaled down by the table ratio",
+  expExceedsPhysics: "⚠ Experience range exceeds the physical limit (horizon or resolution) for this altitude/optic — check the altitude or range",
+  expNoDiscount: "Experience is flight-proven, so the ×0.65 untested-sensor discount is not applied",
   navError: "Track placement error σ",
   sweepSpread: "Sweep width uncertainty ±",
   podRange: "Detection probability range",

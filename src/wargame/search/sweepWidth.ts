@@ -79,6 +79,40 @@ export function uncorrectedSweepWidthNm(args: {
   return lastW;
 }
 
+/**
+ * 載台經驗值 → 未修正掃掠寬度。
+ *
+ * 使用者輸入「此載台在某能見度下，目視可分辨船隻的距離 R」（例：瑞鳶 3000 ft、
+ * 能見度良好、8 浬）。以定距律（cookie-cutter）假設：R 內必定發現、R 外看不到，
+ * 則掃掠寬度 = 橫向距離函數的積分 = 2R。
+ *
+ * 經驗值綁定其記錄時的能見度；當前能見度較差時，以 Wu 查表在兩個能見度下的
+ * 比值等比縮小（借用表格的能見度衰減形狀）。當前能見度較好時**不放大** ——
+ * 經驗沒涵蓋的條件不外推，維持保守。
+ */
+export function experienceSweepWidthNm(args: {
+  /** 經驗可分辨距離（浬） */
+  rangeNm: number;
+  /** 經驗值記錄時的能見度（公里） */
+  referenceVisibilityKm: number;
+  /** 當前能見度（公里） */
+  visibilityKm: number;
+  targetClass: SearchTargetClass;
+  altitudeFt: number;
+}): { uncorrectedNm: number; visibilityFactor: number } {
+  const ref = uncorrectedSweepWidthNm({
+    targetClass: args.targetClass, visibilityKm: args.referenceVisibilityKm, altitudeFt: args.altitudeFt,
+  });
+  const now = uncorrectedSweepWidthNm({
+    targetClass: args.targetClass, visibilityKm: args.visibilityKm, altitudeFt: args.altitudeFt,
+  });
+  const visibilityFactor = ref > 0 ? Math.min(1, now / ref) : 1;
+  return {
+    uncorrectedNm: 2 * Math.max(0, args.rangeNm) * visibilityFactor,
+    visibilityFactor,
+  };
+}
+
 /** 掃掠寬度修正因子。未提供者一律視為 1.0（無修正） */
 /**
  * 感測器實戰效能折扣 —— Stone (1983) §3，引 Koopman [1980] p.21。

@@ -91,6 +91,15 @@ export interface PlannerInputs {
   mcSeed: number;
   // ── Stone §3：感測器實戰效能折扣 ──
   sensorTested: boolean;
+  // ── 載台經驗值（取代 Wu 查表）──
+  /** 掃掠寬度來源：table = 文件查表；experience = 使用者載台經驗 */
+  sweepSource: "table" | "experience";
+  /** 載台名稱（僅標示用，例：瑞鳶） */
+  experiencePlatform: string;
+  /** 經驗：目視可分辨船隻的距離（浬） */
+  experienceRangeNm: number;
+  /** 經驗值記錄時的能見度（公里）—— 「能見度良好」預設 20 km */
+  experienceRefVisibilityKm: number;
   // ── Stone §4：航跡放置誤差 σ 與掃掠寬度不確定性 ──
   navErrorSigmaNm: number;
   sweepWidthSpread: number;
@@ -131,6 +140,7 @@ const GEOMETRY_KEYS = new Set<string>([
   "direction", "droneCount", "availableHr", "targetPod", "speedKn",
   // 影響掃掠寬 W → 影響自動航跡間距 S
   "targetClass", "visibilityKm", "altitudeFt", "corrections", "sensorTested", "windKn", "eoir",
+  "sweepSource", "experienceRangeNm", "experienceRefVisibilityKm",
   // 直接決定 S / 圖形
   "trackSpacingOverrideNm", "coverageOverride", "patternOverride", "podModel",
   "datumUncertaintyNm", "targetBiasedToOneEnd", "hasKnownTrackLine",
@@ -176,6 +186,10 @@ const DEFAULT_INPUTS: PlannerInputs = {
   mcSigmaNm: 5,
   mcSeed: 20260906,
   sensorTested: false,
+  sweepSource: "table",
+  experiencePlatform: "",
+  experienceRangeNm: 8,
+  experienceRefVisibilityKm: 20,
   navErrorSigmaNm: 0,
   sweepWidthSpread: 0,
   bayesEnabled: false,
@@ -310,10 +324,14 @@ function sensor(): SensorConditions {
     corrections: {
       ...inputs.corrections,
       // Stone §3 / Koopman [1980]：未實測的感測器規格通常偏樂觀
-      operational: inputs.sensorTested
+      // 經驗值本身就是實飛結果 → 不再套「未實測」折扣
+      operational: inputs.sensorTested || inputs.sweepSource === "experience"
         ? OPERATIONAL_DEGRADATION.tested
         : OPERATIONAL_DEGRADATION.untested,
     },
+    experience: inputs.sweepSource === "experience"
+      ? { rangeNm: inputs.experienceRangeNm, referenceVisibilityKm: inputs.experienceRefVisibilityKm }
+      : undefined,
     navErrorSigmaNm: inputs.navErrorSigmaNm,
     sweepWidthSpread: inputs.sweepWidthSpread,
   };

@@ -11,7 +11,7 @@
  * 純函式；所有內部計算以海里 / 小時 / 節為單位。
  */
 import {
-  correctedSweepWidthNm, uncorrectedSweepWidthNm,
+  correctedSweepWidthNm, experienceSweepWidthNm, uncorrectedSweepWidthNm,
   type SearchTargetClass, type SweepWidthCorrections,
 } from "./sweepWidth";
 import {
@@ -80,6 +80,14 @@ export interface SensorConditions {
    * 給分布並取 b̄ = Σβᵢ B(ωᵢ)。0.4 表示悲觀 60% / 樂觀 140%。
    */
   sweepWidthSpread?: number;
+  /**
+   * 載台經驗值（使用者實際飛行經驗的可分辨距離）。提供時取代 Wu 查表：
+   * Wu = 2R × 能見度折減（見 experienceSweepWidthNm）。
+   */
+  experience?: {
+    rangeNm: number;
+    referenceVisibilityKm: number;
+  };
 }
 
 /** 無人機性能 */
@@ -96,6 +104,11 @@ export interface SweepWidthBreakdown {
   uncorrectedNm: number;
   correctedNm: number;
   corrections: SweepWidthCorrections;
+  /** Wu 來源：文件查表 / 載台經驗值 */
+  source: "table" | "experience";
+  /** source = experience 時：經驗可分辨距離與能見度折減 */
+  experienceRangeNm?: number;
+  visibilityFactor?: number;
 }
 
 /**
@@ -157,6 +170,23 @@ function boundsFor(
 }
 
 function computeSweepWidth(cond: SensorConditions): SweepWidthBreakdown {
+  if (cond.experience) {
+    const x = experienceSweepWidthNm({
+      rangeNm: cond.experience.rangeNm,
+      referenceVisibilityKm: cond.experience.referenceVisibilityKm,
+      visibilityKm: cond.visibilityKm,
+      targetClass: cond.targetClass,
+      altitudeFt: cond.altitudeFt,
+    });
+    return {
+      uncorrectedNm: x.uncorrectedNm,
+      correctedNm: correctedSweepWidthNm(x.uncorrectedNm, cond.corrections),
+      corrections: cond.corrections,
+      source: "experience",
+      experienceRangeNm: cond.experience.rangeNm,
+      visibilityFactor: x.visibilityFactor,
+    };
+  }
   const uncorrectedNm = uncorrectedSweepWidthNm({
     targetClass: cond.targetClass,
     visibilityKm: cond.visibilityKm,
@@ -166,6 +196,7 @@ function computeSweepWidth(cond: SensorConditions): SweepWidthBreakdown {
     uncorrectedNm,
     correctedNm: correctedSweepWidthNm(uncorrectedNm, cond.corrections),
     corrections: cond.corrections,
+    source: "table",
   };
 }
 
