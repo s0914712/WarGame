@@ -10,11 +10,14 @@
  * 解算全在 src/wargame/search/*（純函式、語言中立）；文字由 search/i18n.ts 產生。
  * 面板同時服務兵推模式與 standalone 搜索規劃 app。
  */
-import { useState, useSyncExternalStore } from "react";
-import { Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste } from "lucide-react";
+import { useRef, useState, useSyncExternalStore } from "react";
+import {
+  Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste,
+  ChevronUp, ChevronDown, Upload, Download, ArrowDownUp,
+} from "lucide-react";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
-  currentRangeLimits, lkpProjection,
+  currentRangeLimits, lkpProjection, transitProjection, type LkpPickTarget,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
@@ -22,8 +25,12 @@ import { MAX_POLYGON_VERTICES, TRACK_COLORS } from "../wargame/search/tracks";
 import type { LngLat } from "../wargame/types";
 import type { SearchStrings } from "../wargame/search/i18n";
 import {
-  decimalToDms, dmsToDecimal, formatDms, parseLngLatLine, validateDms, DMS_SEC_DECIMALS, type CoordAxis,
+  decimalToDms, dmsToDecimal, formatDms, parseLngLatLine, validateDms, DMS_SEC_DECIMALS,
+  type CoordAxis, type CoordOrder,
 } from "../wargame/search/dms";
+import {
+  EXPORT_MIME, exportPolygon, importPolygon, isAngleSorted, sortVerticesByAngle, type ExportFormat,
+} from "../wargame/search/polygonIO";
 import { altitudeLookupKind, suggestWeatherFactor, type SearchTargetClass } from "../wargame/search/sweepWidth";
 import { UNIT_CATALOG } from "../wargame/catalog/units";
 import { useLang } from "../wargame/i18n/lang";
@@ -84,15 +91,37 @@ export function SearchPlannerPanel(
   if (!open && !standalone && !embedded) return null;
 
   if (picking) {
+    const draft = searchPlannerStore.getDraftPoints();
+    const issue = searchPlannerStore.getDraftIssue();
     return (
       <div style={embedded ? pickBarInline : { ...pickBar, top: pickBar.top as number + insetTop }}>
         <Crosshair size={16} color="#facc15" />
         <span style={{ color: "#fef9c3", fontWeight: 600 }}>
-          {a ? t.pickSecondCorner : t.pickFirstCorner}
+          {t.drawHint.replace("{n}", String(draft.length))}
         </span>
-        <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.cancelPick()}>
-          {t.cancel}
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className="wg-btn" style={{ ...smallBtn, opacity: draft.length < 3 ? 0.45 : 1 }} disabled={draft.length < 3}
+            onClick={() => searchPlannerStore.finishDraft()}>
+            <Hexagon size={12} /> {t.drawFinish}
+          </button>
+          <button className="wg-btn" style={{ ...smallBtn, opacity: draft.length === 0 ? 0.45 : 1 }} disabled={draft.length === 0}
+            onClick={() => searchPlannerStore.undoDraftPoint()}>
+            <RotateCcw size={12} /> {t.drawUndo}
+          </button>
+          <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.cancelPick()}>
+            {t.cancel}
+          </button>
+        </div>
+        {issue && (
+          <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 14 }}>
+            <span style={{ color: "#fca5a5" }}>{t.polyIssue[issue]}</span>
+            {issue === "self_intersecting" && (
+              <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.finishDraft(true)}>
+                <ArrowDownUp size={12} /> {t.drawSortFinish}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -643,7 +672,7 @@ export function SearchPlannerPanel(
                   </select>
                 </Row>
                 {inputs.mcDistributionKind === "lkp" && (
-                  <LkpEditor key={JSON.stringify(inputs.mcLkp)} t={t} fmtHr={fmtHr} />
+                  <LkpEditor t={t} fmtHr={fmtHr} />
                 )}
                 {inputs.mcDistributionKind === "gaussian" && (
                   <NumField label={t.mcSigma} value={inputs.mcSigmaNm} min={0.5} max={40} step={0.5} unit="nm"
@@ -693,6 +722,7 @@ export function SearchPlannerPanel(
               <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
                 {t.midSearchNote} → T+{midSearchElapsedHr().toFixed(1)} hr
               </div>
+              <PriorLkp t={t} />
               <div style={{ fontSize: 15, color: "#94a3b8", marginTop: 4 }}>{t.scenarios}</div>
               {scenarios.map((sc) => (
                 <div key={sc.id} style={{
@@ -702,6 +732,7 @@ export function SearchPlannerPanel(
                   <div style={{ fontSize: 15, color: "#e2e8f0", fontWeight: 600, marginBottom: 4 }}>
                     {lang === "en" ? (sc.labelEn ?? sc.label) : sc.label}
                   </div>
+                  <ScenarioLkp t={t} id={sc.id} datum={sc.datum} />
                   <MiniField label={t.scenarioWeight} value={sc.weight} min={0} max={1} step={0.05} unit=""
                     onChange={(v) => searchPlannerStore.updateScenario(sc.id, { weight: v })} />
                   <MiniField label={t.scenarioSigma} value={sc.positionSigmaNm} min={0.5} max={40} step={0.5} unit="nm"
@@ -762,6 +793,16 @@ export function SearchPlannerPanel(
             )}
           </Section>
         )}
+
+        {/* ⑪ 突穿機率（已知船舶航經搜索區、未被發現） */}
+        <Section title={t.secTransit}>
+          <label style={checkRow}>
+            <input type="checkbox" checked={inputs.transitEnabled}
+              onChange={(e) => patch({ transitEnabled: e.target.checked })} />
+            {t.transitEnable}
+          </label>
+          {inputs.transitEnabled && <TransitEditor t={t} fmtHr={fmtHr} />}
+        </Section>
 
         {/* ⑩ 假目標與接觸查證（Stone §6） */}
         <Section title={t.secFalseTargets}>
@@ -964,6 +1005,46 @@ function dmsTextToDecimal(x: DmsText, axis: CoordAxis): number | null {
  * 欄位以字串保存，允許輸入過程中出現暫時不合法的值；
  * 按「建立搜索區」時才解析並交給 store 驗證（自相交、面積 0 等）。
  */
+const ORDER_KEY = "wg-search-coord-order";
+function loadOrder(): CoordOrder {
+  try { return localStorage.getItem(ORDER_KEY) === "latlng" ? "latlng" : "lnglat"; } catch { return "lnglat"; }
+}
+
+/**
+ * 座標書寫順序（經度在前 / 緯度在前）—— 多邊形頂點與所有 LKP 欄位共用，
+ * 在任一處切換，其他輸入列同步改排列。
+ */
+let coordOrder: CoordOrder = loadOrder();
+const orderListeners = new Set<() => void>();
+const coordOrderStore = {
+  get: () => coordOrder,
+  set(o: CoordOrder): void {
+    if (coordOrder === o) return;
+    coordOrder = o;
+    try { localStorage.setItem(ORDER_KEY, o); } catch { /* 只是不記住 */ }
+    for (const cb of orderListeners) cb();
+  },
+  subscribe(cb: () => void): () => void {
+    orderListeners.add(cb);
+    return () => { orderListeners.delete(cb); };
+  },
+};
+function useCoordOrder(): CoordOrder {
+  return useSyncExternalStore(coordOrderStore.subscribe, coordOrderStore.get, coordOrderStore.get);
+}
+
+/** 觸發瀏覽器下載文字檔 */
+function downloadText(filename: string, mime: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function PolygonEditor({ t, polygon, corners }: {
   t: SearchStrings; polygon: LngLat[] | null; corners: [LngLat, LngLat] | null;
 }) {
@@ -979,31 +1060,73 @@ function PolygonEditor({ t, polygon, corners }: {
   };
   const [rows, setRows] = useState<VertexText[]>(initial);
   const [error, setError] = useState<string | null>(null);
+  /** 成功訊息（排序 / 匯入結果） */
+  const [notice, setNotice] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  /** 座標書寫順序：決定輸入列排列、貼上 / 匯入純數字的解讀、CSV 匯出欄位順序 */
+  const order = useCoordOrder();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const setOrder = (o: CoordOrder) => coordOrderStore.set(o);
+  const say = (err: string | null, ok: string | null = null) => { setError(err); setNotice(ok); };
 
   const setPart = (i: number, axis: CoordAxis, p: Partial<DmsText>) => {
     setRows((rs) => rs.map((r, k) => (k === i ? { ...r, [axis]: { ...r[axis], ...p } } : r)));
-    setError(null);
+    say(null);
   };
-  const removeRow = (i: number) => { setRows((rs) => rs.filter((_, k) => k !== i)); setError(null); };
+  const removeRow = (i: number) => { setRows((rs) => rs.filter((_, k) => k !== i)); say(null); };
+  /** 與相鄰頂點互換位置（dir = -1 上移、+1 下移） */
+  const moveRow = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= rows.length) return;
+    setRows((rs) => {
+      const next = [...rs];
+      const a = next[i], b = next[j];
+      if (!a || !b) return rs;
+      next[i] = b; next[j] = a;
+      return next;
+    });
+    say(null);
+  };
   const addRow = () => {
     if (rows.length >= MAX_POLYGON_VERTICES) return;
     setRows((rs) => [...rs, emptyVertex()]);
   };
 
-  const apply = () => {
-    // 全空的頂點直接忽略，方便保留多餘空白列
+  /** 目前欄位 → 頂點（全空列略過）；有不合法欄位回 null 並顯示錯誤 */
+  const readPoints = (): LngLat[] | null => {
     const filled = rows.filter((r) => !isBlank(r.lng) || !isBlank(r.lat));
     const pts: LngLat[] = [];
     for (const r of filled) {
       const lng = dmsTextToDecimal(r.lng, "lng");
       const lat = dmsTextToDecimal(r.lat, "lat");
-      if (lng === null || lat === null) { setError(t.polyIssue.invalid_coord); return; }
+      if (lng === null || lat === null) { say(t.polyIssue.invalid_coord); return null; }
       pts.push([lng, lat]);
     }
+    return pts;
+  };
+
+  const draw = (pts: LngLat[], ok: string | null = null) => {
     const issue = searchPlannerStore.setPolygon(pts);
-    setError(issue ? t.polyIssue[issue] : null);
+    say(issue ? t.polyIssue[issue] : null, issue ? null : ok);
+  };
+
+  const apply = () => {
+    const pts = readPoints();
+    if (pts) draw(pts);
+  };
+
+  /** 依繞中心的方位重新排序（修正邊線交叉）並直接繪製 */
+  const autoSort = () => {
+    const pts = readPoints();
+    if (!pts) return;
+    if (pts.length < 3) { say(t.polyIssue.too_few); return; }
+    const already = isAngleSorted(pts);
+    const sorted = already ? pts : sortVerticesByAngle(pts);
+    if (!already) setRows(sorted.map(vertexFrom));
+    draw(sorted, already ? t.polyAlreadySorted : t.polySorted);
   };
 
   /** 解析貼上的文字：每行一點，度分秒或十進位度皆可（見 parseLngLatLine） */
@@ -1011,19 +1134,54 @@ function PolygonEditor({ t, polygon, corners }: {
     const parsed: VertexText[] = [];
     for (const line of pasteText.split(/\r?\n/)) {
       if (!line.trim()) continue;
-      const pt = parseLngLatLine(line);
-      if (!pt) { setError(t.polyIssue.parse_failed); return; }
+      const pt = parseLngLatLine(line, order);
+      if (!pt) { say(t.polyIssue.parse_failed); return; }
       parsed.push(vertexFrom(pt));
     }
-    if (parsed.length > MAX_POLYGON_VERTICES) { setError(t.polyIssue.too_many); return; }
-    if (parsed.length === 0) { setError(t.polyIssue.parse_failed); return; }
+    if (parsed.length > MAX_POLYGON_VERTICES) { say(t.polyIssue.too_many); return; }
+    if (parsed.length === 0) { say(t.polyIssue.parse_failed); return; }
     setRows(parsed);
     setPasteOpen(false);
-    setError(null);
+    say(null);
+  };
+
+  /** 匯入檔案（CSV / TXT / GeoJSON / KML）→ 填入欄位並繪製 */
+  const onFile = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const r = importPolygon(String(reader.result ?? ""), order);
+      if (typeof r === "string") { say(t.polyIssue[r]); return; }
+      setRows(r.points.map(vertexFrom));
+      draw(r.points, t.polyImported
+        .replace("{n}", String(r.points.length))
+        .replace("{fmt}", r.format === "text" ? "TXT" : r.format === "geojson" ? "GeoJSON" : r.format.toUpperCase()));
+    };
+    reader.onerror = () => say(t.polyIssue.parse_failed);
+    reader.readAsText(file);
+  };
+
+  const doExport = (format: ExportFormat) => {
+    const pts = readPoints();
+    if (!pts) return;
+    if (pts.length < 3) { say(t.polyIssue.too_few); return; }
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+    downloadText(`search-area-${stamp}.${format}`, EXPORT_MIME[format], exportPolygon(pts, format, order));
+    setExportOpen(false);
+    say(null);
   };
 
   const dmsLine = (i: number, axis: CoordAxis, x: DmsText) => (
     <DmsFields t={t} axis={axis} value={x} onChange={(p) => setPart(i, axis, p)} />
+  );
+  const axes: CoordAxis[] = order === "lnglat" ? ["lng", "lat"] : ["lat", "lng"];
+  const arrowBtn: React.CSSProperties = { ...smallBtn, padding: "1px 4px", fontSize: 11, lineHeight: 1 };
+  const orderBtn = (o: CoordOrder, label: string) => (
+    <button className="wg-btn" onClick={() => setOrder(o)} style={{
+      ...smallBtn, flex: 1, justifyContent: "center",
+      ...(order === o ? { borderColor: "#facc15", color: "#fef9c3", background: "rgba(250,204,21,0.15)", fontWeight: 700 } : {}),
+    }}>{label}</button>
   );
 
   return (
@@ -1032,7 +1190,11 @@ function PolygonEditor({ t, polygon, corners }: {
       background: "rgba(30,41,59,0.5)", border: "1px solid rgba(148,163,184,0.2)",
     }}>
       <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5, marginBottom: 6 }}>{t.polyHint}</div>
-      <div style={{ display: "flex", gap: 5, fontSize: 12, color: "#64748b", marginBottom: 3, paddingLeft: 61, paddingRight: 64 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+        {orderBtn("lnglat", t.polyOrderLngLat)}
+        {orderBtn("latlng", t.polyOrderLatLng)}
+      </div>
+      <div style={{ display: "flex", gap: 5, fontSize: 12, color: "#64748b", marginBottom: 3, paddingLeft: 61, paddingRight: 88 }}>
         <span style={{ flex: 1 }}>{t.polyDeg}</span>
         <span style={{ flex: 1 }}>{t.polyMin}</span>
         <span style={{ flex: 1 }}>{t.polySec}</span>
@@ -1044,8 +1206,13 @@ function PolygonEditor({ t, polygon, corners }: {
         }}>
           <span style={{ width: 16, fontSize: 13, color: "#94a3b8", textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
-            {dmsLine(i, "lng", r.lng)}
-            {dmsLine(i, "lat", r.lat)}
+            {axes.map((ax) => <div key={ax}>{dmsLine(i, ax, r[ax])}</div>)}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <button className="wg-btn" style={{ ...arrowBtn, opacity: i === 0 ? 0.3 : 1 }} disabled={i === 0}
+              onClick={() => moveRow(i, -1)} title={t.polyMoveUp} aria-label={t.polyMoveUp}><ChevronUp size={12} /></button>
+            <button className="wg-btn" style={{ ...arrowBtn, opacity: i === rows.length - 1 ? 0.3 : 1 }} disabled={i === rows.length - 1}
+              onClick={() => moveRow(i, 1)} title={t.polyMoveDown} aria-label={t.polyMoveDown}><ChevronDown size={12} /></button>
           </div>
           <button className="wg-btn" style={{ ...smallBtn, padding: "4px 6px" }}
             onClick={() => removeRow(i)} disabled={rows.length <= 1} aria-label="remove">
@@ -1061,7 +1228,26 @@ function PolygonEditor({ t, polygon, corners }: {
         <button className="wg-btn" style={smallBtn} onClick={() => setPasteOpen((v) => !v)}>
           <ClipboardPaste size={12} /> {t.polyPaste}
         </button>
+        <button className="wg-btn" style={smallBtn} onClick={() => fileRef.current?.click()}>
+          <Upload size={12} /> {t.polyImport}
+        </button>
+        <button className="wg-btn" style={{ ...smallBtn, ...(exportOpen ? { borderColor: "#facc15", color: "#fef9c3" } : {}) }}
+          onClick={() => setExportOpen((v) => !v)}>
+          <Download size={12} /> {t.polyExport}
+        </button>
+        <input ref={fileRef} type="file" accept=".csv,.txt,.json,.geojson,.kml,text/csv,text/plain,application/json,application/geo+json,application/vnd.google-earth.kml+xml"
+          style={{ display: "none" }}
+          onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
       </div>
+      {exportOpen && (
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          {(["csv", "geojson", "kml"] as ExportFormat[]).map((f) => (
+            <button key={f} className="wg-btn" style={{ ...smallBtn, flex: 1, justifyContent: "center" }} onClick={() => doExport(f)}>
+              {f === "geojson" ? "GeoJSON" : f.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      )}
       {pasteOpen && (
         <div style={{ marginTop: 6 }}>
           <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)}
@@ -1071,9 +1257,15 @@ function PolygonEditor({ t, polygon, corners }: {
         </div>
       )}
       {error && <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 6 }}>{error}</div>}
-      <button className="wg-btn" style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={apply}>
-        <Hexagon size={13} /> {t.polyApply}
-      </button>
+      {notice && <div style={{ color: "#86efac", fontSize: 13, marginTop: 6 }}>{notice}</div>}
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <button className="wg-btn" style={{ ...primaryBtn, flex: 1 }} onClick={apply}>
+          <Hexagon size={13} /> {t.polyApply}
+        </button>
+        <button className="wg-btn" style={{ ...smallBtn, justifyContent: "center", padding: "6px 10px", fontSize: 14 }} onClick={autoSort}>
+          <ArrowDownUp size={13} /> {t.polyAutoSort}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1107,52 +1299,228 @@ function DmsFields({ t, axis, value: x, onChange }: {
 }
 
 /**
- * 蒙地卡羅「最後已知位置」輸入：LKP（度分秒 / 點地圖 / 搜索區中心）+ 目標航向航速。
- * 父層以 mcLkp 當 key —— 地圖點選改了 LKP 時本元件重掛，欄位跟著同步。
+ * 一組 LKP 輸入：度分秒（依共用的經緯順序排列）+ 設定 / 地圖點選 / 搜索區中心 + 額外按鈕。
+ * 由父層以目前值當 key —— 值從外部改變（地圖點選、帶入）時重掛，欄位跟著同步。
  */
-function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
-  const inputs = searchPlannerStore.getInputs();
-  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
-  const picking = searchPlannerStore.isPickingLkp();
-  const [lng, setLng] = useState<DmsText>(() => (inputs.mcLkp ? dmsTextFrom(inputs.mcLkp[0]) : { ...EMPTY_DMS }));
-  const [lat, setLat] = useState<DmsText>(() => (inputs.mcLkp ? dmsTextFrom(inputs.mcLkp[1]) : { ...EMPTY_DMS }));
+function LkpInput({ t, title, value, onApply, pickTarget, extra, accent = "#38bdf8", unsetText }: {
+  t: SearchStrings;
+  title?: string;
+  /** value 為 null 時顯示的文字；預設「尚未設定」 */
+  unsetText?: string;
+  value: LngLat | null;
+  onApply: (p: LngLat) => void;
+  pickTarget: LkpPickTarget;
+  /** 額外按鈕（例：帶入另一處的 LKP） */
+  extra?: React.ReactNode;
+  accent?: string;
+}) {
+  const order = useCoordOrder();
+  const pick = searchPlannerStore.getLkpPickTarget();
+  const picking = pick !== null && JSON.stringify(pick) === JSON.stringify(pickTarget);
+  const [lng, setLng] = useState<DmsText>(() => (value ? dmsTextFrom(value[0]) : { ...EMPTY_DMS }));
+  const [lat, setLat] = useState<DmsText>(() => (value ? dmsTextFrom(value[1]) : { ...EMPTY_DMS }));
   const [error, setError] = useState<string | null>(null);
-  const proj = lkpProjection();
 
   const apply = () => {
     const x = dmsTextToDecimal(lng, "lng"), y = dmsTextToDecimal(lat, "lat");
     if (x === null || y === null) { setError(t.polyIssue.invalid_coord); return; }
     setError(null);
-    patch({ mcLkp: [x, y] });
+    onApply([x, y]);
   };
   const useCentre = () => {
     const { a, b } = searchPlannerStore.getCorners();
     if (!a || !b) return;
-    patch({ mcLkp: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
+    onApply([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
   };
+  const field = (axis: CoordAxis) => axis === "lng"
+    ? <DmsFields key="lng" t={t} axis="lng" value={lng} onChange={(p) => { setLng((v) => ({ ...v, ...p })); setError(null); }} />
+    : <DmsFields key="lat" t={t} axis="lat" value={lat} onChange={(p) => { setLat((v) => ({ ...v, ...p })); setError(null); }} />;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {title && <div style={{ fontSize: 14, fontWeight: 600, color: accent }}>{title}</div>}
+      {(order === "lnglat" ? ["lng", "lat"] as const : ["lat", "lng"] as const).map(field)}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button className="wg-btn" style={smallBtn} onClick={apply}><MapPin size={12} /> {t.lkpApply}</button>
+        <button className="wg-btn" style={{ ...smallBtn, ...(picking ? { borderColor: accent, color: "#e0f2fe" } : {}) }}
+          onClick={() => searchPlannerStore.setPickingLkp(picking ? null : pickTarget)}>
+          <Crosshair size={12} /> {picking ? t.lkpPicking : t.lkpPickOnMap}
+        </button>
+        <button className="wg-btn" style={smallBtn} onClick={useCentre}>{t.lkpUseCentre}</button>
+        {extra}
+      </div>
+      {error && <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>}
+      <div style={{ fontSize: 13, color: value ? "#e2e8f0" : "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
+        LKP: {value ? fmtLngLat(value, order) : (unsetText ?? t.lkpUnset)}
+      </div>
+    </div>
+  );
+}
+
+/** 事前分布：所有情境共用的 LKP（套用後各情境的基準點都改成這一點） */
+function PriorLkp({ t }: { t: SearchStrings }) {
+  const inputs = searchPlannerStore.getInputs();
+  const scenarios = searchPlannerStore.getScenarios();
+  // 所有情境基準點相同時顯示該點，否則顯示「各情境不同」
+  const first = scenarios[0]?.datum ?? null;
+  const shared = first && scenarios.every((x) => x.datum[0] === first[0] && x.datum[1] === first[1]) ? first : null;
+  const mcLkp = inputs.mcLkp;
+  return (
+    <div style={{
+      padding: "7px 9px", borderRadius: 4, marginTop: 4,
+      background: "rgba(251,146,60,0.06)", border: "1px solid rgba(251,146,60,0.3)",
+    }}>
+      <LkpInput key={JSON.stringify(shared)} t={t} title={t.priorLkpTitle} accent="#fdba74"
+        value={shared} unsetText={t.priorLkpDiffer}
+        onApply={(p) => searchPlannerStore.setAllScenarioDatums(p)} pickTarget={{ kind: "priorAll" }}
+        extra={mcLkp && (
+          <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.setAllScenarioDatums(mcLkp)}>
+            {t.lkpFromMc}
+          </button>
+        )} />
+      <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5, marginTop: 3 }}>{t.priorLkpNote}</div>
+    </div>
+  );
+}
+
+/** 單一情境的 LKP：平常只顯示一行，按「修改」展開完整輸入 */
+function ScenarioLkp({ t, id, datum }: { t: SearchStrings; id: string; datum: LngLat }) {
+  const order = useCoordOrder();
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+        <span style={{ color: "#94a3b8", width: 36, flexShrink: 0 }}>LKP</span>
+        <span style={{ flex: 1, minWidth: 0, color: "#fdba74", fontFamily: "ui-monospace, monospace" }}>
+          {fmtLngLat(datum, order)}
+        </span>
+        <button className="wg-btn" style={{ ...smallBtn, padding: "2px 7px", fontSize: 12 }} onClick={() => setOpen((v) => !v)}>
+          {open ? t.close : t.lkpEdit}
+        </button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 4 }}>
+          <LkpInput key={JSON.stringify(datum)} t={t} accent="#fdba74"
+            value={datum} onApply={(p) => searchPlannerStore.updateScenario(id, { datum: p })}
+            pickTarget={{ kind: "scenario", id }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 突穿機率：船舶回報位置 / 航向航速 + 執行與結果 */
+function TransitEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
+  const inputs = searchPlannerStore.getInputs();
+  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
+  const tracks = searchPlannerStore.getTracks();
+  const r = searchPlannerStore.getTransitResult();
+  const proj = transitProjection();
+  const [busy, setBusy] = useState(false);
+  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+  const ci = (c: [number, number]) => `95% CI [${(c[0] * 100).toFixed(1)}%, ${(c[1] * 100).toFixed(1)}%]`;
+  const run = () => {
+    setBusy(true);
+    setTimeout(() => { searchPlannerStore.runTransit(); setBusy(false); }, 20);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{
+        padding: "7px 9px", borderRadius: 4,
+        background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.3)",
+      }}>
+        <LkpInput key={JSON.stringify(inputs.transitPos)} t={t} title={t.transitShipPos} accent="#fca5a5"
+          value={inputs.transitPos} onApply={(p) => patch({ transitPos: p })} pickTarget={{ kind: "transit" }} />
+      </div>
+      <NumField label={t.transitReportToStart} value={inputs.transitReportToStartHr} min={0} max={48} step={0.25} unit="hr"
+        onChange={(v) => patch({ transitReportToStartHr: v })} />
+      <NumField label={t.lkpSigma} value={inputs.transitSigmaNm} min={0} max={20} step={0.5} unit="nm"
+        onChange={(v) => patch({ transitSigmaNm: v })} />
+      <NumField label={t.targetCourse} value={inputs.transitCourseDeg} min={0} max={359} step={1} unit="°"
+        onChange={(v) => patch({ transitCourseDeg: v })} />
+      <NumField label={t.targetCourseSigma} value={inputs.transitCourseSigmaDeg} min={0} max={90} step={1} unit="°"
+        onChange={(v) => patch({ transitCourseSigmaDeg: v })} />
+      <NumField label={t.targetSpeed} value={inputs.transitSpeedKn} min={0} max={40} step={0.5} unit="kn"
+        onChange={(v) => patch({ transitSpeedKn: v })} />
+      <NumField label={t.targetSpeedSigma} value={inputs.transitSpeedSigmaKn} min={0} max={10} step={0.1} unit="kn"
+        onChange={(v) => patch({ transitSpeedSigmaKn: v })} />
+
+      {proj && (
+        <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.55 }}>
+          {proj.entryHr !== null
+            ? <>{t.transitNominalEntry} {fmtSignedHr(proj.entryHr, fmtHr, t)}
+              {proj.exitHr !== null && <> · {t.transitNominalExit} {fmtSignedHr(proj.exitHr, fmtHr, t)}</>}</>
+            : <span style={{ color: "#fed7aa" }}>{t.transitNominalMiss}</span>}
+        </div>
+      )}
+
+      {tracks.length === 0 ? (
+        <div style={warnBox}>{t.mcNeedTracks}</div>
+      ) : !inputs.transitPos ? (
+        <div style={warnBox}>{t.transitNeedPos}</div>
+      ) : (
+        <button className="wg-btn" style={{ ...primaryBtn, marginTop: 4 }} disabled={busy} onClick={run}>
+          <Play size={13} /> {busy ? t.mcRunning : t.transitRun}
+        </button>
+      )}
+
+      {r && (
+        <div style={{ ...resultBox, marginTop: 6, marginBottom: 0, background: "rgba(248,113,113,0.06)", borderColor: "rgba(248,113,113,0.3)" }}>
+          <KV k={t.transitPen} v={pct(r.pPenetrated)} big note={ci(r.pPenetratedCi95)} />
+          <KV k={t.transitPenGivenEnter} v={pct(r.pPenetratedGivenEnter)} note={`${ci(r.pPenetratedGivenEnterCi95)} · ${t.transitPenGivenEnterNote}`} />
+          <KV k={t.transitDetected} v={pct(r.pDetected)} highlight />
+          <KV k={t.transitEnter} v={pct(r.pEnter)}
+            note={r.medianEntryHr !== null ? `${t.transitMedianEntry} ${fmtSignedHr(r.medianEntryHr, fmtHr, t)}` : undefined} />
+          {r.pMissed > 0 && <KV k={t.transitMissed} v={pct(r.pMissed)} />}
+          {r.pLoiter > 0 && <KV k={t.transitLoiter} v={pct(r.pLoiter)} />}
+          {r.pPenetrated > 0 && (
+            <KV k={t.transitTiming} wrap
+              v={`${t.transitBefore} ${pct(r.penetratedBeforeSearch)} · ${t.transitDuring} ${pct(r.penetratedDuringSearch)} · ${t.transitAfter} ${pct(r.penetratedAfterSearch)}`}
+              note={`${t.transitSearchDuration} ${fmtHr(r.searchDurationHr)}`} />
+          )}
+          {r.penetratedAfterSearch + r.penetratedBeforeSearch > 0.5 * r.pPenetrated && r.pPenetrated > 0.05 && (
+            <div style={{ ...warnBox, marginTop: 4 }}>{t.transitTimingWarn}</div>
+          )}
+        </div>
+      )}
+      <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>{t.transitNote}</div>
+    </div>
+  );
+}
+
+/** 相對搜索開始的時刻：負值顯示「搜索前 x」 */
+function fmtSignedHr(h: number, fmtHr: (h: number) => string, t: SearchStrings): string {
+  return h < 0 ? `${t.transitBeforeStart} ${fmtHr(-h)}` : `T+${fmtHr(h)}`;
+}
+
+/** 依共用經緯順序顯示一點的度分秒 */
+function fmtLngLat(p: LngLat, order: CoordOrder): string {
+  const lng = formatDms(p[0], "lng"), lat = formatDms(p[1], "lat");
+  return order === "lnglat" ? `${lng} ${lat}` : `${lat} ${lng}`;
+}
+
+/**
+ * 蒙地卡羅「最後已知位置」輸入：LKP（度分秒 / 點地圖 / 搜索區中心 / 帶入事前分布）+ 目標航向航速。
+ */
+function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => string }) {
+  const inputs = searchPlannerStore.getInputs();
+  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
+  const order = useCoordOrder();
+  const proj = lkpProjection();
+  const priorDatum = inputs.bayesEnabled ? searchPlannerStore.primaryScenarioDatum() : null;
 
   return (
     <div style={{
       padding: "7px 9px", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4,
       background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.3)",
     }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#bae6fd" }}>{t.lkpTitle}</div>
-      <DmsFields t={t} axis="lng" value={lng} onChange={(p) => { setLng((v) => ({ ...v, ...p })); setError(null); }} />
-      <DmsFields t={t} axis="lat" value={lat} onChange={(p) => { setLat((v) => ({ ...v, ...p })); setError(null); }} />
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <button className="wg-btn" style={smallBtn} onClick={apply}><MapPin size={12} /> {t.lkpApply}</button>
-        <button className="wg-btn" style={{ ...smallBtn, ...(picking ? { borderColor: "#38bdf8", color: "#bae6fd" } : {}) }}
-          onClick={() => searchPlannerStore.setPickingLkp(!picking)}>
-          <Crosshair size={12} /> {picking ? t.lkpPicking : t.lkpPickOnMap}
-        </button>
-        <button className="wg-btn" style={smallBtn} onClick={useCentre}>{t.lkpUseCentre}</button>
-      </div>
-      {error && <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>}
-      <div style={{ fontSize: 13, color: inputs.mcLkp ? "#e2e8f0" : "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
-        LKP: {inputs.mcLkp
-          ? `${formatDms(inputs.mcLkp[0], "lng")} ${formatDms(inputs.mcLkp[1], "lat")}`
-          : t.lkpUnset}
-      </div>
+      <LkpInput key={JSON.stringify(inputs.mcLkp)} t={t} title={t.lkpTitle}
+        value={inputs.mcLkp} onApply={(p) => patch({ mcLkp: p })} pickTarget={{ kind: "mc" }}
+        extra={priorDatum && (
+          <button className="wg-btn" style={smallBtn} title={t.lkpFromPriorNote}
+            onClick={() => patch({ mcLkp: [priorDatum[0], priorDatum[1]] })}>{t.lkpFromPrior}</button>
+        )} />
 
       <NumField label={t.lkpSigma} value={inputs.mcSigmaNm} min={0} max={40} step={0.5} unit="nm"
         onChange={(v) => patch({ mcSigmaNm: v })} />
@@ -1172,7 +1540,7 @@ function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => strin
           <div>
             {t.lkpAtStart}（+{fmtHr(inputs.mcLkpElapsedHr)}）:{" "}
             <span style={{ fontFamily: "ui-monospace, monospace" }}>
-              {formatDms(proj.atStart[0], "lng")} {formatDms(proj.atStart[1], "lat")}
+              {fmtLngLat(proj.atStart, order)}
             </span>
             {" · "}{(inputs.mcTargetSpeedKn * inputs.mcLkpElapsedHr).toFixed(1)} nm
           </div>
@@ -1180,7 +1548,7 @@ function LkpEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => strin
             <div>
               {t.lkpAtEnd}:{" "}
               <span style={{ fontFamily: "ui-monospace, monospace" }}>
-                {formatDms(proj.atEnd[0], "lng")} {formatDms(proj.atEnd[1], "lat")}
+                {fmtLngLat(proj.atEnd, order)}
               </span>
             </div>
           )}
@@ -1326,7 +1694,7 @@ const header: React.CSSProperties = {
 const body: React.CSSProperties = { padding: 14, overflowY: "auto", flex: 1 };
 const pickBar: React.CSSProperties = {
   position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 60,
-  display: "flex", alignItems: "center", gap: 10,
+  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", maxWidth: "min(640px, calc(100vw - 32px))",
   padding: "8px 14px", borderRadius: 8,
   background: "rgba(15, 23, 42, 0.95)", border: "1px solid rgba(250, 204, 21, 0.5)",
   fontSize: 16, fontFamily: "ui-sans-serif, system-ui, sans-serif",

@@ -23,11 +23,13 @@ import type { SearchTargetClass, SweepWidthCorrections } from "./sweepWidth";
 import type { PodModel } from "./pod";
 import type { SearchPatternId } from "./patterns";
 import {
-  boxFromCorners, boxFromPolygon, generateSearchTracks, measureBox, pointInPolygon,
+  boxFromCorners, boxFromPolygon, generateSearchTracks, measureBox, pointInPolygon, MAX_POLYGON_VERTICES,
   polygonAreaNm2, validatePolygon,
   type DroneTrack, type PolygonIssue, type SearchBox,
 } from "./tracks";
-import { deadReckon, runMonteCarlo, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
+import { deadReckon, runMonteCarlo, toLocalNm, type MonteCarloResult, type TargetDistribution } from "./monteCarlo";
+import { insideIntervals, runTransitAnalysis, type TransitResult } from "./transit";
+import { sortVerticesByAngle } from "./polygonIO";
 import { OPERATIONAL_DEGRADATION } from "./sweepWidth";
 import {
   DEFAULT_EOIR, rangeLimits, TARGET_GEOMETRY,
@@ -100,6 +102,17 @@ export interface PlannerInputs {
   mcTargetSpeedSigmaKn: number;
   /** LKP 時刻到搜索開始（航線起點）的時數 */
   mcLkpElapsedHr: number;
+  // ── 突穿機率：已知船舶航經搜索區、未被發現的機率 ──
+  transitEnabled: boolean;
+  /** 船舶回報位置；null = 尚未輸入 */
+  transitPos: LngLat | null;
+  transitSigmaNm: number;
+  transitCourseDeg: number;
+  transitCourseSigmaDeg: number;
+  transitSpeedKn: number;
+  transitSpeedSigmaKn: number;
+  /** 回報時刻 → 搜索開始（hr） */
+  transitReportToStartHr: number;
   mcSeed: number;
   // ── Stone §3：感測器實戰效能折扣 ──
   sensorTested: boolean;
@@ -202,6 +215,14 @@ const DEFAULT_INPUTS: PlannerInputs = {
   mcTargetSpeedKn: 5,
   mcTargetSpeedSigmaKn: 1,
   mcLkpElapsedHr: 1,
+  transitEnabled: false,
+  transitPos: null,
+  transitSigmaNm: 1,
+  transitCourseDeg: 90,
+  transitCourseSigmaDeg: 5,
+  transitSpeedKn: 12,
+  transitSpeedSigmaKn: 1,
+  transitReportToStartHr: 0,
   mcSeed: 20260906,
   sensorTested: false,
   sweepSource: "table",
@@ -265,10 +286,14 @@ let cornerB: LngLat | null = null;
  * 面積、航線裁切、蒙地卡羅撒點、假目標密度則以多邊形為準。
  */
 let polygon: LngLat[] | null = null;
+/** 地圖繪製中的頂點（完成前不影響目前搜索區） */
+let draftPoints: LngLat[] = [];
+let draftIssue: PolygonIssue | null = null;
 let inputs: PlannerInputs = { ...DEFAULT_INPUTS };
 let tracks: DroneTrack[] = [];
 let assignedUnitIds: UnitId[] = [];
 let mcResult: MonteCarloResult | null = null;
+let transitResult: TransitResult | null = null;
 let scenarios: SearchScenario[] = DEFAULT_SCENARIOS.map((x) => ({ ...x }));
 /** 目前的目標機率分布（粒子）；bayesEnabled 才建立 */
 let particles: Particle[] = [];
@@ -278,8 +303,18 @@ let sortiePos: number[] = [];
 let loggedContacts: { id: string; lng: number; lat: number }[] = [];
 /** 是否處於「點地圖記錄接觸」模式 */
 let loggingContact = false;
-/** 是否處於「點地圖設定 LKP」模式 */
-let pickingLkp = false;
+/**
+ * 「點地圖設定 LKP」的目標；null = 未在點選。
+ *   mc        → 蒙地卡羅的 LKP
+ *   priorAll  → 事前分布所有情境共用的 LKP
+ *   scenario  → 事前分布某一情境的 LKP
+ */
+export type LkpPickTarget =
+  | { kind: "mc" }
+  | { kind: "transit" }
+  | { kind: "priorAll" }
+  | { kind: "scenario"; id: string };
+let lkpPickTarget: LkpPickTarget | null = null;
 let densityBands: DensityField["bands"] = DEFAULT_DENSITY_BANDS.map((b) => ({ ...b }));
 
 const listeners = new Set<Listener>();
@@ -578,6 +613,47 @@ export function lkpProjection(): {
   return { lkp, atStart, atEnd, insideAtStart };
 }
 
+/**
+ * 突穿分析的名目航線（不含誤差）—— 給地圖畫船舶預計航跡與進出點。
+ * 時間以搜索開始為 0；回報時刻為 −T。
+ */
+export function transitProjection(): {
+  report: LngLat; atStart: LngLat; entry: LngLat | null; exit: LngLat | null; end: LngLat;
+  entryHr: number | null; exitHr: number | null;
+} | null {
+  if (!inputs.transitEnabled || !inputs.transitPos) return null;
+  const { transitPos: rep0, transitCourseDeg: c, transitSpeedKn: v, transitReportToStartHr: T } = inputs;
+  const at = (hr: number) => deadReckon(rep0, c, v, T + hr);
+  const atStart = at(0);
+  const box = areaBox();
+  let entryHr: number | null = null, exitHr: number | null = null;
+  if (box) {
+    const origin: LngLat = [box.west, box.south];
+    const poly = (polygon ?? [
+      [box.west, box.south], [box.east, box.south], [box.east, box.north], [box.west, box.north],
+    ] as LngLat[]).map((p) => toLocalNm(p, origin));
+    const brg = (c * Math.PI) / 180;
+    const vel: [number, number] = [Math.sin(brg) * v, Math.cos(brg) * v];
+    const ivs = insideIntervals(toLocalNm(atStart, origin), vel, poly, -T);
+    const first = ivs[0], last = ivs[ivs.length - 1];
+    if (first && last) {
+      entryHr = first[0];
+      exitHr = Number.isFinite(last[1]) ? last[1] : null;
+    }
+  }
+  // 畫到離開搜索區後再延伸一點；沒進入就畫到航線結束時
+  const longestNm = tracks.reduce((mx, tr) => Math.max(mx, tr.trackNm), 0);
+  const searchHr = longestNm > 0 && inputs.speedKn > 0 ? longestNm / inputs.speedKn : 1;
+  const endHr = exitHr !== null ? exitHr + Math.max(0.3, (exitHr - (entryHr ?? 0)) * 0.2) : Math.max(searchHr, 1);
+  return {
+    report: rep0, atStart,
+    entry: entryHr !== null ? at(entryHr) : null,
+    exit: exitHr !== null ? at(exitHr) : null,
+    end: at(endHr),
+    entryHr, exitHr,
+  };
+}
+
 export const searchPlannerStore = {
   /** useSyncExternalStore 的 snapshot —— 每次狀態變動都會遞增 */
   getVersion: () => version,
@@ -589,14 +665,16 @@ export const searchPlannerStore = {
   getInputs: () => inputs,
   getTracks: () => tracks,
   getMonteCarlo: () => mcResult,
+  getTransitResult: () => transitResult,
   getScenarios: () => scenarios,
   getParticles: () => particles,
   getSortiePos: () => sortiePos,
   getLoggedContacts: () => loggedContacts,
   isLoggingContact: () => loggingContact,
-  isPickingLkp: () => pickingLkp,
+  isPickingLkp: () => lkpPickTarget !== null,
+  getLkpPickTarget: () => lkpPickTarget,
   /** 任一「點地圖」模式啟用中（游標改十字、右鍵指令讓路） */
-  isMapClickMode: () => picking || loggingContact || pickingLkp,
+  isMapClickMode: () => picking || loggingContact || lkpPickTarget !== null,
   getDensityBands: () => densityBands,
   getAssignedUnitIds: () => assignedUnitIds,
 
@@ -607,38 +685,72 @@ export const searchPlannerStore = {
     notify();
   },
 
-  /** 進入地圖框選模式（面板收合成細列） */
+  /**
+   * 進入地圖繪製搜索區模式（面板收合成細列）：點地圖逐一加頂點，
+   * 最後一點雙擊（手機快速點兩下）完成。完成前保留原本的搜索區，取消不會遺失。
+   */
   startPickArea(): void {
     picking = true;
     loggingContact = false;
-    pickingLkp = false;
-    cornerA = null;
-    cornerB = null;
-    polygon = null;
-    tracks = [];
-    mcResult = null;
+    lkpPickTarget = null;
+    draftPoints = [];
+    draftIssue = null;
     wargameClock.pause();
     notify();
   },
 
-  /** 地圖點擊：第 1 點存 A、第 2 點存 B 並自動結束框選 */
-  setCorner(lng: number, lat: number): void {
-    if (!picking) return;
-    polygon = null;
-    if (!cornerA || cornerB) {
-      cornerA = [lng, lat];
-      cornerB = null;
-    } else {
-      cornerB = [lng, lat];
-      picking = false;              // 兩角齊 → 自動回到面板
-    }
-    tracks = [];
-    mcResult = null;
+  getDraftPoints: () => draftPoints,
+  getDraftIssue: () => draftIssue,
+
+  /** 繪製中加一個頂點（上限 MAX_POLYGON_VERTICES） */
+  addDraftPoint(lng: number, lat: number): void {
+    if (!picking || draftPoints.length >= MAX_POLYGON_VERTICES) return;
+    draftPoints = [...draftPoints, [lng, lat]];
+    draftIssue = null;
     notify();
+  },
+
+  undoDraftPoint(): void {
+    if (draftPoints.length === 0) return;
+    draftPoints = draftPoints.slice(0, -1);
+    draftIssue = null;
+    notify();
+  },
+
+  /**
+   * 完成繪製：頂點合法則設為搜索區並離開繪製模式；
+   * 不合法（少於 3 點、邊線交叉…）則留在繪製模式並記下問題，讓使用者修正。
+   * sort = true 時先依繞中心方位排序（修正交叉）。
+   */
+  finishDraft(sort = false): PolygonIssue | null {
+    if (!picking) return null;
+    if (draftPoints.length < 3) { draftIssue = "too_few"; notify(); return draftIssue; }
+    const pts = sort ? sortVerticesByAngle(draftPoints) : draftPoints;
+    const issue = this.setPolygon(pts);
+    if (issue) { draftIssue = issue; notify(); return issue; }
+    picking = false;
+    draftPoints = [];
+    draftIssue = null;
+    notify();
+    return null;
   },
 
   cancelPick(): void {
     picking = false;
+    draftPoints = [];
+    draftIssue = null;
+    notify();
+  },
+
+  /** 以兩個對角直接設定矩形搜索區（無底圖時的經緯度輸入、腳本用） */
+  setRectangle(a: LngLat, b: LngLat): void {
+    polygon = null;
+    cornerA = [a[0], a[1]];
+    cornerB = [b[0], b[1]];
+    picking = false;
+    draftPoints = [];
+    tracks = [];
+    mcResult = null; transitResult = null;
     notify();
   },
 
@@ -656,7 +768,7 @@ export const searchPlannerStore = {
     cornerB = [box.east, box.north];
     picking = false;
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
     return null;
   },
@@ -666,7 +778,7 @@ export const searchPlannerStore = {
     cornerB = null;
     polygon = null;
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
   },
 
@@ -674,7 +786,7 @@ export const searchPlannerStore = {
     inputs = { ...inputs, ...p };
     // 只有真正改變航線幾何的參數才作廢既有航線（見 GEOMETRY_KEYS 的說明）
     if (Object.keys(p).some((k) => GEOMETRY_KEYS.has(k))) tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     // 影響事前分布的參數變動 → 重建粒子（並清掉搜索歷程）
     if (Object.keys(p).some((k) => DISTRIBUTION_KEYS.has(k))) {
       if (inputs.bayesEnabled) {
@@ -693,7 +805,7 @@ export const searchPlannerStore = {
     inputs = { ...DEFAULT_INPUTS };
     scenarios = DEFAULT_SCENARIOS.map((x) => ({ ...x }));
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     particles = [];
     sortiePos = [];
     loggedContacts = [];
@@ -706,7 +818,7 @@ export const searchPlannerStore = {
   generateTracks(): DroneTrack[] {
     const sol = solve();
     const box = areaBox();
-    if (!sol || !box) { tracks = []; mcResult = null; notify(); return tracks; }
+    if (!sol || !box) { tracks = []; mcResult = null; transitResult = null; notify(); return tracks; }
     const m = measureBox(box);
     tracks = generateSearchTracks({
       pattern: sol.pattern,
@@ -716,7 +828,7 @@ export const searchPlannerStore = {
       droneCount: sol.droneCount,
       radiusNm: Math.min(m.shortSideNm / 2, sol.pattern === "VS" ? 5 : m.shortSideNm / 2),
     });
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
     return tracks;
   },
@@ -756,6 +868,32 @@ export const searchPlannerStore = {
     });
     notify();
     return mcResult;
+  },
+
+  /** 突穿機率分析（需先產生航線、設定船舶位置） */
+  runTransit(): TransitResult | null {
+    const sol = solve();
+    const box = areaBox();
+    if (!sol || tracks.length === 0 || !box || !inputs.transitPos) return null;
+    const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
+    transitResult = runTransitAnalysis({
+      box, polygon: polygon ?? undefined, tracks,
+      sweepWidthNm: W,
+      speedKn: inputs.speedKn,
+      navErrorSigmaNm: inputs.mcNavErrorSigmaNm,
+      sensorAvailability: inputs.mcSensorAvailability,
+      ship: {
+        position: inputs.transitPos,
+        sigmaNm: inputs.transitSigmaNm,
+        courseDeg: inputs.transitCourseDeg, courseSigmaDeg: inputs.transitCourseSigmaDeg,
+        speedKn: inputs.transitSpeedKn, speedSigmaKn: inputs.transitSpeedSigmaKn,
+        reportToStartHr: inputs.transitReportToStartHr,
+      },
+      trials: inputs.mcTrials,
+      seed: inputs.mcSeed,
+    });
+    notify();
+    return transitResult;
   },
 
   // ── Stone §2/§6/§7：事前分布、貝氏更新、停止準則 ─────────
@@ -834,7 +972,7 @@ export const searchPlannerStore = {
     cornerA = [cLng - dLng, cLat - dLat];
     cornerB = [cLng + dLng, cLat + dLat];
     tracks = [];
-    mcResult = null;
+    mcResult = null; transitResult = null;
     notify();
     return true;
   },
@@ -844,22 +982,43 @@ export const searchPlannerStore = {
   setLoggingContact(on: boolean): void {
     if (loggingContact === on) return;
     loggingContact = on;
-    if (on) { picking = false; pickingLkp = false; }   // 點地圖模式互斥
+    if (on) { picking = false; lkpPickTarget = null; }   // 點地圖模式互斥
     notify();
   },
 
-  /** 進入 / 離開「點地圖設定 LKP」模式 */
-  setPickingLkp(on: boolean): void {
-    if (pickingLkp === on) return;
-    pickingLkp = on;
-    if (on) { picking = false; loggingContact = false; }
+  /** 進入「點地圖設定 LKP」模式（target = 要設定哪一個 LKP）；null = 離開 */
+  setPickingLkp(target: LkpPickTarget | null): void {
+    lkpPickTarget = target;
+    if (target) { picking = false; loggingContact = false; }
     notify();
   },
 
-  /** 地圖點擊設定 LKP（點一次即結束） */
+  /** 地圖點擊設定 LKP（點一次即結束），依點選目標寫入對應欄位 */
   setLkpAt(lng: number, lat: number): void {
-    pickingLkp = false;
-    this.patch({ mcLkp: [lng, lat] });
+    const target = lkpPickTarget;
+    lkpPickTarget = null;
+    const p: LngLat = [lng, lat];
+    if (!target || target.kind === "mc") this.patch({ mcLkp: p });
+    else if (target.kind === "transit") this.patch({ transitPos: p });
+    else if (target.kind === "priorAll") this.setAllScenarioDatums(p);
+    else this.updateScenario(target.id, { datum: p });
+  },
+
+  /** 所有情境共用同一個 LKP（事前分布） */
+  setAllScenarioDatums(p: LngLat): void {
+    scenarios = scenarios.map((x) => ({ ...x, datum: [p[0], p[1]] as LngLat }));
+    if (inputs.bayesEnabled) this.rebuildDistribution();
+    else notify();
+  },
+
+  /**
+   * 事前分布的代表 LKP —— 權重最高情境的基準點。
+   * 給「帶入事前分布 LKP」用（蒙地卡羅只有單一 LKP）。
+   */
+  primaryScenarioDatum(): LngLat | null {
+    let best: SearchScenario | null = null;
+    for (const sc of scenarios) if (!best || sc.weight > best.weight) best = sc;
+    return best ? best.datum : null;
   },
 
   addContactAt(lng: number, lat: number): void {

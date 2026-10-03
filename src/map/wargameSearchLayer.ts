@@ -8,10 +8,11 @@
  */
 import type { Map as MapboxMap } from "mapbox-gl";
 import type { LngLat } from "../wargame/types";
-import { lkpProjection, searchPlannerStore, solve } from "../wargame/search/searchPlannerStore";
+import { lkpProjection, searchPlannerStore, solve, transitProjection } from "../wargame/search/searchPlannerStore";
 import { measureBox, boxFromCorners, polygonAreaNm2, TRACK_COLORS } from "../wargame/search/tracks";
 import { SEARCH_PATTERNS } from "../wargame/search/patterns";
 import { langStore } from "../wargame/i18n/lang";
+import { attachSearchAreaDraw } from "./searchAreaDraw";
 import { searchStrings } from "../wargame/search/i18n";
 import { podForDisplay, POD_DISPLAY_CAP } from "../wargame/search/pod";
 
@@ -92,9 +93,25 @@ function buildBox(): GeoJSON.FeatureCollection {
 
 /** 蒙地卡羅 LKP：最後已知位置 → 開始搜索時 → 航線飛完時 的推算航跡 */
 function buildLkp(): GeoJSON.FeatureCollection {
-  const p = lkpProjection();
-  if (!p) return EMPTY;
   const en = lang() === "en";
+  // 事前分布各情境的 LKP（橘點、標情境名）
+  const priorPts: GeoJSON.Feature[] = searchPlannerStore.getInputs().bayesEnabled
+    ? searchPlannerStore.getScenarios().map((sc) => ({
+      type: "Feature" as const,
+      properties: { role: "prior", label: `LKP · ${en ? (sc.labelEn ?? sc.label) : sc.label}` },
+      geometry: { type: "Point" as const, coordinates: sc.datum },
+    }))
+    : [];
+  // 突穿分析：船舶名目航跡（紅）+ 回報位置 / 進入 / 離開點
+  const tp = transitProjection();
+  const transitFeats: GeoJSON.Feature[] = tp ? [
+    { type: "Feature", properties: { color: "#f87171" }, geometry: { type: "LineString", coordinates: [tp.report, tp.end] } },
+    { type: "Feature", properties: { role: "lkp", label: en ? "Ship report" : "船舶回報位置" }, geometry: { type: "Point", coordinates: tp.report } },
+    ...(tp.entry ? [{ type: "Feature" as const, properties: { role: "end", label: en ? "Enters" : "進入" }, geometry: { type: "Point" as const, coordinates: tp.entry } }] : []),
+    ...(tp.exit ? [{ type: "Feature" as const, properties: { role: "end", label: en ? "Exits" : "離開" }, geometry: { type: "Point" as const, coordinates: tp.exit } }] : []),
+  ] : [];
+  const p = lkpProjection();
+  if (!p) return { type: "FeatureCollection", features: [...priorPts, ...transitFeats] };
   const line: LngLat[] = [p.lkp, p.atStart, ...(p.atEnd ? [p.atEnd] : [])];
   const pt = (c: LngLat, role: string, label: string): GeoJSON.Feature => ({
     type: "Feature", properties: { role, label }, geometry: { type: "Point", coordinates: c },
@@ -106,6 +123,8 @@ function buildLkp(): GeoJSON.FeatureCollection {
       pt(p.lkp, "lkp", "LKP"),
       pt(p.atStart, "start", en ? "Search start" : "開始搜索"),
       ...(p.atEnd ? [pt(p.atEnd, "end", en ? "Tracks end" : "航線結束")] : []),
+      ...priorPts,
+      ...transitFeats,
     ],
   };
 }
@@ -363,14 +382,14 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   map.addLayer({
     id: LAYER_LKP_LINE, type: "line", source: SRC_LKP,
     filter: ["==", ["geometry-type"], "LineString"],
-    paint: { "line-color": "#38bdf8", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.9 },
+    paint: { "line-color": ["coalesce", ["get", "color"], "#38bdf8"], "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.9 },
   });
   map.addLayer({
     id: LAYER_LKP_PTS, type: "circle", source: SRC_LKP,
     filter: ["==", ["geometry-type"], "Point"],
     paint: {
       "circle-radius": ["match", ["get", "role"], "lkp", 7, 5],
-      "circle-color": ["match", ["get", "role"], "lkp", "#f87171", "start", "#38bdf8", "#94a3b8"],
+      "circle-color": ["match", ["get", "role"], "lkp", "#f87171", "start", "#38bdf8", "prior", "#fb923c", "#94a3b8"],
       "circle-stroke-color": "#0f172a", "circle-stroke-width": 2,
     },
   });
@@ -396,8 +415,11 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   };
   const unsub = searchPlannerStore.subscribe(refresh);
   const unsubLang = langStore.subscribe(refresh);
+  // 地圖繪製搜索區（多點、雙擊完成）+ 點地圖模式的座標提示
+  const detachDraw = attachSearchAreaDraw(map, lang);
 
   return () => {
+    detachDraw();
     unsub(); unsubLang();
     for (const id of all) if (map.getLayer(id)) map.removeLayer(id);
     for (const id of [SRC_LKP, SRC_CONTACTS, SRC_TRACKS, SRC_OPT, SRC_BOX, SRC_SWEEP, SRC_BANDS, SRC_PROB]) {

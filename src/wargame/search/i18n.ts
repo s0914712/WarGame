@@ -113,11 +113,15 @@ export interface SearchStrings {
   secSpacing: string; secMonteCarlo: string; secTracks: string;
   pickOnMap: string; clear: string; noArea: string;
   pickFirstCorner: string; pickSecondCorner: string; cancel: string;
+  drawHint: string; drawFinish: string; drawUndo: string; drawSortFinish: string;
   polyInput: string; polyHint: string; polyLng: string; polyLat: string;
   polyDeg: string; polyMin: string; polySec: string; polyHemiToggle: string;
   polyAddPoint: string; polyApply: string; polyPaste: string; polyPastePlaceholder: string;
   polyParse: string; polyArea: string; polyVertices: string;
-  polyIssue: Record<"too_few" | "too_many" | "invalid_coord" | "self_intersecting" | "zero_area" | "parse_failed", string>;
+  polyIssue: Record<"too_few" | "too_many" | "invalid_coord" | "self_intersecting" | "zero_area" | "parse_failed" | "no_polygon", string>;
+  polyOrderLngLat: string; polyOrderLatLng: string; polyMoveUp: string; polyMoveDown: string;
+  polyAutoSort: string; polySorted: string; polyAlreadySorted: string;
+  polyImport: string; polyExport: string; polyImported: string;
   dirGivenAssets: string; dirGivenTime: string;
   droneCount: string; availableTime: string; targetPod: string;
   searchTarget: string; targetSmall: string; targetLarge: string;
@@ -156,6 +160,14 @@ export interface SearchStrings {
   lkpUseCentre: string; lkpUnset: string; lkpSigma: string; lkpElapsed: string;
   targetCourse: string; targetCourseSigma: string; targetSpeed: string; targetSpeedSigma: string;
   lkpAtStart: string; lkpAtEnd: string; lkpOutside: string; lkpNote: string; lkpPickHint: string;
+  lkpFromPrior: string; lkpFromPriorNote: string; lkpFromMc: string; lkpEdit: string;
+  priorLkpTitle: string; priorLkpDiffer: string; priorLkpNote: string;
+  secTransit: string; transitEnable: string; transitShipPos: string; transitReportToStart: string;
+  transitNominalEntry: string; transitNominalExit: string; transitNominalMiss: string; transitBeforeStart: string;
+  transitNeedPos: string; transitRun: string; transitPen: string; transitPenGivenEnter: string; transitPenGivenEnterNote: string;
+  transitDetected: string; transitEnter: string; transitMedianEntry: string; transitMissed: string; transitLoiter: string;
+  transitTiming: string; transitBefore: string; transitDuring: string; transitAfter: string; transitSearchDuration: string;
+  transitTimingWarn: string; transitNote: string;
   expPlatform: string; expPlatformPlaceholder: string; expRange: string; expRefVisibility: string;
   expNote: string; expVisReduced: string; expExceedsPhysics: string; expNoDiscount: string;
   navError: string; sweepSpread: string;
@@ -199,8 +211,10 @@ const ZH: SearchStrings = {
   secArea: "① 搜索區", secSolve: "② 要解算什麼", secSensor: "③ 目標與感測條件",
   secAsset: "④ 無人機性能", secSpacing: "⑤ 航跡間距與圖形",
   secMonteCarlo: "⑥ 蒙地卡羅模擬", secTracks: "⑦ 產生搜索航線",
-  pickOnMap: "在地圖上框選", clear: "清除", noArea: "尚未框選搜索區",
+  pickOnMap: "在地圖上繪製", clear: "清除", noArea: "尚未設定搜索區",
   pickFirstCorner: "點地圖定搜索區第一角", pickSecondCorner: "再點一次定對角", cancel: "取消",
+  drawHint: "點地圖加頂點（{n}/10）· 最後一點雙擊完成（手機快速點兩下）",
+  drawFinish: "完成", drawUndo: "復原", drawSortFinish: "自動排序並完成",
   polyInput: "輸入經緯度（多邊形）",
   polyHint: "依序輸入 3–10 個頂點（度分秒，60 進位），系統自動首尾相連成封閉區域（頂點順序不可交叉）。分、秒留空視為 0；右側按鈕切換 E/W、N/S。",
   polyLng: "經度", polyLat: "緯度",
@@ -208,14 +222,20 @@ const ZH: SearchStrings = {
   polyAddPoint: "新增頂點", polyApply: "建立搜索區",
   polyPaste: "貼上座標", polyPastePlaceholder: "每行一點：經度 緯度（度分秒或十進位度皆可）\n例：119°30′00″E 23°12′00″N\n　　119 30 00, 23 12 00",
   polyParse: "帶入",
+  polyOrderLngLat: "經度在前", polyOrderLatLng: "緯度在前", polyMoveUp: "上移", polyMoveDown: "下移",
+  polyAutoSort: "自動排序並繪製",
+  polySorted: "已依繞中心的方位重新排序並繪製 —— 凹形區域請確認形狀是否符合預期",
+  polyAlreadySorted: "頂點順序已正確，已繪製",
+  polyImport: "匯入", polyExport: "匯出", polyImported: "已匯入 {n} 點（{fmt}）",
   polyArea: "多邊形", polyVertices: "點",
   polyIssue: {
     too_few: "至少需要 3 個頂點",
     too_many: "最多 10 個頂點",
     invalid_coord: "經緯度格式錯誤：度需為整數、分 0–59（整數）、秒 0–59.9；經度 ≤180°、緯度 ≤85°",
-    self_intersecting: "多邊形邊線交叉 —— 請依順時針或逆時針順序輸入頂點",
+    self_intersecting: "多邊形邊線交叉 —— 請依順時針或逆時針順序輸入頂點，或按「自動排序並繪製」",
     zero_area: "多邊形面積為 0（頂點共線或重複）",
     parse_failed: "無法解析貼上的座標，請每行一點：「119°30′00″E 23°12′00″N」或「119.5, 23.2」",
+    no_polygon: "檔案中找不到多邊形或座標",
   },
   dirGivenAssets: "給架數 → 求時間 / POD", dirGivenTime: "給時間 → 求架數 / 方式",
   droneCount: "無人機數量", availableTime: "可用時間", targetPod: "目標發現機率 POD",
@@ -274,6 +294,33 @@ const ZH: SearchStrings = {
   lkpOutside: "⚠ 開始搜索時目標預估位置不在搜索區內 —— 搜索區可能需要往目標航向方向移動",
   lkpNote: "每次試驗：起點 ~ LKP ± σ、航向 / 航速各自抽樣，推算到開始搜索，搜索期間目標持續以該航向航速移動（再疊加上方的漂移）。",
   lkpPickHint: "點地圖設定最後已知位置（LKP）",
+  lkpFromPrior: "帶入事前分布 LKP", lkpFromPriorNote: "取事前分布中權重最高情境的 LKP",
+  lkpFromMc: "帶入蒙地卡羅 LKP", lkpEdit: "修改",
+  secTransit: "⑪ 突穿機率（船舶航經搜索區未被發現）",
+  transitEnable: "啟用突穿分析",
+  transitShipPos: "船舶回報位置",
+  transitReportToStart: "回報 → 開始搜索",
+  transitNominalEntry: "名目航線進入搜索區", transitNominalExit: "離開",
+  transitNominalMiss: "⚠ 依名目航向航速，船舶不會經過搜索區",
+  transitBeforeStart: "搜索前",
+  transitNeedPos: "請先設定船舶回報位置",
+  transitRun: "計算突穿機率",
+  transitPen: "突穿機率",
+  transitPenGivenEnter: "進入後突穿",
+  transitPenGivenEnterNote: "若船確實經過搜索區，未被發現的機率（屏障漏失率）",
+  transitDetected: "被發現",
+  transitEnter: "經過搜索區",
+  transitMedianEntry: "進入時刻中位數",
+  transitMissed: "未經過搜索區",
+  transitLoiter: "停留區內未發現",
+  transitTiming: "突穿發生時機",
+  transitBefore: "搜索前已通過", transitDuring: "搜索期間", transitAfter: "航線結束後",
+  transitSearchDuration: "航線飛完需",
+  transitTimingWarn: "⚠ 多數突穿發生在搜索時段之外 —— 時間沒對上：調整開始時間、加長航線或增加架數，比加密航跡更有效",
+  transitNote: "每次試驗抽船舶位置 / 航向 / 航速，直線航行；搜索期間以各架航線逐步偵測（掃掠寬、導航誤差、感測器可用率、試驗次數沿用 ⑥ 蒙地卡羅設定）。只計離開搜索區前的偵測。",
+  priorLkpTitle: "最後已知位置（LKP）—— 套用到所有情境",
+  priorLkpDiffer: "目前各情境的 LKP 不同（見下方各情境）；設定後會統一成同一點",
+  priorLkpNote: "事前分布以各情境的 LKP 為中心、依位置誤差 σ 撒粒子，再依漂流推算到搜索期中點。各情境也可在下方個別修改 LKP。",
   expPlatform: "載台名稱", expPlatformPlaceholder: "例：瑞鳶",
   expRange: "可分辨距離", expRefVisibility: "經驗時能見度",
   expNote: "輸入此載台在該高度、經驗時能見度下，目視可分辨船隻的距離 R。以定距律換算 Wu = 2R，再套天候 / 速度 / 疲勞修正 → 用於 POD。",
@@ -366,6 +413,8 @@ const EN: SearchStrings = {
   secMonteCarlo: "6. Monte Carlo simulation", secTracks: "7. Generate search tracks",
   pickOnMap: "Draw on map", clear: "Clear", noArea: "No search area defined yet",
   pickFirstCorner: "Click the map to set the first corner", pickSecondCorner: "Click again to set the opposite corner", cancel: "Cancel",
+  drawHint: "Click to add vertices ({n}/10) · double-click the last one to finish (double-tap on mobile)",
+  drawFinish: "Finish", drawUndo: "Undo", drawSortFinish: "Auto-sort & finish",
   polyInput: "Enter coordinates (polygon)",
   polyHint: "Enter 3–10 vertices in order as degrees / minutes / seconds; the last one closes back to the first. Edges must not cross. Blank minutes or seconds count as 0; the button on the right toggles E/W, N/S.",
   polyLng: "Lng", polyLat: "Lat",
@@ -373,14 +422,20 @@ const EN: SearchStrings = {
   polyAddPoint: "Add vertex", polyApply: "Create search area",
   polyPaste: "Paste", polyPastePlaceholder: "One point per line: lng lat (DMS or decimal degrees)\ne.g. 119°30′00″E 23°12′00″N\n     119 30 00, 23 12 00",
   polyParse: "Load",
+  polyOrderLngLat: "Lng first", polyOrderLatLng: "Lat first", polyMoveUp: "Move up", polyMoveDown: "Move down",
+  polyAutoSort: "Auto-sort & draw",
+  polySorted: "Re-ordered by bearing around the centre and drawn — check concave shapes still look as intended",
+  polyAlreadySorted: "Vertex order was already fine — drawn",
+  polyImport: "Import", polyExport: "Export", polyImported: "Imported {n} points ({fmt})",
   polyArea: "Polygon", polyVertices: "pts",
   polyIssue: {
     too_few: "At least 3 vertices are required",
     too_many: "At most 10 vertices",
     invalid_coord: "Invalid coordinate: whole degrees, minutes 0–59 (whole), seconds 0–59.9; lng ≤180°, lat ≤85°",
-    self_intersecting: "Polygon edges cross — enter vertices in clockwise or counter-clockwise order",
+    self_intersecting: "Polygon edges cross — enter vertices in clockwise or counter-clockwise order, or press \"Auto-sort & draw\"",
     zero_area: "Polygon has zero area (collinear or duplicate vertices)",
     parse_failed: "Could not parse the pasted coordinates — one point per line, e.g. \"119°30′00″E 23°12′00″N\" or \"119.5, 23.2\"",
+    no_polygon: "No polygon or coordinates found in the file",
   },
   dirGivenAssets: "Given assets → time / POD", dirGivenTime: "Given time → assets / pattern",
   droneCount: "Number of UAVs", availableTime: "Time available", targetPod: "Target POD",
@@ -439,6 +494,33 @@ const EN: SearchStrings = {
   lkpOutside: "⚠ The target's expected position at search start is outside the search area — the area may need to move along the target's course",
   lkpNote: "Each trial: start ~ LKP ± σ, course and speed sampled independently, dead-reckoned to search start; during the search the target keeps that course and speed (plus the drift above).",
   lkpPickHint: "Click the map to set the last known position (LKP)",
+  lkpFromPrior: "Use prior LKP", lkpFromPriorNote: "Takes the LKP of the highest-weight prior scenario",
+  lkpFromMc: "Use Monte Carlo LKP", lkpEdit: "Edit",
+  secTransit: "11. Penetration probability (ship transits undetected)",
+  transitEnable: "Enable penetration analysis",
+  transitShipPos: "Ship reported position",
+  transitReportToStart: "Report → search start",
+  transitNominalEntry: "Nominal track enters the area", transitNominalExit: "exits",
+  transitNominalMiss: "⚠ On its nominal course and speed the ship does not cross the search area",
+  transitBeforeStart: "before search",
+  transitNeedPos: "Set the ship's reported position first",
+  transitRun: "Compute penetration probability",
+  transitPen: "Penetration probability",
+  transitPenGivenEnter: "Penetration if it enters",
+  transitPenGivenEnterNote: "probability of slipping through undetected given it crosses the area (barrier leakage)",
+  transitDetected: "Detected",
+  transitEnter: "Crosses the area",
+  transitMedianEntry: "median entry time",
+  transitMissed: "Does not cross the area",
+  transitLoiter: "Stays inside undetected",
+  transitTiming: "When penetrations happen",
+  transitBefore: "before search", transitDuring: "during search", transitAfter: "after tracks end",
+  transitSearchDuration: "Tracks take",
+  transitTimingWarn: "⚠ Most penetrations happen outside the search window — the timing is off: shift the start, lengthen the tracks or add aircraft rather than tightening track spacing",
+  transitNote: "Each trial samples the ship's position, course and speed and runs it in a straight line; during the search each aircraft's track is stepped for detection (sweep width, navigation error, sensor availability and trial count come from the Monte Carlo settings in 6). Only detections before the ship leaves the area count.",
+  priorLkpTitle: "Last known position (LKP) — apply to all scenarios",
+  priorLkpDiffer: "Scenarios currently have different LKPs (see each scenario below); setting one here unifies them",
+  priorLkpNote: "The prior scatters particles around each scenario's LKP with its position σ, then drifts them to mid-search. Each scenario's LKP can also be edited individually below.",
   expPlatform: "Platform", expPlatformPlaceholder: "e.g. Chung-Shyang II",
   expRange: "Recognition range", expRefVisibility: "Visibility at the time",
   expNote: "Enter the range R at which this platform, at this altitude and visibility, can visually recognise a ship. Converted with the definite-range law Wu = 2R, then weather / speed / fatigue corrections → used for POD.",
