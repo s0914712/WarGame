@@ -352,6 +352,8 @@ function sensor(): SensorConditions {
     experience: inputs.sweepSource === "experience"
       ? { rangeNm: inputs.experienceRangeNm, referenceVisibilityKm: inputs.experienceRefVisibilityKm }
       : undefined,
+    // 查表值不得超過此高度 / 鏡頭的物理上限（地平線、解析度）
+    sweepWidthCapNm: currentRangeLimits().sweepWidthCapNm,
     navErrorSigmaNm: inputs.navErrorSigmaNm,
     sweepWidthSpread: inputs.sweepWidthSpread,
   };

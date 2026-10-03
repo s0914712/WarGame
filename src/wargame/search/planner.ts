@@ -88,6 +88,11 @@ export interface SensorConditions {
     rangeNm: number;
     referenceVisibilityKm: number;
   };
+  /**
+   * 掃掠寬度物理上限（浬，= 2 × 最大側向偵測距離，見 sensorRange.rangeLimits）。
+   * 查表 Wu 超過時夾到此值；經驗值是實測結果，不夾（UI 另外警告）。省略 = 不夾。
+   */
+  sweepWidthCapNm?: number;
 }
 
 /** 無人機性能 */
@@ -109,6 +114,9 @@ export interface SweepWidthBreakdown {
   /** source = experience 時：經驗可分辨距離與能見度折減 */
   experienceRangeNm?: number;
   visibilityFactor?: number;
+  /** 查表 Wu 是否被物理上限夾住；tableNm 為夾之前的查表值 */
+  capped?: boolean;
+  tableNm?: number;
 }
 
 /**
@@ -187,13 +195,18 @@ function computeSweepWidth(cond: SensorConditions): SweepWidthBreakdown {
       visibilityFactor: x.visibilityFactor,
     };
   }
-  const uncorrectedNm = uncorrectedSweepWidthNm({
+  const tableNm = uncorrectedSweepWidthNm({
     targetClass: cond.targetClass,
     visibilityKm: cond.visibilityKm,
     altitudeFt: cond.altitudeFt,
   });
+  const cap = cond.sweepWidthCapNm;
+  const capped = cap !== undefined && tableNm > cap + 1e-9;
+  const uncorrectedNm = capped ? cap : tableNm;
   return {
     uncorrectedNm,
+    capped,
+    tableNm,
     correctedNm: correctedSweepWidthNm(uncorrectedNm, cond.corrections),
     corrections: cond.corrections,
     source: "table",

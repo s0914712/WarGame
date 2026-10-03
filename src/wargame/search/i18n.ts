@@ -151,6 +151,7 @@ export interface SearchStrings {
   stoneSection: string;
   sensorTested: string; sensorTestedNote: string;
   sweepSource: string; sweepSourceTable: string; sweepSourceExperience: string;
+  altLookup: Record<"interpolated" | "extrapolated_low" | "extrapolated_high", string>;
   mcLkp: string; lkpTitle: string; lkpApply: string; lkpPickOnMap: string; lkpPicking: string;
   lkpUseCentre: string; lkpUnset: string; lkpSigma: string; lkpElapsed: string;
   targetCourse: string; targetCourseSigma: string; targetSpeed: string; targetSpeedSigma: string;
@@ -259,6 +260,11 @@ const ZH: SearchStrings = {
   sensorTested: "感測器已在近似條件下實測",
   sensorTestedNote: "未實測時套 ×0.65 —— Koopman [1980]：二戰經驗顯示系統實戰只發揮設計能力的 60–70%",
   sweepSource: "掃幅來源", sweepSourceTable: "文件查表", sweepSourceExperience: "載台經驗值",
+  altLookup: {
+    interpolated: "介於表列高度（500 / 1000 / 1500 / 2000 ft）之間 → 線性內插",
+    extrapolated_low: "⚠ 低於表格 500 ft → 沿用 500 ft 數值（低空視距由地平線上限把關）",
+    extrapolated_high: "⚠ 高於表格 2000 ft → 依 1500→2000 ft 趨勢外插，只延續下降、不放大（表外無資料，取保守）",
+  },
   mcLkp: "最後已知位置 + 航向航速", lkpTitle: "最後已知位置（LKP）",
   lkpApply: "設定 LKP", lkpPickOnMap: "在地圖上點選", lkpPicking: "點地圖中…（再按取消）",
   lkpUseCentre: "用搜索區中心", lkpUnset: "尚未設定（以搜索區中心代替）",
@@ -419,6 +425,11 @@ const EN: SearchStrings = {
   sensorTested: "Sensor tested under comparable conditions",
   sensorTestedNote: "Untested sensors get ×0.65 — Koopman [1980]: WWII experience showed systems performing at 60–70% of design capability",
   sweepSource: "Sweep width source", sweepSourceTable: "Reference table", sweepSourceExperience: "Platform experience",
+  altLookup: {
+    interpolated: "Between tabulated altitudes (500 / 1000 / 1500 / 2000 ft) → linear interpolation",
+    extrapolated_low: "⚠ Below the 500 ft table row → 500 ft values held (low-altitude range is bounded by the horizon limit)",
+    extrapolated_high: "⚠ Above the 2000 ft table row → extrapolated from the 1500→2000 ft trend, allowed to fall but never grow (no data beyond the table, so stay conservative)",
+  },
   mcLkp: "Last known position + course/speed", lkpTitle: "Last known position (LKP)",
   lkpApply: "Set LKP", lkpPickOnMap: "Pick on map", lkpPicking: "Click the map… (press to cancel)",
   lkpUseCentre: "Use area centre", lkpUnset: "Not set (search area centre is used)",

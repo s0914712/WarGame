@@ -42,18 +42,60 @@ export function nearestTabulatedAltitudeFt(altitudeFt: number): number {
   return best;
 }
 
+/** 高度相對於表格的位置：表列點 / 兩點間內插 / 超出表格外插 */
+export type AltitudeLookup = "tabulated" | "interpolated" | "extrapolated_low" | "extrapolated_high";
+
+export function altitudeLookupKind(altitudeFt: number): AltitudeLookup {
+  const lo = TABULATED_ALTITUDES_FT[0];
+  const hi = TABULATED_ALTITUDES_FT[TABULATED_ALTITUDES_FT.length - 1] ?? lo;
+  if ((TABULATED_ALTITUDES_FT as readonly number[]).includes(altitudeFt)) return "tabulated";
+  if (altitudeFt < lo) return "extrapolated_low";
+  if (altitudeFt > hi) return "extrapolated_high";
+  return "interpolated";
+}
+
+/**
+ * 依高度取一列（各能見度的 Wu）：
+ *   - 表列高度之間 → 線性內插
+ *   - 低於 500 ft → 沿用 500 ft（低空的視距受限交給地平線物理上限處理）
+ *   - 高於 2000 ft → 沿 1500→2000 ft 的趨勢線性外插，並夾在 [0, 2000 ft 值]：
+ *     表格隨高度幾乎不變、只有低能見度時略降，外插只允許延續下降、不允許放大，
+ *     維持保守（表外沒有資料支撐，不該比表內更樂觀）
+ */
+function rowAtAltitude(targetClass: SearchTargetClass, altitudeFt: number): number[] {
+  const alts = TABULATED_ALTITUDES_FT;
+  const rowOf = (a: number) => WU_TABLE[a]?.[targetClass] ?? [];
+  const lerp = (r0: number[], r1: number[], f: number) => r0.map((v, i) => v + f * ((r1[i] ?? v) - v));
+
+  const first: number = alts[0];
+  const last: number = alts[alts.length - 1] ?? first;
+  if (altitudeFt <= first) return rowOf(first);
+  if (altitudeFt >= last) {
+    const prev = alts[alts.length - 2] ?? first;
+    const rLast = rowOf(last);
+    const f = (altitudeFt - prev) / (last - prev);
+    return lerp(rowOf(prev), rLast, f).map((v, i) => Math.min(rLast[i] ?? v, Math.max(0, v)));
+  }
+  for (let i = 0; i < alts.length - 1; i++) {
+    const a0 = alts[i], a1 = alts[i + 1];
+    if (a0 === undefined || a1 === undefined) continue;
+    if (altitudeFt >= a0 && altitudeFt <= a1) return lerp(rowOf(a0), rowOf(a1), (altitudeFt - a0) / (a1 - a0));
+  }
+  return rowOf(last);
+}
+
 /**
  * 未修正掃掠寬度 Wu（浬）。能見度在表列點之間以線性內插；
  * 低於 2 km 依比例外推到 0、高於 40 km 一律取 >40 那欄（文件即以 >40 封頂）。
+ * 高度亦線性內插，超出 500–2000 ft 依 rowAtAltitude() 的保守規則外插。
  */
 export function uncorrectedSweepWidthNm(args: {
   targetClass: SearchTargetClass;
   visibilityKm: number;
   altitudeFt: number;
 }): number {
-  const table = WU_TABLE[nearestTabulatedAltitudeFt(args.altitudeFt)];
-  const row = table?.[args.targetClass];
-  if (!row || row.length === 0) return 0;
+  const row = rowAtAltitude(args.targetClass, args.altitudeFt);
+  if (row.length === 0) return 0;
 
   const vis = args.visibilityKm;
   const pts = TABULATED_VISIBILITY_KM;
