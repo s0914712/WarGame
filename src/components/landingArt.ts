@@ -13,9 +13,11 @@ export const LANDING_BG = bg;
 
 export interface LandingArt { src: string; position: string }
 
-export const LANDING_ART: Record<"campaign" | "multiplayer" | "custom" | "tutorial", LandingArt> = {
+export const LANDING_ART: Record<"campaign" | "multiplayer" | "custom" | "tutorial" | "search", LandingArt> = {
   campaign: { src: campaign, position: "50% 45%" },
   multiplayer: { src: multiplayer, position: "50% 50%" },
   custom: { src: custom, position: "50% 55%" },
   tutorial: { src: tutorial, position: "55% 60%" },
+  // 無人機搜索：暫用戰術格線插圖（海面 + 格線），之後可換專屬素材
+  search: { src: tutorial, position: "20% 40%" },
 };

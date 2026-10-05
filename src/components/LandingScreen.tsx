@@ -37,7 +37,7 @@ interface Props {
 }
 
 type Pane = "main" | "campaign" | "multiplayer";
-type MenuId = "campaign" | "multiplayer" | "custom" | "tutorial";
+type MenuId = "campaign" | "multiplayer" | "custom" | "tutorial" | "search";
 
 /** 設計稿主色（簡報 accent2） */
 const ACCENT = "#E97132";
@@ -65,7 +65,15 @@ const MENU: { id: MenuId; zh: string; en: string; descZh: string; descEn: string
     descZh: "逐步導覽所有介面：時鐘、戰報、指令卡、任務目標、六角格與 LLM 介接。",
     descEn: "Step-by-step tour of the whole UI: clock, log, command card, objectives, hex grid and LLM bridge.",
   },
+  {
+    id: "search", zh: "無人機搜索", en: "UAV Search Planner",
+    descZh: "獨立的無人機海上搜索規劃器：繪製搜索區、IAMSAR 掃掠寬度與 POD、六大搜索圖形、蒙地卡羅、事前分布與突穿機率。",
+    descEn: "Standalone UAV maritime search planner: draw the area, IAMSAR sweep width & POD, six search patterns, Monte Carlo, prior distribution and penetration probability.",
+  },
 ];
+
+/** 獨立無人機搜索規劃器的網址（保留部署 base path，例：/WarGame/?mode=search） */
+const SEARCH_PLANNER_URL = `${window.location.pathname}?mode=search`;
 
 /** 從多人房間切回單人玩法前先離開房間 */
 function leaveMultiplayerIfAny() {
@@ -177,6 +185,7 @@ export function LandingScreen({ map }: Props) {
       case "multiplayer": setPane("multiplayer"); break;
       case "custom": startPlanMode(); break;
       case "tutorial": startTutorial(); break;
+      case "search": withExit(() => { leaveMultiplayerIfAny(); window.location.assign(SEARCH_PLANNER_URL); }); break;
     }
   };
 

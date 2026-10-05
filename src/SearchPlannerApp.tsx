@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import "./wargame/styles.css";
-import { Languages, Map as MapIcon, ChevronUp, ChevronDown, Radar } from "lucide-react";
+import { Languages, Map as MapIcon, ChevronUp, ChevronDown, Radar, Home } from "lucide-react";
 import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
 import { attachWargameSearchLayer } from "./map/wargameSearchLayer";
 import { searchPlannerStore } from "./wargame/search/searchPlannerStore";
@@ -131,12 +131,27 @@ export default function SearchPlannerApp() {
   }, [styleId, mapReady]);
 
   const langButton = (
+    <div style={{ position: "absolute", top: 12, right: 12, zIndex: 30, display: "flex", gap: 8 }}>
+    {/* 回兵推主選單（同一部署路徑、不帶 mode） */}
+    <a
+      className="wg-btn"
+      href={window.location.pathname}
+      title={lang === "zh" ? "回到兵推平台主選單" : "Back to the wargame main menu"}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, textDecoration: "none",
+        padding: "7px 12px", borderRadius: 6, cursor: "pointer",
+        background: "rgba(15,23,42,0.92)", color: "#e2e8f0",
+        border: "1px solid rgba(148,163,184,0.35)",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: 15, fontWeight: 600,
+      }}
+    >
+      <Home size={15} /> {lang === "zh" ? "兵推" : "Wargame"}
+    </a>
     <button
       className="wg-btn"
       onClick={() => langStore.toggle()}
       title={lang === "zh" ? "Switch to English" : "切換為中文"}
       style={{
-        position: "absolute", top: 12, right: 12, zIndex: 30,
         display: "flex", alignItems: "center", gap: 6,
         padding: "7px 12px", borderRadius: 6, cursor: "pointer",
         background: "rgba(15,23,42,0.92)", color: "#e2e8f0",
@@ -146,6 +161,7 @@ export default function SearchPlannerApp() {
     >
       <Languages size={15} /> {lang === "zh" ? "EN" : "中文"}
     </button>
+    </div>
   );
 
   // 繪製搜索區時由面板的繪製列（含完成 / 復原 / 取消）提示；這裡只提示 LKP 點選
