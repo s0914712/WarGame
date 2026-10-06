@@ -59,6 +59,7 @@ const TEXT = {
     note: "0 分 = 不主動攻擊該類（仍可用右鍵 / 指令卡下令攻擊）。只影響自動交戰；明確的攻擊命令不受限。",
     blendNote: (b: number) => `權衡 ${Math.round(b * 100)}%：差 1 分約需距離差 ${b >= 1 ? "∞" : Math.round((b * 0.2) / Math.max(1e-6, 1 - b) * 100)}% 射程才會改打較近的目標`,
     readonly: "多人對戰中由房主設定攻擊優序（各方自設將於後續版本開放）",
+    samWarn: "⚠ 戰機 / 無人機設為 0 分時，本方防空飛彈也不會自動接戰這類目標（攔截來襲飛彈不受影響）。若只想讓攻擊載具不打，之後可用「依攻擊方分別設定」。",
     reconSoon: "偵察計畫建議（關注區、覆蓋缺口、派遣建議、一鍵套用）將在下一階段加入。",
   },
   en: {
@@ -69,6 +70,7 @@ const TEXT = {
     note: "0 = never auto-engage this category (explicit attack orders still work). Only affects automatic target selection.",
     blendNote: (b: number) => `Blend ${Math.round(b * 100)}%: a 1-point edge is overridden only by a distance gap above ${b >= 1 ? "∞" : Math.round((b * 0.2) / Math.max(1e-6, 1 - b) * 100)}% of weapon range`,
     readonly: "In multiplayer the host sets target priorities (per-player settings coming later)",
+    samWarn: "⚠ With aircraft / UAVs at 0, this side's SAMs also won't auto-engage them (intercepting incoming missiles is unaffected). Per-shooter priorities will cover the case where only strike assets should hold fire.",
     reconSoon: "Recon plan suggestions (areas of interest, coverage gaps, tasking, one-click apply) come in the next phase.",
   },
 } as const;
@@ -221,6 +223,10 @@ export function AssetPanel({ top, left = 16 }: { top: number; left?: number }) {
             <div style={{ fontSize: 11, color: "#64748b" }}>{t.blendNote(profile.blend)}</div>
           </div>
 
+          {(profile.weights.aircraft === 0 || profile.weights.uav === 0)
+            && Object.values(state.units).some((u) => u.sideId === sideId && (u.kind === "sam_coastal" || u.kind === "sam_patriot")) && (
+            <div style={warn}>{t.samWarn}</div>
+          )}
           <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>{t.note}</div>
           {editable && (
             <button className="wg-btn" style={{ ...chip, alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 4 }}
