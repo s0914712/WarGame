@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Map as MapboxMap } from "mapbox-gl";
 import {
   Menu, Eye, EyeOff, Languages, Bot, ClipboardList, Swords, GraduationCap, HelpCircle,
-  Monitor, Home, Map as MapIcon, Film, Radar, Hexagon, Ruler,
+  Monitor, Home, Map as MapIcon, Film, Radar, Hexagon, Ruler, Crosshair,
 } from "lucide-react";
 import { hexStore } from "../../wargame/hex/hexStore";
 import { WargameClockHUD } from "../WargameClockHUD";
@@ -25,6 +25,7 @@ import { replayPlayer } from "../../wargame/replay/player";
 import { langStore, useLang } from "../../wargame/i18n/lang";
 import { searchPlannerStore } from "../../wargame/search/searchPlannerStore";
 import { rulerStore } from "../../map/rulerTool";
+import { assetPanelStore } from "./AssetPanel";
 
 export const TOP_BAR_HEIGHT = 56;
 
@@ -41,6 +42,7 @@ function getFow() { return scenarioStore.isFogOfWar(); }
 function getReplayActive() { return replayPlayer.isActive(); }
 function getSearchOpen() { return searchPlannerStore.isOpen(); }
 function getRulerActive() { return rulerStore.isActive(); }
+function getAssetOpen() { return assetPanelStore.isOpen(); }
 
 export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBriefing, onOpenCheat }: Props) {
   const lang = useLang();
@@ -51,6 +53,7 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
   const fowLocked = net.role !== "off" && view !== "spectator";
   const searchOpen = useSyncExternalStore(searchPlannerStore.subscribe, getSearchOpen, getSearchOpen);
   const rulerActive = useSyncExternalStore(rulerStore.subscribe, getRulerActive, getRulerActive);
+  const assetOpen = useSyncExternalStore(assetPanelStore.subscribe, getAssetOpen, getAssetOpen);
   const width = useWindowWidth();
   // 窄螢幕：右側按鈕改純圖示（文字留在 tooltip），避免擠出畫面
   const iconOnly = width < 1600;
@@ -89,6 +92,11 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
           title="搜索規劃器（掃區時間 / POD / 建議架數與搜索圖形）"
           onClick={() => searchPlannerStore.setOpen(!searchOpen)}>
           <Radar size={15} />{!iconOnly && " 搜索"}
+        </BarButton>
+        <BarButton accent="#f97316" active={assetOpen}
+          title={lang === "en" ? "Assets — target priority per category, recon plan" : "資產：各類目標攻擊優序、偵察計畫"}
+          onClick={() => assetPanelStore.toggle()}>
+          <Crosshair size={15} />{!iconOnly && (lang === "en" ? " Assets" : " 資產")}
         </BarButton>
         <BarButton accent="#f472b6" active={rulerActive}
           title={lang === "en" ? "Ruler — measure distance (NM / km) and bearing" : "尺規：量測距離（海里 / 公里）與方位"}
