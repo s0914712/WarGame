@@ -14,6 +14,7 @@ import { SEARCH_PATTERNS } from "../wargame/search/patterns";
 import { langStore } from "../wargame/i18n/lang";
 import { attachSearchAreaDraw } from "./searchAreaDraw";
 import { attachWargameDriftLayer } from "./wargameDriftLayer";
+import { attachWargameSeaVectorLayer } from "./wargameSeaVectorLayer";
 import { searchStrings } from "../wargame/search/i18n";
 import { podForDisplay, POD_DISPLAY_CAP } from "../wargame/search/pod";
 
@@ -421,11 +422,14 @@ export function attachWargameSearchLayer(map: MapboxMap): () => void {
   // 地圖繪製搜索區（多點、雙擊完成）+ 點地圖模式的座標提示
   const detachDraw = attachSearchAreaDraw(map, lang);
 
+  // 海流 / 風場向量箭頭（壓在漂流粒子之下）
+  const detachSeaVec = attachWargameSeaVectorLayer(map);
   // 落水漂流粒子雲（Leeway）：壓在搜索框 / 航線之上
   const detachDrift = attachWargameDriftLayer(map);
 
   return () => {
     detachDrift();
+    detachSeaVec();
     detachDraw();
     unsub(); unsubLang();
     for (const id of all) if (map.getLayer(id)) map.removeLayer(id);

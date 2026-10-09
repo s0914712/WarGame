@@ -140,6 +140,9 @@
 - `leeway.ts`：OpenDrift Leeway 公式移植（純函式）+ 12 類物件係數；`seaFields.ts`：讀 seacurrent 發布的
   海流 / 風場 frames。搜索規劃器「⓪ 落水（MOB）」點地圖即算漂流，粒子當事前分布 → 搜索區 → 航線 → 派機；
   粒子雲圖層 `map/wargameDriftLayer.ts`（由搜索圖層一併掛載）。詳見 `docs/search-planning.md`。
+- `seaVectorStore.ts` + `map/wargameSeaVectorLayer.ts`：海流（每小時 0.2°）/ 10 m 風（每 6 小時 1°）向量箭頭，
+  箭頭指「流向 / 吹向」、色階與大小依速度、依縮放抽稀只畫畫面內。時刻：落水漂流算好時跟「地圖顯示」拉桿，
+  否則為現在。開關在「情資」下拉、行動版設定、落水區（`components/wargame/SeaVectorControls.tsx`）。
 
 ### `src/wargame/grayzone/` — 灰色地帶情資（外部資料，非模擬）
 - `grayzoneStore.ts`：四個子圖層開關（近 24h 航跡 / 高風險船 / SAR 暗船 / 海纜障礙，存 localStorage）+ 載入狀態。

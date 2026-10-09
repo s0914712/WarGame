@@ -16,6 +16,7 @@ import {
   ChevronUp, ChevronDown, Upload, Download, ArrowDownUp, LifeBuoy, Pause, Check,
 } from "lucide-react";
 import { LEEWAY_OBJECTS } from "../wargame/search/drift/leeway";
+import { SeaVectorControls } from "./wargame/SeaVectorControls";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
   currentRangeLimits, lkpProjection, transitProjection, type LkpPickTarget,
@@ -1921,6 +1922,8 @@ function MobDriftSection({ t, lang, fmtHr }: { t: SearchStrings; lang: "zh" | "e
 
       {leeway && (
         <>
+          {/* 地圖上同時看海流 / 風場箭頭（跟著下方時間軸） */}
+          <SeaVectorControls compact />
           {/* 落水位置：度分秒輸入 / 重新點地圖（只移動位置，不重設時刻與誤差） */}
           <LkpInput key={JSON.stringify(inputs.mcLkp)} t={t} title={m.lkp} accent="#f87171"
             value={inputs.mcLkp} onApply={(p) => patch({ mcLkp: p })} pickTarget={{ kind: "mc" }} />

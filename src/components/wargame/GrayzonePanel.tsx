@@ -9,6 +9,8 @@ import {
 } from "../../wargame/grayzone/grayzoneStore";
 import { useLang } from "../../wargame/i18n/lang";
 import { TRACK_TYPE_LEGEND } from "../../map/wargameGrayzoneLayer";
+import { SeaVectorControls } from "./SeaVectorControls";
+import { seaVectorStore } from "../../wargame/search/drift/seaVectorStore";
 
 const TEXT = {
   zh: {
@@ -134,6 +136,7 @@ export function GrayzoneBarButton({ iconOnly, renderButton }: {
   renderButton: (props: { active: boolean; onClick: () => void; title: string; children: React.ReactNode }) => React.ReactNode;
 }) {
   useSyncExternalStore(grayzoneStore.subscribe, grayzoneStore.getVersion, grayzoneStore.getVersion);
+  useSyncExternalStore(seaVectorStore.subscribe, seaVectorStore.getVersion, seaVectorStore.getVersion);
   const lang = useLang() === "en" ? "en" : "zh";
   const s = TEXT[lang];
   const [open, setOpen] = useState(false);
@@ -150,7 +153,7 @@ export function GrayzoneBarButton({ iconOnly, renderButton }: {
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       {renderButton({
-        active: open || grayzoneStore.anyOn(),
+        active: open || grayzoneStore.anyOn() || seaVectorStore.anyOn(),
         onClick: () => setOpen((o) => !o),
         title: `${s.title}: ${GRAYZONE_LAYER_KEYS.map((k) => s.layers[k].name).join(" / ")}`,
         children: <><Ship size={15} />{!iconOnly && ` ${s.button}`}</>,
@@ -166,6 +169,8 @@ export function GrayzoneBarButton({ iconOnly, renderButton }: {
             {s.title}
           </div>
           <GrayzoneControls />
+          <div style={{ height: 1, background: "rgba(148,163,184,0.2)", margin: "8px 0 2px" }} />
+          <SeaVectorControls />
         </div>
       )}
     </div>
