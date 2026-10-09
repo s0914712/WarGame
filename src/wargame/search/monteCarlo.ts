@@ -59,7 +59,12 @@ export type TargetDistribution =
       courseDeg: number; courseSigmaDeg: number;
       speedKn: number; speedSigmaKn: number;
       /** LKP 時刻 → 搜索開始的時數 */
-      elapsedHr: number };
+      elapsedHr: number }
+  /**
+   * 外部推算好的目標樣本（例：Leeway 漂流粒子在搜索開始時刻的位置與漂流速度）。
+   * 每次試驗抽一顆，搜索期間以該顆自己的速度（節，東 / 北）移動。
+   */
+  | { kind: "samples"; points: { lng: number; lat: number; uKn: number; vKn: number }[] };
 
 /**
  * LKP 依航向航速推算 hours 後的位置（不含誤差；給地圖 / UI 顯示期望位置）。
@@ -248,6 +253,9 @@ export function runMonteCarlo(input: MonteCarloInput): MonteCarloResult {
   const datumLocal = gaussianTarget ? toLocalNm(gaussianTarget.datum, origin) : null;
   const lkpTarget = input.distribution.kind === "lkp" ? input.distribution : null;
   const lkpLocal = lkpTarget ? toLocalNm(lkpTarget.lkp, origin) : null;
+  const sampleTarget = input.distribution.kind === "samples" && input.distribution.points.length > 0
+    ? input.distribution.points.map((p) => ({ xy: toLocalNm([p.lng, p.lat], origin), uKn: p.uKn, vKn: p.vKn }))
+    : null;
   const k = (input.sweepWidthNm * input.sweepWidthNm) / (4 * Math.PI);
   const polyLocal = input.polygon && input.polygon.length >= 3
     ? input.polygon.map((p) => toLocalNm(p, origin))
@@ -258,7 +266,13 @@ export function runMonteCarlo(input: MonteCarloInput): MonteCarloResult {
     let tx: number, ty: number;
     // 目標自身速度（每步浬）；只有 LKP 分布才有
     let ovx = 0, ovy = 0;
-    if (lkpTarget && lkpLocal) {
+    if (sampleTarget) {
+      const s = sampleTarget[Math.min(sampleTarget.length - 1, Math.floor(rng() * sampleTarget.length))]!;
+      tx = s.xy[0];
+      ty = s.xy[1];
+      ovx = (s.uKn * stepSec) / 3600;
+      ovy = (s.vKn * stepSec) / 3600;
+    } else if (lkpTarget && lkpLocal) {
       const course = ((lkpTarget.courseDeg + gaussian(rng) * lkpTarget.courseSigmaDeg) * Math.PI) / 180;
       const speed = Math.max(0, lkpTarget.speedKn + gaussian(rng) * lkpTarget.speedSigmaKn);
       const vx = Math.sin(course) * speed, vy = Math.cos(course) * speed;     // 浬/小時

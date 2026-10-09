@@ -10,10 +10,10 @@
  * 解算全在 src/wargame/search/*（純函式、語言中立）；文字由 search/i18n.ts 產生。
  * 面板同時服務兵推模式與 standalone 搜索規劃 app。
  */
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste,
-  ChevronUp, ChevronDown, Upload, Download, ArrowDownUp, LifeBuoy,
+  ChevronUp, ChevronDown, Upload, Download, ArrowDownUp, LifeBuoy, Pause, Check,
 } from "lucide-react";
 import { LEEWAY_OBJECTS } from "../wargame/search/drift/leeway";
 import {
@@ -196,7 +196,7 @@ export function SearchPlannerPanel(
       )}
 
       <div style={embedded ? bodyEmbedded : body}>
-        <MobDriftSection lang={lang} fmtHr={fmtHr} />
+        <MobDriftSection t={t} lang={lang} fmtHr={fmtHr} />
 
         {/* ① 搜索區 */}
         <Section title={t.secArea}>
@@ -1532,6 +1532,9 @@ function LkpEditor({ t, fmtHr, shared = false }: { t: SearchStrings; fmtHr: (h: 
   // 事前分布用多情境時才需要「帶入」；依 LKP 時兩邊本來就是同一組參數
   const priorDatum = inputs.bayesEnabled && !inputs.priorFromLkp ? searchPlannerStore.primaryScenarioDatum() : null;
   const linked = shared || (inputs.bayesEnabled && inputs.priorFromLkp);
+  // Leeway 漂流時，事前分布與蒙地卡羅都改用漂流粒子 → 航向航速與其推算線都不適用
+  const leeway = inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel === "leeway";
+  const lang = useLang() === "en" ? "en" : "zh";
 
   return (
     <div style={{
@@ -1550,34 +1553,44 @@ function LkpEditor({ t, fmtHr, shared = false }: { t: SearchStrings; fmtHr: (h: 
         onChange={(v) => patch({ mcSigmaNm: v })} />
       <NumField label={t.lkpElapsed} value={inputs.mcLkpElapsedHr} min={0} max={72} step={0.25} unit="hr"
         onChange={(v) => patch({ mcLkpElapsedHr: v })} />
-      <NumField label={t.targetCourse} value={inputs.mcTargetCourseDeg} min={0} max={359} step={1} unit="°"
-        onChange={(v) => patch({ mcTargetCourseDeg: v })} />
-      <NumField label={t.targetCourseSigma} value={inputs.mcTargetCourseSigmaDeg} min={0} max={180} step={1} unit="°"
-        onChange={(v) => patch({ mcTargetCourseSigmaDeg: v })} />
-      <NumField label={t.targetSpeed} value={inputs.mcTargetSpeedKn} min={0} max={40} step={0.5} unit="kn"
-        onChange={(v) => patch({ mcTargetSpeedKn: v })} />
-      <NumField label={t.targetSpeedSigma} value={inputs.mcTargetSpeedSigmaKn} min={0} max={10} step={0.1} unit="kn"
-        onChange={(v) => patch({ mcTargetSpeedSigmaKn: v })} />
-
-      {proj && (
-        <div style={{ fontSize: 13, lineHeight: 1.55, color: "#cbd5e1", marginTop: 2 }}>
-          <div>
-            {t.lkpAtStart}（+{fmtHr(inputs.mcLkpElapsedHr)}）:{" "}
-            <span style={{ fontFamily: "ui-monospace, monospace" }}>
-              {fmtLngLat(proj.atStart, order)}
-            </span>
-            {" · "}{(inputs.mcTargetSpeedKn * inputs.mcLkpElapsedHr).toFixed(1)} nm
-          </div>
-          {proj.atEnd && (
-            <div>
-              {t.lkpAtEnd}:{" "}
-              <span style={{ fontFamily: "ui-monospace, monospace" }}>
-                {fmtLngLat(proj.atEnd, order)}
-              </span>
-            </div>
-          )}
-          {proj.insideAtStart === false && <div style={{ ...warnBox, marginTop: 4 }}>{t.lkpOutside}</div>}
+      {leeway ? (
+        <div style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.5 }}>
+          {lang === "en"
+            ? "Leeway drift is on: the target moves with forecast current + wind (section ⓪), so course / speed are not used."
+            : "已啟用 Leeway 漂流：目標隨海流＋風場預報移動（見 ⓪），不使用航向 / 航速。"}
         </div>
+      ) : (
+      <>
+        <NumField label={t.targetCourse} value={inputs.mcTargetCourseDeg} min={0} max={359} step={1} unit="°"
+          onChange={(v) => patch({ mcTargetCourseDeg: v })} />
+        <NumField label={t.targetCourseSigma} value={inputs.mcTargetCourseSigmaDeg} min={0} max={180} step={1} unit="°"
+          onChange={(v) => patch({ mcTargetCourseSigmaDeg: v })} />
+        <NumField label={t.targetSpeed} value={inputs.mcTargetSpeedKn} min={0} max={40} step={0.5} unit="kn"
+          onChange={(v) => patch({ mcTargetSpeedKn: v })} />
+        <NumField label={t.targetSpeedSigma} value={inputs.mcTargetSpeedSigmaKn} min={0} max={10} step={0.1} unit="kn"
+          onChange={(v) => patch({ mcTargetSpeedSigmaKn: v })} />
+
+        {proj && (
+          <div style={{ fontSize: 13, lineHeight: 1.55, color: "#cbd5e1", marginTop: 2 }}>
+            <div>
+              {t.lkpAtStart}（+{fmtHr(inputs.mcLkpElapsedHr)}）:{" "}
+              <span style={{ fontFamily: "ui-monospace, monospace" }}>
+                {fmtLngLat(proj.atStart, order)}
+              </span>
+              {" · "}{(inputs.mcTargetSpeedKn * inputs.mcLkpElapsedHr).toFixed(1)} nm
+            </div>
+            {proj.atEnd && (
+              <div>
+                {t.lkpAtEnd}:{" "}
+                <span style={{ fontFamily: "ui-monospace, monospace" }}>
+                  {fmtLngLat(proj.atEnd, order)}
+                </span>
+              </div>
+            )}
+            {proj.insideAtStart === false && <div style={{ ...warnBox, marginTop: 4 }}>{t.lkpOutside}</div>}
+          </div>
+        )}
+      </>
       )}
       <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>{t.lkpNote}</div>
     </div>
@@ -1781,31 +1794,41 @@ const warnBox: React.CSSProperties = {
 const MOB_TEXT = {
   zh: {
     title: "⓪ 落水（MOB）· 漂流推算",
-    intro: "點地圖標出落水位置 → 以 seacurrent 海流＋風場、OpenDrift Leeway 係數推算粒子漂流 → 作為下方事前分布，接著框搜索區、產生航線、派機。",
+    intro: "點地圖標落水點，以 seacurrent 海流＋風場預報推算漂流，再一路排到派機。",
     pick: "點地圖標落水位置", picking: "點地圖上的落水位置…", cancel: "取消",
     model: "漂流模型", linear: "直線（航向航速）", leeway: "Leeway（海流＋風）",
-    object: "落水物", time: "落水時刻（台北）", now: "現在", sigma: "位置誤差 1σ", onScene: "落水 → 開始搜索",
+    lkp: "落水位置", object: "落水物", time: "落水時刻（台北）", now: "現在",
+    sigma: "位置誤差 1σ", onScene: "落水 → 開始搜索",
     loading: "下載海流 / 風場預報…", running: "計算漂流…", stale: "參數已變更，重算中…",
     error: "漂流計算失敗", retry: "重新計算",
     extrapolated: "落水時刻＋推算時數超出 seacurrent 預報範圍，超出部分沿用端點的場（海流 / 風不再變化），結果僅供參考。",
-    forecast: "預報發布", viewHour: "地圖顯示", midSearch: "搜索期中點",
+    forecast: "預報發布", viewHour: "地圖顯示", midSearch: "搜索期中點", play: "播放", pause: "暫停",
     drift: "質心漂移", stranded: "擱淺（觸岸）", spread: "散布 1σ（東 / 北）",
-    areaFromDrift: "以 95% 粒子設搜索區", windMissing: "部分粒子漂出風場範圍，該段只算海流",
-    needBayes: "會自動開啟「目標機率分布 · 依 LKP」",
+    strandedNote: "觸岸粒子（橘）代表可能已漂上岸，需另派岸際搜索。",
+    windMissing: "部分粒子漂出風場範圍，該段只算海流",
+    next: "下一步",
+    step1: "以 95% 粒子設搜索區", step2: "套用最佳搜索矩形（依可用架數）", step3: "產生搜索航線",
+    step4: "到下方「航線」區勾選無人機並下達",
+    needArea: "先完成上一步",
   },
   en: {
     title: "⓪ Man overboard · drift",
-    intro: "Mark the MOB position on the map → particles drift with seacurrent's current + wind forecast using OpenDrift Leeway coefficients → used as the prior below; then set the area, generate tracks and assign assets.",
+    intro: "Mark the MOB point; drift is computed from seacurrent's current + wind forecast, then carried through to tasking assets.",
     pick: "Mark MOB position on map", picking: "Click the MOB position on the map…", cancel: "Cancel",
     model: "Drift model", linear: "Linear (course/speed)", leeway: "Leeway (current + wind)",
-    object: "Object", time: "MOB time (Taipei)", now: "Now", sigma: "Position error 1σ", onScene: "MOB → search start",
+    lkp: "MOB position", object: "Object", time: "MOB time (Taipei)", now: "Now",
+    sigma: "Position error 1σ", onScene: "MOB → search start",
     loading: "Downloading current / wind forecast…", running: "Computing drift…", stale: "Parameters changed, recomputing…",
     error: "Drift failed", retry: "Recompute",
     extrapolated: "MOB time + drift hours run past the seacurrent forecast; the end-point field is held constant beyond it, so treat results as indicative.",
-    forecast: "Forecast issued", viewHour: "Map shows", midSearch: "mid-search",
+    forecast: "Forecast issued", viewHour: "Map shows", midSearch: "mid-search", play: "Play", pause: "Pause",
     drift: "Centroid drift", stranded: "Stranded (ashore)", spread: "Spread 1σ (E / N)",
-    areaFromDrift: "Set area to 95% of particles", windMissing: "Some particles left the wind grid; current only there",
-    needBayes: "Turns on Target distribution (from LKP) automatically",
+    strandedNote: "Stranded particles (orange) may have washed ashore; consider a shoreline search.",
+    windMissing: "Some particles left the wind grid; current only there",
+    next: "Next steps",
+    step1: "Set area to 95% of particles", step2: "Apply optimal rectangle (for available assets)", step3: "Generate search tracks",
+    step4: "Pick drones and task them in the Tracks section below",
+    needArea: "Finish the previous step first",
   },
 } as const;
 
@@ -1818,7 +1841,28 @@ function parseTaipei(v: string): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-function MobDriftSection({ lang, fmtHr }: { lang: "zh" | "en"; fmtHr: (h: number) => string }) {
+/** 第 h 小時粒子雲相對落水點的質心漂移、散布、擱淺比例 */
+function driftStats(res: NonNullable<ReturnType<typeof searchPlannerStore.getDrift>["result"]>, h: number, lkp: LngLat) {
+  const pos = res.hourly[h]!;
+  const st = res.strandedHourly[h]!;
+  const [lng0, lat0] = lkp;
+  const kx = 60 * Math.cos((lat0 * Math.PI) / 180);
+  let sx = 0, sy = 0, sxx = 0, syy = 0, ns = 0;
+  for (let i = 0; i < res.count; i++) {
+    const x = (pos[i * 2]! - lng0) * kx, y = (pos[i * 2 + 1]! - lat0) * 60;
+    sx += x; sy += y; sxx += x * x; syy += y * y; ns += st[i]!;
+  }
+  const mx = sx / res.count, my = sy / res.count;
+  return {
+    distNm: Math.hypot(mx, my),
+    brg: ((Math.atan2(mx, my) * 180) / Math.PI + 360) % 360,
+    sdE: Math.sqrt(Math.max(0, sxx / res.count - mx * mx)),
+    sdN: Math.sqrt(Math.max(0, syy / res.count - my * my)),
+    strandedPct: (ns / res.count) * 100,
+  };
+}
+
+function MobDriftSection({ t, lang, fmtHr }: { t: SearchStrings; lang: "zh" | "en"; fmtHr: (h: number) => string }) {
   const m = MOB_TEXT[lang];
   const inputs = searchPlannerStore.getInputs();
   const drift = searchPlannerStore.getDrift();
@@ -1829,30 +1873,26 @@ function MobDriftSection({ lang, fmtHr }: { lang: "zh" | "en"; fmtHr: (h: number
   const viewHour = searchPlannerStore.getDriftViewHour();
   const mid = midSearchElapsedHr();
   const current = searchPlannerStore.isDriftCurrent();
-
-  // 第 viewHour 小時的質心漂移、散布、擱淺比例
-  let stats: { distNm: number; brg: number; sdE: number; sdN: number; strandedPct: number } | null = null;
-  if (res && inputs.mcLkp) {
-    const h = Math.min(viewHour, res.hours);
-    const pos = res.hourly[h]!;
-    const st = res.strandedHourly[h]!;
-    const [lng0, lat0] = inputs.mcLkp;
-    const kx = 60 * Math.cos((lat0 * Math.PI) / 180);
-    let sx = 0, sy = 0, sxx = 0, syy = 0, ns = 0;
-    for (let i = 0; i < res.count; i++) {
-      const x = (pos[i * 2]! - lng0) * kx, y = (pos[i * 2 + 1]! - lat0) * 60;
-      sx += x; sy += y; sxx += x * x; syy += y * y; ns += st[i]!;
-    }
-    const mx = sx / res.count, my = sy / res.count;
-    stats = {
-      distNm: Math.hypot(mx, my),
-      brg: ((Math.atan2(mx, my) * 180) / Math.PI + 360) % 360,
-      sdE: Math.sqrt(Math.max(0, sxx / res.count - mx * mx)),
-      sdN: Math.sqrt(Math.max(0, syy / res.count - my * my)),
-      strandedPct: (ns / res.count) * 100,
-    };
-  }
   const busy = drift.status === "loading" || drift.status === "running";
+  const ready = !!res && current && !busy;
+  const [playing, setPlaying] = useState(false);
+
+  // 播放：每 0.4 秒前進一小時，到尾自動停
+  useEffect(() => {
+    if (!playing || !ready || !res) return;
+    const id = window.setInterval(() => {
+      const h = searchPlannerStore.getDriftViewHour();
+      if (h >= res.hours) { setPlaying(false); return; }
+      searchPlannerStore.setDriftViewHour(h + 1);
+    }, 400);
+    return () => clearInterval(id);
+  }, [playing, ready, res]);
+
+  const stats = ready && inputs.mcLkp ? driftStats(res!, Math.min(viewHour, res!.hours), inputs.mcLkp) : null;
+  const { a, b } = searchPlannerStore.getCorners();
+  const hasArea = !!(a && b);
+  const sol = ready ? solve() : null;
+  const hasTracks = searchPlannerStore.getTracks().length > 0;
 
   return (
     <Section title={m.title}>
@@ -1869,7 +1909,6 @@ function MobDriftSection({ lang, fmtHr }: { lang: "zh" | "en"; fmtHr: (h: number
           <LifeBuoy size={15} /> {m.pick}
         </button>
       )}
-      {!inputs.bayesEnabled && <div style={{ fontSize: 13, color: "#64748b" }}>{m.needBayes}</div>}
 
       {inputs.bayesEnabled && inputs.priorFromLkp && (
         <Row label={m.model}>
@@ -1882,6 +1921,9 @@ function MobDriftSection({ lang, fmtHr }: { lang: "zh" | "en"; fmtHr: (h: number
 
       {leeway && (
         <>
+          {/* 落水位置：度分秒輸入 / 重新點地圖（只移動位置，不重設時刻與誤差） */}
+          <LkpInput key={JSON.stringify(inputs.mcLkp)} t={t} title={m.lkp} accent="#f87171"
+            value={inputs.mcLkp} onApply={(p) => patch({ mcLkp: p })} pickTarget={{ kind: "mc" }} />
           <Row label={m.object}>
             <select style={select} value={inputs.leewayObjectId}
               onChange={(e) => patch({ leewayObjectId: Number(e.target.value) })}>
@@ -1903,7 +1945,8 @@ function MobDriftSection({ lang, fmtHr }: { lang: "zh" | "en"; fmtHr: (h: number
             onChange={(v) => patch({ mcLkpElapsedHr: v })} />
 
           {(busy || (!current && drift.status !== "error")) && (
-            <div style={{ fontSize: 14, color: "#facc15" }}>
+            <div style={{ fontSize: 14, color: "#facc15", display: "flex", alignItems: "center", gap: 6 }}>
+              <RotateCcw size={13} />
               {drift.status === "loading" ? `${m.loading} ${drift.framesLoaded}`
                 : drift.status === "running" ? m.running : m.stale}
             </div>
@@ -1917,38 +1960,83 @@ function MobDriftSection({ lang, fmtHr }: { lang: "zh" | "en"; fmtHr: (h: number
             </div>
           )}
 
-          {res && current && !busy && (
+          {ready && res && (
             <>
               <Row label={m.viewHour}>
+                <button className="wg-btn" style={{ ...smallBtn, padding: "4px 6px" }} title={playing ? m.pause : m.play}
+                  onClick={() => {
+                    if (!playing && viewHour >= res.hours) searchPlannerStore.setDriftViewHour(0);
+                    setPlaying((p) => !p);
+                  }}>
+                  {playing ? <Pause size={12} /> : <Play size={12} />}
+                </button>
                 <input type="range" min={0} max={res.hours} step={1} value={viewHour}
-                  onChange={(e) => searchPlannerStore.setDriftViewHour(Number(e.target.value))}
+                  onChange={(e) => { setPlaying(false); searchPlannerStore.setDriftViewHour(Number(e.target.value)); }}
                   style={{ flex: 1, accentColor: "#ef4444", minWidth: 0 }} />
-                <span style={{ fontSize: 14, color: "#e2e8f0", width: 56, textAlign: "right", fontFamily: "ui-monospace, monospace" }}>
+                <span style={{ fontSize: 14, color: "#e2e8f0", width: 52, textAlign: "right", fontFamily: "ui-monospace, monospace" }}>
                   T+{viewHour}h
                 </span>
               </Row>
-              <div style={{ fontSize: 13, color: "#64748b" }}>
-                {fmtTaipei(res.startMs + viewHour * 3_600_000).replace("T", " ")} · {m.midSearch} T+{mid.toFixed(1)}h（{fmtHr(mid)}）
+              <div style={{ fontSize: 13, color: "#64748b", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <span>{fmtTaipei(res.startMs + viewHour * 3_600_000).replace("T", " ")}</span>
+                <button className="wg-btn" style={{ ...chip, padding: "1px 7px", fontSize: 12 }}
+                  onClick={() => { setPlaying(false); searchPlannerStore.setDriftViewHour(Math.round(mid)); }}>
+                  {m.midSearch} T+{mid.toFixed(1)}h{lang === "en" ? ` (${fmtHr(mid)})` : `（${fmtHr(mid)}）`}
+                </button>
               </div>
               {stats && (
-                <div style={{ ...resultBox, marginBottom: 0 }}>
+                <div style={{ ...resultBox, marginBottom: 0, padding: 10 }}>
                   <KV k={m.drift} v={`${stats.distNm.toFixed(1)} nm @ ${stats.brg.toFixed(0)}°`} />
                   <KV k={m.spread} v={`${stats.sdE.toFixed(1)} / ${stats.sdN.toFixed(1)} nm`} />
-                  <KV k={m.stranded} v={`${stats.strandedPct.toFixed(1)}%`} />
+                  <KV k={m.stranded} v={`${stats.strandedPct.toFixed(1)}%`} highlight={stats.strandedPct >= 5} />
                   <KV k={m.forecast} v={drift.baseTime ? `${drift.baseTime.slice(0, 16).replace("T", " ")} UTC` : "—"} />
+                  {stats.strandedPct >= 5 && <div style={{ fontSize: 12, color: "#fdba74", marginTop: 4 }}>{m.strandedNote}</div>}
                 </div>
               )}
               {drift.coverage && (drift.coverage.currentExtrapolated || drift.coverage.windExtrapolated) && (
                 <div style={warnBox}>{m.extrapolated}</div>
               )}
               {res.windMissingSteps > 0 && <div style={{ fontSize: 13, color: "#fdba74" }}>{m.windMissing}</div>}
-              <button className="wg-btn" style={primaryBtn} onClick={() => searchPlannerStore.setAreaFromDrift(0.95)}>
-                <Crosshair size={13} /> {m.areaFromDrift}
-              </button>
+
+              {/* 下一步：落水 → 搜索區 → 最佳矩形 → 航線 → 派機 */}
+              <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 4 }}>{m.next}</div>
+              <MobStep n={1} done={hasArea} label={m.step1}
+                onClick={() => searchPlannerStore.setAreaFromDrift(0.95)} />
+              <MobStep n={2} done={false} label={m.step2} disabled={!sol?.rectangle} hint={!hasArea ? m.needArea : undefined}
+                onClick={() => searchPlannerStore.applyOptimalRectangle()} />
+              <MobStep n={3} done={hasTracks} label={m.step3} disabled={!sol} hint={!hasArea ? m.needArea : undefined}
+                onClick={() => searchPlannerStore.generateTracks()} />
+              <MobStep n={4} done={searchPlannerStore.getAssignedUnitIds().length > 0} label={m.step4} disabled />
             </>
           )}
         </>
       )}
     </Section>
+  );
+}
+
+function MobStep({ n, label, done, disabled = false, hint, onClick }: {
+  n: number; label: string; done: boolean; disabled?: boolean; hint?: string; onClick?: () => void;
+}) {
+  const clickable = !!onClick && !disabled;
+  return (
+    <button className={clickable ? "wg-btn" : undefined} disabled={!clickable} onClick={onClick} title={hint}
+      style={{
+        display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+        padding: "6px 8px", borderRadius: 5, fontSize: 14, fontFamily: "inherit",
+        cursor: clickable ? "pointer" : "default",
+        background: done ? "rgba(74,222,128,0.12)" : clickable ? "rgba(250,204,21,0.12)" : "rgba(30,41,59,0.5)",
+        border: `1px solid ${done ? "rgba(74,222,128,0.45)" : clickable ? "rgba(250,204,21,0.45)" : "rgba(148,163,184,0.2)"}`,
+        color: done ? "#bbf7d0" : clickable ? "#fef9c3" : "#94a3b8",
+      }}>
+      <span style={{
+        width: 20, height: 20, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 12, fontWeight: 700,
+        background: done ? "#16a34a" : "rgba(148,163,184,0.25)", color: done ? "#fff" : "#e2e8f0",
+      }}>
+        {done ? <Check size={12} /> : n}
+      </span>
+      <span style={{ flex: 1 }}>{label}</span>
+    </button>
   );
 }

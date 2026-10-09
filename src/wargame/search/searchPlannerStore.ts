@@ -555,10 +555,12 @@ async function computeDrift(): Promise<void> {
   if (!usesLeeway()) return;
   const lkp = inputs.mcLkp;
   if (!lkp) { drift = { ...drift, status: "error", error: "尚未設定落水位置（LKP）" }; notify(); return; }
+  // 落水時刻未指定 → 固定成「現在」，之後重算（改物件類別等）才會用同一個時刻，面板顯示也一致
+  if (inputs.lkpTimeMs === null) inputs = { ...inputs, lkpTimeMs: Math.floor(Date.now() / 60_000) * 60_000 };
   const seq = ++driftSeq;
   const key = driftKey();
   const hours = driftHorizonHr();
-  const startMs = inputs.lkpTimeMs ?? Date.now();
+  const startMs = inputs.lkpTimeMs!;
   drift = { ...drift, status: "loading", error: "", framesLoaded: 0 };
   notify();
   try {
@@ -578,6 +580,7 @@ async function computeDrift(): Promise<void> {
     }, fields.env);
     if (seq !== driftSeq) return;
     drift = { status: "ready", error: "", framesLoaded: drift.framesLoaded, result, key, coverage: fields.coverage, baseTime: fields.baseTime };
+    mcResult = null;   // 舊的蒙地卡羅是對舊漂流算的
     driftViewHour = Math.min(result.hours, Math.round(midSearchElapsedHr()));
     if (usesLeeway() && driftUsable()) {
       particles = particlesFromDrift(result, midSearchElapsedHr());
@@ -1035,7 +1038,13 @@ export const searchPlannerStore = {
     if (!sol || tracks.length === 0 || !box) return null;
     const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
     const centre = measureBox(box).centre;
-    const distribution: TargetDistribution = inputs.mcDistributionKind === "lkp"
+    // Leeway 漂流：目標樣本 = 漂流粒子在「搜索開始」時刻的位置與速度（不再以航向航速直線推算）
+    const leewaySamples = inputs.mcDistributionKind === "lkp" && usesLeeway() && driftUsable()
+      ? particlesFromDrift(drift.result!, inputs.mcLkpElapsedHr)
+      : null;
+    const distribution: TargetDistribution = leewaySamples
+      ? { kind: "samples", points: leewaySamples }
+      : inputs.mcDistributionKind === "lkp"
       ? {
         kind: "lkp", lkp: inputs.mcLkp ?? centre, sigmaNm: inputs.mcSigmaNm,
         courseDeg: inputs.mcTargetCourseDeg, courseSigmaDeg: inputs.mcTargetCourseSigmaDeg,
@@ -1051,7 +1060,8 @@ export const searchPlannerStore = {
       sweepWidthNm: W,
       speedKn: inputs.speedKn,
       distribution,
-      driftKn: inputs.mcDriftKn,
+      // 漂流粒子的速度已含海流＋風壓，再加使用者的漂移會重複計算
+      driftKn: leewaySamples ? 0 : inputs.mcDriftKn,
       driftBearingDeg: inputs.mcDriftBearingDeg,
       navErrorSigmaNm: inputs.mcNavErrorSigmaNm,
       sensorAvailability: inputs.mcSensorAvailability,

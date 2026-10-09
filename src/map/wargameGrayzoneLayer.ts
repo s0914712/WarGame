@@ -14,6 +14,7 @@ import { editorStore } from "../wargame/editor/editorStore";
 import { hexStore } from "../wargame/hex/hexStore";
 import { searchPlannerStore } from "../wargame/search/searchPlannerStore";
 import { rulerStore } from "./rulerTool";
+import { langStore } from "../wargame/i18n/lang";
 
 const SRC = {
   cables: "wg-gz-cables-src",
@@ -35,14 +36,27 @@ const CLICKABLE = ["wg-gz-highrisk", "wg-gz-heads", "wg-gz-dark", "wg-gz-cables-
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
+/** 航跡顏色圖例（面板與地圖共用同一份，改色只改這裡） */
+export const TRACK_TYPE_LEGEND = [
+  { key: "fishing", color: "#22d3ee" },
+  { key: "cargo", color: "#a3e635" },
+  { key: "tanker", color: "#fbbf24" },
+  { key: "gov", color: "#f472b6" },
+  { key: "other", color: "#94a3b8" },
+  { key: "critical", color: "#ef4444" },
+  { key: "high", color: "#f97316" },
+] as const;
+const LEGEND_COLOR = Object.fromEntries(TRACK_TYPE_LEGEND.map((l) => [l.key, l.color])) as Record<
+  (typeof TRACK_TYPE_LEGEND)[number]["key"], string>;
+
 /** 船種 → 航跡顏色（gov 類別來自 grayzone 的公務船判定） */
 const TYPE_COLOR: unknown[] = [
   "match", ["get", "type"],
-  "fishing", "#22d3ee",
-  "cargo", "#a3e635",
-  "tanker", "#fbbf24",
-  ["coastguard", "coast_guard", "msa", "research", "navy", "gov"], "#f472b6",
-  "#94a3b8",
+  "fishing", LEGEND_COLOR.fishing,
+  "cargo", LEGEND_COLOR.cargo,
+  "tanker", LEGEND_COLOR.tanker,
+  ["coastguard", "coast_guard", "msa", "research", "navy", "gov"], LEGEND_COLOR.gov,
+  LEGEND_COLOR.other,
 ];
 
 interface Built {
@@ -53,11 +67,16 @@ interface Built {
   dark: GeoJSON.FeatureCollection;
 }
 
-/** 相鄰兩點換算航速超過此值 → 視為 AIS 跳點（偽造 / 斷訊），斷線不連 */
-const MAX_PLAUSIBLE_KN = 60;
+/**
+ * 相鄰兩點換算航速超過此值 → 視為 AIS 跳點（偽造 / 斷訊），斷線不連。
+ * 依船種：漁船 24h 實測 99% 航段 ≤ 9.4 kn，18 kn 以上幾乎都是偽造跳點
+ * （例：閩龍漁 66818 11 小時「跑」320 浬 = 29 kn，接著 0.8 小時跳回）；其他船種 35 kn。
+ */
+const MAX_PLAUSIBLE_KN = 35;
+const MAX_PLAUSIBLE_KN_FISHING = 18;
 
 /** 航跡依跳點切段；單點段丟掉（最後位置另由 heads 圖層畫） */
-function splitJumps(pts: TrackPoint[]): [number, number][][] {
+function splitJumps(pts: TrackPoint[], maxKn: number): [number, number][][] {
   const segs: [number, number][][] = [];
   let cur: [number, number][] = [];
   for (let i = 0; i < pts.length; i++) {
@@ -68,7 +87,7 @@ function splitJumps(pts: TrackPoint[]): [number, number][][] {
       const dLon = (p[0] - prev[0]) * 60 * Math.cos(((p[1] + prev[1]) / 2) * Math.PI / 180);
       const nm = Math.hypot(dLat, dLon);
       const hours = Math.max((p[2] - prev[2]) / 3600, 1 / 60);
-      if (nm / hours > MAX_PLAUSIBLE_KN) {
+      if (nm / hours > maxKn) {
         if (cur.length >= 2) segs.push(cur);
         cur = [];
       }
@@ -89,7 +108,7 @@ function build(feed: GrayzoneFeed | null): Built {
   const heads: GeoJSON.Feature[] = [];
   for (const v of feed.tracks.vessels) {
     const props = { mmsi: v.mmsi, name: v.name, type: v.type, risk: v.risk ?? "" };
-    const segs = splitJumps(v.pts);
+    const segs = splitJumps(v.pts, v.type === "fishing" ? MAX_PLAUSIBLE_KN_FISHING : MAX_PLAUSIBLE_KN);
     if (segs.length) {
       tracks.push({ type: "Feature", properties: props, geometry: { type: "MultiLineString", coordinates: segs } });
     }
@@ -161,8 +180,8 @@ function addLayers(map: MapboxMap): void {
         id: "wg-gz-tracks", type: "line", source: SRC.tracks,
         layout: { visibility: vis(k), "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": ["case", ["==", ["get", "risk"], "critical"], "#ef4444",
-            ["==", ["get", "risk"], "high"], "#f97316", TYPE_COLOR] as unknown as string,
+          "line-color": ["case", ["==", ["get", "risk"], "critical"], LEGEND_COLOR.critical,
+            ["==", ["get", "risk"], "high"], LEGEND_COLOR.high, TYPE_COLOR] as unknown as string,
           "line-width": ["case", ["!=", ["get", "risk"], ""], 2, 1] as unknown as number,
           "line-opacity": 0.5,
         },
@@ -181,7 +200,7 @@ function addLayers(map: MapboxMap): void {
         id: "wg-gz-highrisk-halo", type: "circle", source: SRC.highRisk,
         layout: { visibility: vis(k) },
         paint: {
-          "circle-color": ["match", ["get", "risk_level"], "critical", "#ef4444", "#f97316"] as unknown as string,
+          "circle-color": ["match", ["get", "risk_level"], "critical", LEGEND_COLOR.critical, LEGEND_COLOR.high] as unknown as string,
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 8, 9, 14],
           "circle-opacity": 0.18, "circle-blur": 0.4,
         },
@@ -190,7 +209,7 @@ function addLayers(map: MapboxMap): void {
         id: "wg-gz-highrisk", type: "circle", source: SRC.highRisk,
         layout: { visibility: vis(k) },
         paint: {
-          "circle-color": ["match", ["get", "risk_level"], "critical", "#ef4444", "#f97316"] as unknown as string,
+          "circle-color": ["match", ["get", "risk_level"], "critical", LEGEND_COLOR.critical, LEGEND_COLOR.high] as unknown as string,
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 3.5, 9, 6],
           "circle-stroke-color": "#fff", "circle-stroke-width": 1.2,
         },
@@ -203,45 +222,62 @@ function esc(s: unknown): string {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
 
+const POPUP_TEXT = {
+  zh: {
+    noName: "（無船名）", critical: "極高風險", high: "高風險", pts: "分", type: "船種", lastSignal: "最後訊號",
+    nearCables: "鄰近海纜", sanction: "制裁", sanctionHit: "名單命中", speed: "航速", n24: "24h 點數",
+    darkTitle: "SAR 暗船偵測", date: "日期", detections: "偵測次數", darkNote: "衛星雷達看得到、AIS 沒有對應訊號的船",
+    cableType: "類型", fault: "障礙", since: "起", repairBy: "預計修復", status: "狀態", normal: "正常",
+  },
+  en: {
+    noName: "(no name)", critical: "Critical", high: "High risk", pts: "pts", type: "Type", lastSignal: "Last signal",
+    nearCables: "Near cables", sanction: "Sanctions", sanctionHit: "listed", speed: "Speed", n24: "24h fixes",
+    darkTitle: "SAR dark-vessel detection", date: "Date", detections: "Detections", darkNote: "Seen by satellite radar with no matching AIS",
+    cableType: "Type", fault: "Fault", since: "since", repairBy: "est. repair", status: "Status", normal: "Normal",
+  },
+} as const;
+
 function fmtTime(iso: string | number): string {
   const d = typeof iso === "number" ? new Date(iso * 1000) : new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toLocaleString(langStore.get() === "en" ? "en-GB" : "zh-TW",
+    { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function popupHtml(layerId: string, p: Record<string, unknown>): string {
+  const L = POPUP_TEXT[langStore.get() === "en" ? "en" : "zh"];
   const row = (k: string, v: string) => `<div><span style="color:#64748b">${k}</span> ${v}</div>`;
   if (layerId === "wg-gz-highrisk") {
     let flags: string[] = [];
     try { flags = JSON.parse(String(p.flags ?? "[]")) as string[]; } catch { /* ignore */ }
-    const lvl = p.risk_level === "critical" ? "極高風險" : "高風險";
-    return `<b>${esc(p.name) || "（無船名）"}</b> <span style="color:${p.risk_level === "critical" ? "#ef4444" : "#f97316"}">${lvl} · ${esc(p.risk_score)} 分</span>`
-      + row("MMSI", esc(p.mmsi)) + row("船種", esc(p.vessel_type))
-      + row("最後位置", fmtTime(String(p.last_seen)))
-      + (p.cables ? row("鄰近海纜", esc(p.cables)) : "")
-      + (p.sanctioned === true || p.sanctioned === "true" ? row("制裁", '<span style="color:#ef4444">名單命中</span>') : "")
+    const crit = p.risk_level === "critical";
+    return `<b>${esc(p.name) || L.noName}</b> <span style="color:${crit ? LEGEND_COLOR.critical : LEGEND_COLOR.high}">${crit ? L.critical : L.high} · ${esc(p.risk_score)} ${L.pts}</span>`
+      + row("MMSI", esc(p.mmsi)) + row(L.type, esc(p.vessel_type))
+      + row(L.lastSignal, fmtTime(String(p.last_seen)))
+      + (p.cables ? row(L.nearCables, esc(p.cables)) : "")
+      + (p.sanctioned === true || p.sanctioned === "true" ? row(L.sanction, `<span style="color:#ef4444">${L.sanctionHit}</span>`) : "")
       + (flags.length ? `<ul style="margin:4px 0 0 16px;padding:0">${flags.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>` : "");
   }
   if (layerId === "wg-gz-heads") {
     const spd = Number(p.speed);
-    return `<b>${esc(p.name) || "（無船名）"}</b>`
-      + row("MMSI", esc(p.mmsi)) + row("船種", esc(p.type))
-      + row("最後訊號", fmtTime(Number(p.t)))
-      + row("航速", spd >= 0 ? `${spd} kn` : "—")
-      + row("24h 點數", esc(p.n));
+    return `<b>${esc(p.name) || L.noName}</b>`
+      + row("MMSI", esc(p.mmsi)) + row(L.type, esc(p.type))
+      + row(L.lastSignal, fmtTime(Number(p.t)))
+      + row(L.speed, spd >= 0 ? `${spd} kn` : "—")
+      + row(L.n24, esc(p.n));
   }
   if (layerId === "wg-gz-dark") {
-    return `<b>SAR 暗船偵測</b>` + row("日期", esc(p.date)) + row("偵測次數", esc(p.n))
-      + `<div style="color:#64748b;margin-top:4px">衛星雷達看得到、AIS 沒有對應訊號的船</div>`;
+    return `<b>${L.darkTitle}</b>` + row(L.date, esc(p.date)) + row(L.detections, esc(p.n))
+      + `<div style="color:#64748b;margin-top:4px">${L.darkNote}</div>`;
   }
   let faults: { segment?: string; fault_date?: string; estimated_repair?: string; location_zh?: string }[] = [];
   try { faults = JSON.parse(String(p.faults ?? "[]")); } catch { /* ignore */ }
-  return `<b>${esc(p.name)}</b>` + (p.cable_type ? row("類型", esc(p.cable_type)) : "")
+  return `<b>${esc(p.name)}</b>` + (p.cable_type ? row(L.cableType, esc(p.cable_type)) : "")
     + (faults.length
-      ? faults.map((f) => `<div style="margin-top:4px;color:#b91c1c">障礙 ${esc(f.segment)}：${esc(f.fault_date)} 起`
-        + (f.estimated_repair ? `，預計 ${esc(f.estimated_repair)} 修復` : "")
+      ? faults.map((f) => `<div style="margin-top:4px;color:#b91c1c">${L.fault} ${esc(f.segment)}：${esc(f.fault_date)} ${L.since}`
+        + (f.estimated_repair ? `，${L.repairBy} ${esc(f.estimated_repair)}` : "")
         + (f.location_zh ? `<br/><span style="color:#64748b">${esc(f.location_zh)}</span>` : "") + `</div>`).join("")
-      : row("狀態", "正常"));
+      : row(L.status, L.normal));
 }
 
 function interactive(): boolean {
@@ -270,12 +306,14 @@ export function attachWargameGrayzoneLayer(map: MapboxMap): () => void {
     for (const k of ADD_ORDER) {
       const v = grayzoneStore.isOn(k) ? "visible" : "none";
       for (const id of GROUPS[k]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", v);
+      // 關掉某組時，若 popup 正指著該組的圖徵就一起關
+      if (v === "none" && popupLayer && GROUPS[k].includes(popupLayer)) { popup.remove(); popupLayer = null; }
     }
   };
+  const popup = new mapboxgl.Popup({ closeButton: true, maxWidth: "300px", className: "wg-gz-popup" });
+  let popupLayer: string | null = null;
   const unsub = grayzoneStore.subscribe(sync);
   grayzoneStore.ensureLoaded();
-
-  const popup = new mapboxgl.Popup({ closeButton: true, maxWidth: "300px", className: "wg-gz-popup" });
   const onClick = (e: MapMouseEvent) => {
     if (!interactive()) return;
     if (map.getLayer(SYMBOL_LAYER_ID) && map.queryRenderedFeatures(e.point, { layers: [SYMBOL_LAYER_ID] }).length) return;
@@ -287,15 +325,22 @@ export function attachWargameGrayzoneLayer(map: MapboxMap): () => void {
     )[0];
     if (!f) return;
     const props = { ...(f.properties ?? {}) } as Record<string, unknown>;
+    popupLayer = f.layer!.id;
     popup.setLngLat(e.lngLat)
       .setHTML(`<div style="font-size:12px;line-height:1.5;color:#0f172a">${popupHtml(f.layer!.id, props)}</div>`)
       .addTo(map);
   };
   map.on("click", onClick);
 
+  // 可點的圖徵：游標變手指（只在一般操作模式；量測 / 規劃中游標交給各工具）
+  const onEnter = () => { if (interactive()) map.getCanvas().style.cursor = "pointer"; };
+  const onLeave = () => { if (interactive()) map.getCanvas().style.cursor = ""; };
+  for (const id of CLICKABLE) { map.on("mouseenter", id, onEnter); map.on("mouseleave", id, onLeave); }
+
   return () => {
     unsub();
     map.off("click", onClick);
+    for (const id of CLICKABLE) { map.off("mouseenter", id, onEnter); map.off("mouseleave", id, onLeave); }
     popup.remove();
     removeAll(map);
   };

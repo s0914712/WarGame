@@ -40,11 +40,14 @@ export interface SeaFieldsCoverage {
 
 const gridCache = new Map<string, Promise<Grid>>();
 let indexPromise: Promise<FrameIndex> | null = null;
+let indexHour = -1;
 
 function loadIndex(): Promise<FrameIndex> {
-  if (!indexPromise) {
-    // index 每 2 天換一次；以小時為單位的 query 避開 Pages 快取又不至於每次重抓
-    indexPromise = fetch(`${SEACURRENT_FRAMES_URL}/index.json?t=${Math.floor(Date.now() / 3_600_000)}`)
+  // index 每 2 天換一次；每小時最多重抓一次（頁面開著跨過新預報發布也會換到新的）
+  const hour = Math.floor(Date.now() / 3_600_000);
+  if (!indexPromise || hour !== indexHour) {
+    indexHour = hour;
+    indexPromise = fetch(`${SEACURRENT_FRAMES_URL}/index.json?t=${hour}`)
       .then((r) => { if (!r.ok) throw new Error(`index.json HTTP ${r.status}`); return r.json() as Promise<FrameIndex>; })
       .catch((e) => { indexPromise = null; throw e; });
   }

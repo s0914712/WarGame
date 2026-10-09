@@ -145,7 +145,7 @@
 - `grayzoneStore.ts`：四個子圖層開關（近 24h 航跡 / 高風險船 / SAR 暗船 / 海纜障礙，存 localStorage）+ 載入狀態。
   第一次勾選才 fetch `taiwan-grayzone-monitor` 的 `docs/pulse_feed.json`（其 `update-ais.yml` 每輪由
   `src/build_pulse_feed.py` 產生，~1 MB / gzip ~200 KB）；網址可用 `VITE_GRAYZONE_FEED_URL` 覆寫。
-- 圖層 `map/wargameGrayzoneLayer.ts`（六角格之上、單位之下；換算航速 > 60 kn 的 AIS 跳點斷線）；
+- 圖層 `map/wargameGrayzoneLayer.ts`（六角格之上、單位之下；換算航速超過合理值（漁船 18 kn、其他 35 kn）的 AIS 跳點斷線）；
   UI：桌面頂部列「情資」、行動版設定面板（`components/wargame/GrayzonePanel.tsx`）。純本機顯示，不進模擬、不同步多人。
 
 ### `src/wargame/llm/` — LLM 介接

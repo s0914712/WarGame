@@ -99,9 +99,8 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
           onClick={() => assetPanelStore.toggle()}>
           <Crosshair size={15} />{!iconOnly && (lang === "en" ? " Assets" : " 資產")}
         </BarButton>
-        <GrayzoneBarButton iconOnly={iconOnly} renderButton={({ active, onClick, children }) => (
-          <BarButton accent="#22d3ee" active={active} onClick={onClick}
-            title="灰色地帶情資：近 24h 船舶航跡、高風險船、SAR 暗船、海纜障礙（taiwan-grayzone-monitor）">
+        <GrayzoneBarButton iconOnly={iconOnly} renderButton={({ active, onClick, title, children }) => (
+          <BarButton accent="#22d3ee" active={active} onClick={onClick} title={title}>
             {children}
           </BarButton>
         )} />
