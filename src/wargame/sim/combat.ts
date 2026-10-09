@@ -168,7 +168,7 @@ export function runCombat(
         if (!selectOffenseWeapon(u, o, simSec)) continue;     // 無合適武器（域/射程/彈）→ 跳過
         const d = haversineKm([u.position.lng, u.position.lat], [o.position.lng, o.position.lat]);
         if (priority) {
-          const score = targetScore(priority, o.kind, d, u.core.rangeKm);
+          const score = targetScore(priority, o.kind, d, u.core.rangeKm, u.kind);
           if (score === null) continue;
           if (!best || score > best.score || (score === best.score && d < best.dist)) best = { id: o.id, dist: d, score };
         } else if (!best || d < best.dist) {

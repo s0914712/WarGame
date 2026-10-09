@@ -59,7 +59,10 @@ const TEXT = {
     note: "0 分 = 不主動攻擊該類（仍可用右鍵 / 指令卡下令攻擊）。只影響自動交戰；明確的攻擊命令不受限。",
     blendNote: (b: number) => `權衡 ${Math.round(b * 100)}%：差 1 分約需距離差 ${b >= 1 ? "∞" : Math.round((b * 0.2) / Math.max(1e-6, 1 - b) * 100)}% 射程才會改打較近的目標`,
     readonly: "多人對戰中由房主設定攻擊優序（各方自設將於後續版本開放）",
-    samWarn: "⚠ 戰機 / 無人機設為 0 分時，本方防空飛彈也不會自動接戰這類目標（攔截來襲飛彈不受影響）。若只想讓攻擊載具不打，之後可用「依攻擊方分別設定」。",
+    samWarn: "⚠ 本方防空飛彈對戰機 / 無人機為 0 分，不會自動接戰這類目標（攔截來襲飛彈不受影響）。",
+    samFix: "讓防空照打空中目標",
+    shooter: "攻擊方", allShooters: "全部（陣營預設）", inherit: "沿用預設", clearOverride: "清除此攻擊方覆寫",
+    shooterNote: "只改選定攻擊方對各類目標的分數；虛框數字為沿用陣營預設。",
     reconSoon: "偵察計畫建議（關注區、覆蓋缺口、派遣建議、一鍵套用）將在下一階段加入。",
   },
   en: {
@@ -70,17 +73,27 @@ const TEXT = {
     note: "0 = never auto-engage this category (explicit attack orders still work). Only affects automatic target selection.",
     blendNote: (b: number) => `Blend ${Math.round(b * 100)}%: a 1-point edge is overridden only by a distance gap above ${b >= 1 ? "∞" : Math.round((b * 0.2) / Math.max(1e-6, 1 - b) * 100)}% of weapon range`,
     readonly: "In multiplayer the host sets target priorities (per-player settings coming later)",
-    samWarn: "⚠ With aircraft / UAVs at 0, this side's SAMs also won't auto-engage them (intercepting incoming missiles is unaffected). Per-shooter priorities will cover the case where only strike assets should hold fire.",
+    samWarn: "⚠ This side's SAMs score aircraft / UAVs at 0 and won't auto-engage them (intercepting incoming missiles is unaffected).",
+    samFix: "Let air defence keep engaging air targets",
+    shooter: "Shooter", allShooters: "All (side default)", inherit: "inherits default", clearOverride: "Clear this shooter's overrides",
+    shooterNote: "Overrides only the selected shooter type; dashed numbers inherit the side default.",
     reconSoon: "Recon plan suggestions (areas of interest, coverage gaps, tasking, one-click apply) come in the next phase.",
   },
 } as const;
 
-export function AssetPanel({ top, left = 16 }: { top: number; left?: number }) {
+/**
+ * @param width / maxHeight 行動版用：寬度貼齊螢幕、高度避開底部 dock
+ */
+export function AssetPanel({ top, left = 16, width = ASSET_PANEL_WIDTH, maxHeight }: {
+  top: number; left?: number; width?: number | string; maxHeight?: string;
+}) {
   useSyncExternalStore(assetPanelStore.subscribe, assetPanelStore.isOpen, assetPanelStore.isOpen);
   useSyncExternalStore(scenarioStore.subscribe, scenarioStore.getState, scenarioStore.getState);
   const net = useSyncExternalStore(netStore.subscribe, netStore.get, netStore.get);
   const lang = useLang() === "en" ? "en" : "zh";
   const [selectedSide, setSelectedSide] = useState<SideId | null>(null);
+  /** null = 編輯陣營預設；否則編輯該攻擊方類別的覆寫 */
+  const [shooter, setShooter] = useState<TargetCategory | null>(null);
   const t = TEXT[lang];
   if (!open) return null;
 
@@ -111,13 +124,37 @@ export function AssetPanel({ top, left = 16 }: { top: number; left?: number }) {
   };
   const setWeight = (c: TargetCategory, w: number) => {
     if (!profile) return;
+    if (shooterCat) {
+      const cur = profile.byShooter?.[shooterCat] ?? {};
+      setProfile({ ...profile, byShooter: { ...profile.byShooter, [shooterCat]: { ...cur, [c]: w } } });
+      return;
+    }
     setProfile({ ...profile, weights: { ...profile.weights, [c]: w }, presetId: undefined });
   };
+  const clearShooterOverride = (cat: TargetCategory) => {
+    if (!profile?.byShooter) return;
+    const { [cat]: _drop, ...rest } = profile.byShooter;
+    setProfile({ ...profile, byShooter: Object.keys(rest).length > 0 ? rest : undefined });
+  };
+
+  // 本方有武裝的攻擊方類別（覆寫選單用）
+  const ownShooterCats = TARGET_CATEGORIES.filter((c) => Object.values(state.units).some(
+    (u) => u.sideId === sideId && u.hpCurrent > 0 && CATEGORY_OF[u.kind] === c && (u.ammoMax > 0 || u.core.rangeKm > 0),
+  ));
+  const shooterCat = shooter && ownShooterCats.includes(shooter) ? shooter : null;
+  const effective = (c: TargetCategory, sc: TargetCategory | null): { w: number; inherited: boolean } => {
+    const o = sc ? profile?.byShooter?.[sc]?.[c] : undefined;
+    if (o !== undefined) return { w: o, inherited: false };
+    return { w: profile?.weights[c] ?? DEFAULT_WEIGHT, inherited: sc !== null };
+  };
+  const hasSam = Object.values(state.units).some((u) => u.sideId === sideId && (u.kind === "sam_coastal" || u.kind === "sam_patriot"));
+  const samBlocked = !!profile && hasSam
+    && (effective("aircraft", "air_defense").w === 0 || effective("uav", "air_defense").w === 0);
 
   return (
     <div className="wg-fade-in" style={{
-      position: "absolute", top, left, zIndex: 26, width: ASSET_PANEL_WIDTH,
-      maxHeight: `calc(100vh - ${top + 24}px)`, overflowY: "auto",
+      position: "absolute", top, left, zIndex: 26, width,
+      maxHeight: maxHeight ?? `calc(100vh - ${top + 24}px)`, overflowY: "auto", boxSizing: "border-box",
       padding: "10px 12px", borderRadius: 10,
       background: "rgba(15, 23, 42, 0.95)", backdropFilter: "blur(6px)",
       border: "1px solid rgba(148, 163, 184, 0.3)", boxShadow: "0 10px 28px rgba(0,0,0,0.45)",
@@ -170,7 +207,7 @@ export function AssetPanel({ top, left = 16 }: { top: number; left?: number }) {
         <>
           {editable && (
             <PresetRow lang={lang} current={profile.presetId} label={t.presets}
-              onPick={(id) => setProfile(presetProfile(id, profile.blend))} customLabel={t.custom} />
+              onPick={(id) => setProfile({ ...presetProfile(id, profile.blend), byShooter: profile.byShooter })} customLabel={t.custom} />
           )}
           {profile.presetId && (
             <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.45 }}>
@@ -178,9 +215,28 @@ export function AssetPanel({ top, left = 16 }: { top: number; left?: number }) {
             </div>
           )}
 
+          {/* 攻擊方：陣營預設 / 各攻擊方類別覆寫 */}
+          {ownShooterCats.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, color: "#94a3b8" }}>{t.shooter}</span>
+              <button className="wg-btn" onClick={() => setShooter(null)}
+                style={{ ...chip, ...(shooterCat === null ? chipOn : {}) }}>{t.allShooters}</button>
+              {ownShooterCats.map((c) => {
+                const n = Object.keys(profile.byShooter?.[c] ?? {}).length;
+                return (
+                  <button key={c} className="wg-btn" onClick={() => setShooter(c)}
+                    style={{ ...chip, ...(shooterCat === c ? chipOn : {}) }}>
+                    {lang === "en" ? CAT_TEXT[c].en : CAT_TEXT[c].zh}{n > 0 ? ` ·${n}` : ""}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {shooterCat && <div style={{ fontSize: 11, color: "#64748b" }}>{t.shooterNote}</div>}
+
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {TARGET_CATEGORIES.map((c) => {
-              const w = profile.weights[c] ?? DEFAULT_WEIGHT;
+              const { w, inherited } = effective(c, shooterCat);
               const n = known[c] ?? 0;
               return (
                 <div key={c} style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -199,7 +255,7 @@ export function AssetPanel({ top, left = 16 }: { top: number; left?: number }) {
                         title={v === 0 ? t.zero : String(v)}
                         style={{
                           ...scoreBtn,
-                          ...(w === v ? (v === 0 ? scoreOnZero : scoreOn) : {}),
+                          ...(w === v ? (inherited ? scoreInherited : v === 0 ? scoreOnZero : scoreOn) : {}),
                           cursor: editable ? "pointer" : "default",
                         }}>
                         {v === 0 ? "✕" : v}
@@ -223,9 +279,24 @@ export function AssetPanel({ top, left = 16 }: { top: number; left?: number }) {
             <div style={{ fontSize: 11, color: "#64748b" }}>{t.blendNote(profile.blend)}</div>
           </div>
 
-          {(profile.weights.aircraft === 0 || profile.weights.uav === 0)
-            && Object.values(state.units).some((u) => u.sideId === sideId && (u.kind === "sam_coastal" || u.kind === "sam_patriot")) && (
-            <div style={warn}>{t.samWarn}</div>
+          {shooterCat && editable && Object.keys(profile.byShooter?.[shooterCat] ?? {}).length > 0 && (
+            <button className="wg-btn" style={{ ...chip, alignSelf: "flex-start" }} onClick={() => clearShooterOverride(shooterCat)}>
+              {t.clearOverride}
+            </button>
+          )}
+          {samBlocked && (
+            <div style={warn}>
+              {t.samWarn}
+              {editable && (
+                <button className="wg-btn" style={{ ...chip, marginLeft: 6, marginTop: 4 }} onClick={() => setProfile({
+                  ...profile,
+                  byShooter: {
+                    ...profile.byShooter,
+                    air_defense: { ...profile.byShooter?.air_defense, aircraft: 5, uav: 5 },
+                  },
+                })}>{t.samFix}</button>
+              )}
+            </div>
           )}
           <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>{t.note}</div>
           {editable && (
@@ -281,6 +352,9 @@ const scoreBtn: React.CSSProperties = {
   background: "rgba(30,41,59,0.6)", color: "#94a3b8", border: "1px solid rgba(148,163,184,0.25)",
 };
 const scoreOn: React.CSSProperties = { background: "rgba(249,115,22,0.35)", color: "#fff7ed", borderColor: "#f97316", fontWeight: 700 };
+const chipOn: React.CSSProperties = { borderColor: "#f97316", background: "rgba(249,115,22,0.2)", fontWeight: 700 };
+/** 沿用陣營預設的分數：虛框 */
+const scoreInherited: React.CSSProperties = { borderStyle: "dashed", borderColor: "#f97316", color: "#fdba74" };
 const scoreOnZero: React.CSSProperties = { background: "rgba(100,116,139,0.35)", color: "#e2e8f0", borderColor: "#94a3b8", fontWeight: 700 };
 const warn: React.CSSProperties = {
   fontSize: 12, color: "#fed7aa", padding: "5px 8px", borderRadius: 4,

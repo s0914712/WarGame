@@ -64,6 +64,11 @@ export const DEFAULT_BLEND = 0.7;
 export interface TargetPriorityProfile {
   /** 0–5；省略的類別視為 DEFAULT_WEIGHT */
   weights: Partial<Record<TargetCategory, number>>;
+  /**
+   * 依攻擊方覆寫（攻擊方類別 → 目標類別 → 0–5）。沒寫的格沿用 weights。
+   * 例：防空（SAM）對戰機 / 無人機設 5，即使全陣營把無人機設 0 —— 只有打擊載具不打無人機。
+   */
+  byShooter?: Partial<Record<TargetCategory, Partial<Record<TargetCategory, number>>>>;
   /** 0–1：0 = 只看距離、1 = 只看優序 */
   blend: number;
   /** 套用的範本 id（UI 標示用；手動改過任一類別後清掉） */
@@ -117,8 +122,33 @@ export function presetProfile(id: TargetPriorityPresetId, blend = DEFAULT_BLEND)
   return { weights: { ...TARGET_PRIORITY_PRESETS[id].weights }, blend, presetId: id };
 }
 
-export function weightOf(profile: TargetPriorityProfile, kind: UnitKind): number {
-  const w = profile.weights[CATEGORY_OF[kind]];
+/**
+ * 陣營優序的文字摘要（給 LLM / MCP 狀態匯出）：高到低排列，0 分類別列為不攻擊。
+ */
+export function describeProfile(profile: TargetPriorityProfile): {
+  ranked: { category: TargetCategory; weight: number }[];
+  doNotEngage: TargetCategory[];
+  blend: number;
+  presetId?: TargetPriorityPresetId;
+  byShooter?: TargetPriorityProfile["byShooter"];
+} {
+  const all = TARGET_CATEGORIES.map((c) => ({ category: c, weight: clampWeight(profile.weights[c] ?? DEFAULT_WEIGHT) }));
+  return {
+    ranked: all.filter((x) => x.weight > 0).sort((a, b) => b.weight - a.weight),
+    doNotEngage: all.filter((x) => x.weight === 0).map((x) => x.category),
+    blend: profile.blend,
+    presetId: profile.presetId,
+    byShooter: profile.byShooter && Object.keys(profile.byShooter).length > 0 ? profile.byShooter : undefined,
+  };
+}
+
+/**
+ * 目標類別分數。給了 shooterKind 時先查該攻擊方類別的覆寫，沒有再用陣營預設。
+ */
+export function weightOf(profile: TargetPriorityProfile, kind: UnitKind, shooterKind?: UnitKind): number {
+  const cat = CATEGORY_OF[kind];
+  const override = shooterKind ? profile.byShooter?.[CATEGORY_OF[shooterKind]]?.[cat] : undefined;
+  const w = override ?? profile.weights[cat];
   return clampWeight(w ?? DEFAULT_WEIGHT);
 }
 
@@ -133,8 +163,9 @@ function clampWeight(w: number): number {
  */
 export function targetScore(
   profile: TargetPriorityProfile, targetKind: UnitKind, distKm: number, rangeKm: number,
+  shooterKind?: UnitKind,
 ): number | null {
-  const w = weightOf(profile, targetKind);
+  const w = weightOf(profile, targetKind, shooterKind);
   if (w <= 0) return null;
   const b = Math.max(0, Math.min(1, profile.blend));
   const dNorm = rangeKm > 0 ? distKm / rangeKm : distKm;
