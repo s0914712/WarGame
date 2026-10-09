@@ -11,7 +11,15 @@ import { applyLlmCommands } from "../src/wargame/llm/applyCommands.ts";
 import { buildStateExport } from "../src/wargame/llm/exportState.ts";
 import { SCHEMA_DOC } from "../src/wargame/llm/schemaDoc.ts";
 import { computeMatchScore } from "../src/wargame/sim/matchScore.ts";
-import type { SideId } from "../src/wargame/types.ts";
+import type { LngLat, SideId } from "../src/wargame/types.ts";
+import { COMMANDS_VERSION, type LlmCommandDocument } from "../src/wargame/llm/schema.ts";
+import {
+  DEFAULT_BLEND, describeProfile, presetProfile,
+  type TargetCategory, type TargetPriorityPresetId, type TargetPriorityProfile,
+} from "../src/wargame/sim/targetPriority.ts";
+import { suggestAois } from "../src/wargame/recon/aoiSuggest.ts";
+import { aoiThreats, computeCoverage, reconOptions, suggestTasking, trackingTasks } from "../src/wargame/recon/reconPlanner.ts";
+import { boxFromPolygon, generateSearchTracks, validatePolygon } from "../src/wargame/search/tracks.ts";
 
 // ── tool: list_scenarios ────────────────────────────────
 export function listScenarios() {
@@ -317,4 +325,153 @@ function extractJsonLoose(text: string): unknown {
   const fence = s.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
   if (fence) s = fence[1]!.trim();
   return JSON.parse(s);
+}
+
+// ── tool: set_target_priority ───────────────────────────
+export interface SetTargetPriorityRequest {
+  sideId: SideId;
+  /** 範本：balanced / anti_landing / air_superiority / sea_control；null = 清除（回到打最近） */
+  preset?: TargetPriorityPresetId | null;
+  /** 覆寫各類別分數 0–5（套在範本之上） */
+  weights?: Partial<Record<TargetCategory, number>>;
+  /** 依攻擊方覆寫 */
+  byShooter?: TargetPriorityProfile["byShooter"];
+  blend?: number;
+}
+
+export function setTargetPriority(req: SetTargetPriorityRequest) {
+  const side = scenarioStore.getState().scenario.sides.find((s) => s.id === req.sideId);
+  if (!side) throw new Error(`Unknown sideId: ${req.sideId}`);
+  if (req.preset === null) {
+    scenarioStore.setSideTargetPriority(req.sideId, null);
+    return { sideId: req.sideId, targetPriority: null };
+  }
+  const base: TargetPriorityProfile = req.preset
+    ? presetProfile(req.preset, req.blend ?? DEFAULT_BLEND)
+    : side.targetPriority ?? presetProfile("balanced", req.blend ?? DEFAULT_BLEND);
+  const profile: TargetPriorityProfile = {
+    ...base,
+    weights: { ...base.weights, ...(req.weights ?? {}) },
+    blend: req.blend ?? base.blend,
+    byShooter: req.byShooter ?? base.byShooter,
+    presetId: req.weights ? undefined : base.presetId,
+  };
+  scenarioStore.setSideTargetPriority(req.sideId, profile);
+  return { sideId: req.sideId, targetPriority: describeProfile(profile) };
+}
+
+// ── tool: suggest_recon_plan ────────────────────────────
+export interface SuggestReconPlanRequest {
+  sideId: SideId;
+  /** 關注區多邊形 [[lng,lat],…]（3–10 點）；省略 → 用依攻擊優序推估的第 aoiIndex 個建議 */
+  aoi?: LngLat[];
+  aoiIndex?: number;
+  targetPod?: number;
+  includeBusy?: boolean;
+}
+
+/**
+ * 偵察計畫建議（與 UI「資產 → 偵察計畫」同一套純函式）：
+ * 建議關注區、覆蓋率、偵察資產選項、派遣組合、待確認接觸，
+ * 並附上可直接丟給 apply_commands 的 wargame-commands-v1 文件。
+ */
+export function suggestReconPlan(req: SuggestReconPlanRequest) {
+  const state = scenarioStore.getState();
+  const side = state.scenario.sides.find((s) => s.id === req.sideId);
+  if (!side) throw new Error(`Unknown sideId: ${req.sideId}`);
+  const units = Object.values(state.units);
+  const own = units.filter((u) => u.sideId === req.sideId);
+  const enemies = units.filter((u) => side.isHostileTo.includes(u.sideId));
+  const round = (p: LngLat): LngLat => [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5];
+
+  const suggestions = suggestAois(req.sideId, state.scenario, units, side.targetPriority);
+  let aoi: LngLat[] | null = req.aoi ?? null;
+  let aoiSource = "provided";
+  if (aoi) {
+    const issue = validatePolygon(aoi);
+    if (issue) throw new Error(`Invalid aoi polygon: ${issue}`);
+  } else {
+    const pick = suggestions[req.aoiIndex ?? 0];
+    aoi = pick?.polygon ?? null;
+    aoiSource = pick ? `suggestion[${req.aoiIndex ?? 0}]` : "none";
+  }
+
+  const includeBusy = req.includeBusy ?? false;
+  const targetPod = Math.max(0.01, Math.min(0.999, req.targetPod ?? 0.9));
+  const out: Record<string, unknown> = {
+    sideId: req.sideId,
+    simTimeSec: Math.round(state.simTimeSec),
+    targetPriority: side.targetPriority ? describeProfile(side.targetPriority) : null,
+    aoiSuggestions: suggestions.map((g, i) => ({
+      index: i, source: g.source, score: Math.round(g.score * 10) / 10,
+      label: g.labelEn, labelZh: g.labelZh, categories: g.categories, polygon: g.polygon.map(round),
+    })),
+    aoi: aoi ? { source: aoiSource, polygon: aoi.map(round) } : null,
+  };
+
+  const commands: LlmCommandDocument["commands"] = [];
+  let excluded = new Set<string>();
+  if (aoi) {
+    const cov = computeCoverage(aoi, own);
+    const options = reconOptions(aoi, own, { sideId: req.sideId, enemies });
+    const threats = aoiThreats(req.sideId, aoi, enemies);
+    out.knownAirThreats = threats.map((t) => ({
+      unitId: t.unitId, kind: t.kind, position: round(t.position), rangeKm: t.rangeKm,
+      distanceToAoiKm: Math.round(t.distanceToAoiKm),
+    }));
+    const plan = suggestTasking(options, targetPod, includeBusy);
+    excluded = new Set(plan.chosen.map((o) => o.unitId));
+    // 搜索航線：平行航跡沿關注區主軸，航跡間距 = 最窄的有效掃掠寬
+    if (plan.chosen.length > 0) {
+      const spacingNm = Math.min(...plan.chosen.map((o) => o.sweepWidthKm)) / 1.852;
+      const tracks = generateSearchTracks({
+        pattern: "PS", box: boxFromPolygon(aoi), polygon: aoi,
+        trackSpacingNm: spacingNm, droneCount: plan.chosen.length,
+      });
+      plan.chosen.forEach((o, i) => {
+        const tr = tracks[i % Math.max(1, tracks.length)];
+        if (tr && tr.waypoints.length > 0) {
+          commands.push({ kind: "set_waypoints", unitId: o.unitId, waypoints: tr.waypoints.map(round) });
+        }
+      });
+    }
+    out.coverage = {
+      coveredPct: Math.round(cov.coveredFraction * 1000) / 10,
+      areaKm2: Math.round(cov.areaKm2),
+      gapCells: cov.gapCells.length,
+      sensorsUsed: cov.sensorsUsed,
+    };
+    out.reconOptions = options.map((o) => ({
+      unitId: o.unitId, callsign: o.callsign, kind: o.kind, busy: o.busy, feasible: o.feasible,
+      transitHr: +o.transitHr.toFixed(2), onStationHr: +o.onStationHr.toFixed(2),
+      sweepWidthKm: Math.round(o.sweepWidthKm), podPct: Math.round(o.pod * 1000) / 10,
+      knownThreatsOnRoute: o.threats,
+    }));
+    out.tasking = {
+      chosen: plan.chosen.map((o) => o.unitId),
+      combinedPodPct: Math.round(plan.combinedPod * 1000) / 10,
+      targetPodPct: Math.round(targetPod * 1000) / 10,
+      note: plan.chosen.length === 0
+        ? (options.length === 0 ? "No recon assets." : includeBusy ? "No feasible asset." : "No idle feasible asset — retry with includeBusy: true.")
+        : plan.chosen.some((o) => o.threats > 0)
+          ? "Warning: some chosen assets transit or search inside known enemy air-threat range (see knownAirThreats) — expect losses or pick another aoi."
+          : undefined,
+    };
+  }
+
+  const tasks = trackingTasks(req.sideId, enemies, own, side.targetPriority, 4, excluded, includeBusy);
+  const trackCommands: LlmCommandDocument["commands"] = [];
+  out.trackingTasks = tasks.map((t) => {
+    if (t.assetId) trackCommands.push({ kind: "set_waypoints", unitId: t.assetId, waypoints: [round(t.contactPos)] });
+    return {
+      contactId: t.contactId, contactKind: t.contactKind, state: t.state, weight: t.weight,
+      position: round(t.contactPos), assetId: t.assetId, etaHr: t.etaHr === null ? null : +t.etaHr.toFixed(2),
+    };
+  });
+  out.commands = {
+    searchTasking: { version: COMMANDS_VERSION, commands },
+    trackingTasks: { version: COMMANDS_VERSION, commands: trackCommands },
+    howToApply: "Pass either document to apply_commands (or merge both commands arrays).",
+  };
+  return out;
 }

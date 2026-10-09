@@ -32,6 +32,8 @@ You should see the `wargame` server with 7 tools.
 | `apply_commands` | apply a `wargame-commands-v1` document |
 | `compute_score` | match score for a side (default `red`) — breakdown of holds/kills/survivors |
 | `run_benchmark` | auto-run scenario across N models, return final scores per model |
+| `set_target_priority` | set a side's attack priority (preset / per-category weights / per-shooter overrides / blend) |
+| `suggest_recon_plan` | suggested AOIs from attack priority, coverage, recon options with known threats, tasking + ready-to-apply `wargame-commands-v1` docs |
 
 ## Benchmark example
 

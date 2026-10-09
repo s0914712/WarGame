@@ -104,6 +104,48 @@ export function computeCoverage(aoi: LngLat[], ownUnits: Unit[], gridN = 28): Co
   };
 }
 
+/** 對空中偵察資產有威脅的敵方種類（防空、戰機、有艦載防空的水面艦） */
+export const AIR_THREAT_KINDS: UnitKind[] = ["sam_coastal", "sam_patriot", "fighter", "ship_surface"];
+
+export interface AirThreat {
+  unitId: string;
+  kind: UnitKind;
+  position: LngLat;
+  rangeKm: number;
+  /** 到關注區的距離（km）；0 = 在區內 */
+  distanceToAoiKm: number;
+}
+
+/**
+ * 本方「已知」（偵測 ≥ unknown）且射程涵蓋關注區的敵方空中威脅。
+ * 不看迷霧外的真實位置 —— 未偵測到的威脅本來就不知道。
+ */
+export function aoiThreats(sideId: SideId, aoi: LngLat[], enemies: Unit[]): AirThreat[] {
+  return knownAirThreats(sideId, enemies)
+    .map((t) => ({ ...t, distanceToAoiKm: distanceToAoiKm(t.position, aoi) }))
+    .filter((t) => t.distanceToAoiKm <= t.rangeKm)
+    .sort((a, b) => a.distanceToAoiKm - b.distanceToAoiKm);
+}
+
+function knownAirThreats(sideId: SideId, enemies: Unit[]): Omit<AirThreat, "distanceToAoiKm">[] {
+  return enemies
+    .filter((e) => e.hpCurrent > 0 && AIR_THREAT_KINDS.includes(e.kind) && e.core.rangeKm > 0)
+    .filter((e) => { const st = e.detectedBy[sideId]; return st === "unknown" || st === "classified" || st === "tracked"; })
+    .map((e) => ({ unitId: e.id, kind: e.kind, position: [e.position.lng, e.position.lat] as LngLat, rangeKm: e.core.rangeKm }));
+}
+
+/** 線段 a→b 是否進入任一威脅的射程（沿線取樣） */
+function routeThreatCount(a: LngLat, b: LngLat, threats: Omit<AirThreat, "distanceToAoiKm">[]): number {
+  let n = 0;
+  for (const t of threats) {
+    for (let k = 0; k <= 10; k++) {
+      const f = k / 10;
+      if (haversineKm([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], t.position) <= t.rangeKm) { n++; break; }
+    }
+  }
+  return n;
+}
+
 export interface ReconOption {
   unitId: string;
   callsign: string;
@@ -120,6 +162,8 @@ export interface ReconOption {
   /** 在站期間的 POD（隨機搜索公式） */
   pod: number;
   feasible: boolean;
+  /** 進場航線或關注區落在幾個已知敵方空中威脅的射程內 */
+  threats: number;
 }
 
 function centroid(poly: LngLat[]): LngLat {
@@ -140,8 +184,16 @@ function distanceToAoiKm(p: LngLat, aoi: LngLat[]): number {
   return best;
 }
 
-export function reconOptions(aoi: LngLat[], ownUnits: Unit[]): ReconOption[] {
+/**
+ * @param threatCtx 提供時計算各資產的威脅數（本方陣營 + 敵方單位）
+ */
+export function reconOptions(
+  aoi: LngLat[], ownUnits: Unit[], threatCtx?: { sideId: SideId; enemies: Unit[] },
+): ReconOption[] {
   const areaKm2 = polygonAreaKm2(aoi);
+  const known = threatCtx ? knownAirThreats(threatCtx.sideId, threatCtx.enemies) : [];
+  const aoiC = centroid(aoi);
+  const inAoi = known.filter((t) => distanceToAoiKm(t.position, aoi) <= t.rangeKm).length;
   return ownUnits
     .filter((u) => u.hpCurrent > 0 && RECON_KINDS.includes(u.kind) && u.core.detectionRangeKm > 0)
     .map((u) => {
@@ -159,6 +211,8 @@ export function reconOptions(aoi: LngLat[], ownUnits: Unit[]): ReconOption[] {
         busy: u.waypoints.length > 0,
         transitKm, transitHr, onStationHr, sweepWidthKm: W, sweepOnceHr, pod,
         feasible: onStationHr > 0,
+        // 關注區內的威脅 + 進場航線途經的威脅（同一威脅不重複算）
+        threats: known.length === 0 ? 0 : Math.max(inAoi, routeThreatCount(pos, aoiC, known)),
       };
     })
     .sort((a, b) => b.pod - a.pod || a.transitHr - b.transitHr);
@@ -171,9 +225,10 @@ export function reconOptions(aoi: LngLat[], ownUnits: Unit[]): ReconOption[] {
 export function suggestTasking(options: ReconOption[], targetPod: number, includeBusy = false): {
   chosen: ReconOption[]; combinedPod: number;
 } {
+  // 先選無威脅的，再依 POD
   const pool = options
     .filter((o) => o.feasible && (includeBusy || !o.busy))
-    .sort((a, b) => b.pod - a.pod);
+    .sort((a, b) => Number(a.threats > 0) - Number(b.threats > 0) || b.pod - a.pod);
   const chosen: ReconOption[] = [];
   let miss = 1;
   for (const o of pool) {

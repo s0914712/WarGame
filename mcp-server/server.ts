@@ -19,9 +19,9 @@ import {
 
 import {
   listScenarios, loadScenario, stepSim, getState,
-  applyCommands, computeScore, runBenchmark,
+  applyCommands, computeScore, runBenchmark, setTargetPriority, suggestReconPlan,
 } from "./adapters.ts";
-import type { BenchmarkRequest, GetStateOpts } from "./adapters.ts";
+import type { BenchmarkRequest, GetStateOpts, SetTargetPriorityRequest, SuggestReconPlanRequest } from "./adapters.ts";
 import type { SideId } from "../src/wargame/types.ts";
 
 const TOOL_DEFS = [
@@ -76,6 +76,36 @@ const TOOL_DEFS = [
         commandsJson: { description: "A wargame-commands-v1 object (or its JSON string). Get schema via get_state then look at SCHEMA_DOC, or examine examples in src/wargame/llm/" },
       },
       required: ["commandsJson"], additionalProperties: false,
+    },
+  },
+  {
+    name: "set_target_priority",
+    description: "Set a side's attack priority (0–5 per target category; 0 = never auto-engage). Affects auto-engagement, the scripted AI and suggest_recon_plan. Categories: amphibious, air_defense, sensor, base_logistics, surface_combatant, submarine, aircraft, uav, missile_launcher.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sideId: { type: "string", enum: ["blue", "red", "us", "japan", "neutral"] },
+        preset: { type: ["string", "null"], enum: ["balanced", "anti_landing", "air_superiority", "sea_control", null], description: "Start from a preset; null clears priorities (back to nearest-target)" },
+        weights: { type: "object", description: "Per-category 0–5 overrides, e.g. { \"uav\": 0, \"amphibious\": 5 }" },
+        byShooter: { type: "object", description: "Per-shooter-category overrides, e.g. { \"air_defense\": { \"aircraft\": 5, \"uav\": 5 } }" },
+        blend: { type: "number", description: "0 = distance only … 1 = priority only (default 0.7)" },
+      },
+      required: ["sideId"], additionalProperties: false,
+    },
+  },
+  {
+    name: "suggest_recon_plan",
+    description: "Reconnaissance plan for a side: areas of interest inferred from its attack priority (detected high-priority contacts + 1 h dead-reckoning, the scenario's enemy objectives, transit corridors), current sensor coverage of the chosen area, recon asset options (transit / on-station / POD), a tasking that reaches targetPod, and contacts that need tracking. Returns ready-to-use wargame-commands-v1 documents for apply_commands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sideId: { type: "string", enum: ["blue", "red", "us", "japan", "neutral"] },
+        aoi: { type: "array", items: { type: "array", items: { type: "number" } }, description: "Area of interest polygon [[lng,lat],…] (3–10 vertices). Omit to use aoiSuggestions[aoiIndex]." },
+        aoiIndex: { type: "number", default: 0, description: "Which suggested area to use when aoi is omitted" },
+        targetPod: { type: "number", default: 0.9, description: "Combined probability of detection to aim for (0–1)" },
+        includeBusy: { type: "boolean", default: false, description: "Allow re-tasking assets that already have waypoints" },
+      },
+      required: ["sideId"], additionalProperties: false,
     },
   },
   {
@@ -159,6 +189,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
       case "apply_commands":   result = applyCommands(args.commandsJson as string | object); break;
       case "compute_score":    result = computeScore((args.sideId ?? "red") as Parameters<typeof computeScore>[0]); break;
+      case "set_target_priority": result = setTargetPriority(args as unknown as SetTargetPriorityRequest); break;
+      case "suggest_recon_plan": result = suggestReconPlan(args as unknown as SuggestReconPlanRequest); break;
       case "run_benchmark":    result = await runBenchmark(args as unknown as BenchmarkRequest); break;
       default:
         throw new Error(`Unknown tool: ${name}`);

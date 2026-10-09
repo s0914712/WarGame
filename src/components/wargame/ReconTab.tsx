@@ -15,8 +15,9 @@ import { searchPlannerStore } from "../../wargame/search/searchPlannerStore";
 import { submitCommand } from "../../wargame/net/commandBus";
 import { UNIT_CATALOG } from "../../wargame/catalog/units";
 import {
-  aoiFromSearchArea, computeCoverage, reconOptions, suggestTasking, trackingTasks,
+  aoiFromSearchArea, aoiThreats, computeCoverage, reconOptions, suggestTasking, trackingTasks,
 } from "../../wargame/recon/reconPlanner";
+import { suggestAois } from "../../wargame/recon/aoiSuggest";
 
 const TEXT = {
   zh: {
@@ -36,6 +37,11 @@ const TEXT = {
     sent: (n: number) => `已派遣 ${n} 架前往盯住`,
     states: { unknown: "未知", classified: "已分類" } as Record<string, string>,
     readOnly: "多人對戰中只能指揮自己的陣營",
+    suggest: "建議關注區（依攻擊優序）", suggestNone: "目前沒有依據：尚未偵測到高優先類別的敵方，且敵方目標區不涉及高優先類別",
+    suggestNote: "依已偵測的高優先接觸（含 1 小時推算航跡）、場景公開的敵方目標區與兩者間的航經走廊推估；地圖紫色虛線預覽。",
+    use: "設為關注區", current: "使用中",
+    threatWarn: (n: number) => `⚠ 關注區在 ${n} 個已知敵方空中威脅（防空 / 戰機 / 艦艇）射程內 —— 派遣的偵察資產可能被擊落`,
+    threatened: "受威脅",
     model: "掃掠寬 = 2 × 偵測距離 × 0.5；POD 以隨機搜索公式估算（保守）",
   },
   en: {
@@ -55,6 +61,11 @@ const TEXT = {
     sent: (n: number) => `Sent ${n} aircraft to track`,
     states: { unknown: "unknown", classified: "classified" } as Record<string, string>,
     readOnly: "In multiplayer you can only command your own side",
+    suggest: "Suggested areas (from target priorities)", suggestNone: "Nothing to go on: no high-priority enemy detected and no enemy objective involves a high-priority category",
+    suggestNote: "Inferred from detected high-priority contacts (with 1 h dead-reckoning), the scenario's public enemy objectives and the transit corridors between them; previewed as purple dashed outlines.",
+    use: "Use as area", current: "in use",
+    threatWarn: (n: number) => `⚠ The area is inside the range of ${n} known enemy air threats (SAMs / fighters / warships) — tasked recon assets may be shot down`,
+    threatened: "threatened",
     model: "Sweep width = 2 × detection range × 0.5; POD from the random-search formula (conservative)",
   },
 } as const;
@@ -82,10 +93,11 @@ export function ReconTab({ sideId, lang, canCommand }: { sideId: SideId; lang: "
     const own = units.filter((u) => u.sideId === sideId);
     const enemies = units.filter((u) => side.isHostileTo.includes(u.sideId));
     const coverage = computeCoverage(aoi, own);
-    const options = reconOptions(aoi, own);
+    const options = reconOptions(aoi, own, { sideId, enemies });
+    const threats = aoiThreats(sideId, aoi, enemies);
     const plan = suggestTasking(options, targetPod, includeBusy);
     const tasks = trackingTasks(sideId, enemies, own, side.targetPriority, 4, new Set(plan.chosen.map((o) => o.unitId)), includeBusy);
-    return { coverage, options, plan, tasks };
+    return { coverage, options, plan, tasks, threats };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aoiKey, sideId, bucket, targetPod, includeBusy, side?.targetPriority]);
 
@@ -116,6 +128,16 @@ export function ReconTab({ sideId, lang, canCommand }: { sideId: SideId; lang: "
     setNotice(t.sent(n));
   };
 
+  const suggestions = useMemo(() => {
+    if (!side) return [];
+    return suggestAois(sideId, scenarioStore.getState().scenario, Object.values(scenarioStore.getState().units), side.targetPriority);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideId, bucket, side?.targetPriority]);
+  const useSuggestion = (poly: LngLat[]) => {
+    const issue = searchPlannerStore.setPolygon(poly);
+    if (!issue) setNotice(null);
+  };
+
   const drawAoi = () => {
     searchPlannerStore.setOpen(true);
     searchPlannerStore.startPickArea();
@@ -124,6 +146,26 @@ export function ReconTab({ sideId, lang, canCommand }: { sideId: SideId; lang: "
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {!canCommand && <div style={warn}>{t.readOnly}</div>}
+
+      {/* 建議關注區 */}
+      <Section title={t.suggest}>
+        <div style={note}>{t.suggestNote}</div>
+        {suggestions.length === 0 ? (
+          <div style={{ fontSize: 12, color: "#94a3b8" }}>{t.suggestNone}</div>
+        ) : suggestions.map((g) => {
+          const inUse = aoiKey === JSON.stringify(g.polygon);
+          return (
+            <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              <span style={{
+                flexShrink: 0, width: 34, textAlign: "right", fontFamily: "ui-monospace, monospace", color: "#c4b5fd",
+              }}>{g.score.toFixed(0)}</span>
+              <span style={{ flex: 1, minWidth: 0, color: "#e2e8f0", lineHeight: 1.4 }}>{lang === "en" ? g.labelEn : g.labelZh}</span>
+              <button className="wg-btn" style={{ ...chip, padding: "2px 8px", flexShrink: 0, ...(inUse ? { borderColor: "#a78bfa", color: "#ddd6fe" } : {}) }}
+                disabled={inUse} onClick={() => useSuggestion(g.polygon)}>{inUse ? t.current : t.use}</button>
+            </div>
+          );
+        })}
+      </Section>
 
       {/* 關注區 */}
       <Section title={t.aoi}>
@@ -163,6 +205,7 @@ export function ReconTab({ sideId, lang, canCommand }: { sideId: SideId; lang: "
 
           {/* 派遣建議 */}
           <Section title={t.tasking}>
+            {result.threats.length > 0 && <div style={warn}>{t.threatWarn(result.threats.length)}</div>}
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
               <span style={{ color: "#94a3b8", width: 64 }}>{t.targetPod}</span>
               <input type="range" min={0.5} max={0.99} step={0.01} value={targetPod}
@@ -193,6 +236,7 @@ export function ReconTab({ sideId, lang, canCommand }: { sideId: SideId; lang: "
                           <span style={{ color: "#64748b" }}> · {UNIT_CATALOG[o.kind].displayName}</span>
                           {o.busy && <span style={{ color: "#fbbf24" }}> · {t.busy}</span>}
                           {!o.feasible && <span style={{ color: "#f87171" }}> · {t.infeasible}</span>}
+                          {o.threats > 0 && <span style={{ color: "#f87171" }}> · ⚠ {t.threatened} {o.threats}</span>}
                         </span>
                         <span title={t.transit} style={mono}>{fmtHr(o.transitHr)}</span>
                         <span title={t.onStation} style={mono}>{o.feasible ? fmtHr(o.onStationHr) : "—"}</span>
