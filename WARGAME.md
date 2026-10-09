@@ -131,6 +131,11 @@
 可獨立於兵推使用：`?mode=search` → `src/SearchPlannerApp.tsx`（左面板 + 右地圖，
 不載入場景 / 不跑模擬引擎；未設 Mapbox token 時改以經緯度輸入框定義搜索區）。
 
+### `src/wargame/recon/` — 偵察計畫建議
+- `reconPlanner.ts`：關注區（沿用搜索區）覆蓋率 / 盲區格點（偵測距離 + 對海面雷達地平線）、
+  偵察資產進場 / 在站 / POD（掃掠寬 = 2×偵測距離×0.5、隨機搜索公式）、貪心派遣到目標 POD、
+  未確認追蹤的高優先接觸 → 最近偵察資產。UI：資產面板「偵察計畫」分頁；盲區圖層 `map/wargameReconLayer.ts`
+
 ### `src/wargame/llm/` — LLM 介接
 | 檔 | 用途 |
 |---|---|

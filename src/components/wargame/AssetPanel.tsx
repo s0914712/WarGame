@@ -6,6 +6,7 @@
  * 入口：桌面頂部列「資產」鈕。
  */
 import { useState, useSyncExternalStore } from "react";
+import { ReconTab } from "./ReconTab";
 import { Crosshair, X, RotateCcw, ScanSearch } from "lucide-react";
 import type { SideId } from "../../wargame/types";
 import { scenarioStore } from "../../wargame/scenarioStore";
@@ -19,14 +20,34 @@ import {
 } from "../../wargame/sim/targetPriority";
 
 // ── 開關狀態 ──────────────────────────────────────────────
+export type AssetTab = "priority" | "recon";
 let open = false;
+let tab: AssetTab = "priority";
+/** 面板目前檢視的陣營（偵察盲區圖層用） */
+let viewSide: SideId | null = null;
+let version = 0;
 const listeners = new Set<() => void>();
+function emit() { version++; for (const cb of listeners) cb(); }
 export const assetPanelStore = {
   isOpen: () => open,
+  getTab: () => tab,
+  getSide: () => viewSide,
+  setSide(s: SideId | null): void {
+    if (viewSide === s) return;
+    viewSide = s;
+    emit();
+  },
+  /** useSyncExternalStore snapshot：開關 / 分頁任一改變都遞增 */
+  getVersion: () => version,
   setOpen(v: boolean): void {
     if (open === v) return;
     open = v;
-    for (const cb of listeners) cb();
+    emit();
+  },
+  setTab(t: AssetTab): void {
+    if (tab === t) return;
+    tab = t;
+    emit();
   },
   toggle(): void { this.setOpen(!open); },
   subscribe(cb: () => void): () => void {
@@ -87,7 +108,7 @@ const TEXT = {
 export function AssetPanel({ top, left = 16, width = ASSET_PANEL_WIDTH, maxHeight }: {
   top: number; left?: number; width?: number | string; maxHeight?: string;
 }) {
-  useSyncExternalStore(assetPanelStore.subscribe, assetPanelStore.isOpen, assetPanelStore.isOpen);
+  useSyncExternalStore(assetPanelStore.subscribe, assetPanelStore.getVersion, assetPanelStore.getVersion);
   useSyncExternalStore(scenarioStore.subscribe, scenarioStore.getState, scenarioStore.getState);
   const net = useSyncExternalStore(netStore.subscribe, netStore.get, netStore.get);
   const lang = useLang() === "en" ? "en" : "zh";
@@ -104,6 +125,8 @@ export function AssetPanel({ top, left = 16, width = ASSET_PANEL_WIDTH, maxHeigh
   const sideId: SideId | undefined = (selectedSide && sides.some((s) => s.id === selectedSide) ? selectedSide : null)
     ?? (active && sides.some((s) => s.id === active) ? active : sides[0]?.id);
   const side = sides.find((s) => s.id === sideId);
+  // 通知地圖圖層目前檢視哪個陣營（排到 render 之後；值沒變時 setSide 不會觸發重繪）
+  queueMicrotask(() => assetPanelStore.setSide(sideId ?? null));
   // 多人：host 才寫得進引擎（client 不跑 engine），且只改自己的陣營
   const editable = net.role === "off" || (net.role === "host" && netStore.canControlSide(sideId ?? "blue"));
   const profile = side?.targetPriority ?? null;
@@ -172,10 +195,14 @@ export function AssetPanel({ top, left = 16, width = ASSET_PANEL_WIDTH, maxHeigh
 
       {/* 分頁 */}
       <div style={{ display: "flex", gap: 6 }}>
-        <span style={{ ...tab, ...tabOn }}>{t.tabPriority}</span>
-        <span style={{ ...tab, opacity: 0.5, cursor: "default" }} title={t.reconSoon}>
-          <ScanSearch size={12} /> {t.tabRecon} · {t.soon}
-        </span>
+        <button className="wg-btn" onClick={() => assetPanelStore.setTab("priority")}
+          style={{ ...tabStyle, ...(assetPanelStore.getTab() === "priority" ? tabOn : {}) }}>
+          <Crosshair size={12} /> {t.tabPriority}
+        </button>
+        <button className="wg-btn" onClick={() => assetPanelStore.setTab("recon")}
+          style={{ ...tabStyle, ...(assetPanelStore.getTab() === "recon" ? tabOn : {}) }}>
+          <ScanSearch size={12} /> {t.tabRecon}
+        </button>
       </div>
 
       {/* 陣營 */}
@@ -194,6 +221,9 @@ export function AssetPanel({ top, left = 16, width = ASSET_PANEL_WIDTH, maxHeigh
         ))}
       </div>
 
+      {assetPanelStore.getTab() === "recon" ? (
+        sideId ? <ReconTab sideId={sideId} lang={lang} canCommand={net.role === "off" || netStore.canControlSide(sideId)} /> : null
+      ) : (<>
       {!editable && <div style={warn}>{t.readonly}</div>}
 
       {!profile ? (
@@ -307,6 +337,7 @@ export function AssetPanel({ top, left = 16, width = ASSET_PANEL_WIDTH, maxHeigh
           )}
         </>
       )}
+      </>)}
     </div>
   );
 }
@@ -342,9 +373,10 @@ const chip: React.CSSProperties = {
   padding: "3px 9px", borderRadius: 12, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
   background: "rgba(30,41,59,0.6)", color: "#e2e8f0", border: "1px solid rgba(148,163,184,0.3)",
 };
-const tab: React.CSSProperties = {
+const tabStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 6, fontSize: 13,
   border: "1px solid rgba(148,163,184,0.3)", background: "rgba(30,41,59,0.5)", color: "#cbd5e1",
+  cursor: "pointer", fontFamily: "inherit",
 };
 const tabOn: React.CSSProperties = { borderColor: "#f97316", background: "rgba(249,115,22,0.18)", color: "#ffedd5", fontWeight: 700 };
 const scoreBtn: React.CSSProperties = {
