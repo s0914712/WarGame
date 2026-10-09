@@ -5,9 +5,9 @@
  *   R 規劃航線   C 清除航線   H 停止
  *   F 自由接戰   T 限制接戰   D 僅防禦
  *   G 停止接戰   S 主動聲納   Y 拖曳陣列
- *   B 佈聲標     右鍵 移動    右鍵 攻擊
+ *   B 佈聲標     右鍵 移動    A 攻擊（再點敵方；或右鍵敵方）
  *
- * 規劃航線 / 佈聲標模式時整張卡換成 ✓ 套用 / ✗ 取消 / ⌫ 移除末點。
+ * 規劃航線 / 佈聲標模式時整張卡換成 ✓ 套用 / ✗ 取消 / ⌫ 移除末點；攻擊選標時只剩 ✗ 取消。
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -83,6 +83,12 @@ function buildCells(): Cell[] {
     ]);
   }
 
+  if (mode === "attackTarget") {
+    return modeCells([
+      { key: "Esc", label: "取消攻擊", Icon: X, enabled: true, title: "左鍵點敵方單位＝接戰；Esc 或點空白＝取消", run: () => editorStore.cancel() },
+    ]);
+  }
+
   const u = controllableUnit();
   const cat = u ? UNIT_CATALOG[u.kind] : null;
   const side = u ? scenarioStore.getState().scenario.sides.find((s) => s.id === u.sideId) : null;
@@ -127,7 +133,8 @@ function buildCells(): Cell[] {
     { key: "B", code: "KeyB", label: "聲標", Icon: Grid3x3, enabled: canBuoy, accent: "#38bdf8",
       title: "點地圖兩角定義反潛搜索框", run: () => u && editorStore.startSonobuoyArea(u.id) },
     { key: "右鍵", label: "移動", Icon: Move, enabled: mobile, title: "右鍵點地圖＝立即前往；Shift＋右鍵＝排隊航點" },
-    { key: "右鍵", label: "攻擊", Icon: Target, enabled: !!u, title: "右鍵點敵方單位＝下達接戰" },
+    { key: "A", code: "KeyA", label: "攻擊", Icon: Target, enabled: !!u, accent: "#ef4444",
+      title: "按 A 後左鍵點敵方單位＝下達接戰（也可直接右鍵點敵方）", run: () => u && editorStore.startAttackTarget(u.id) },
   ];
 }
 

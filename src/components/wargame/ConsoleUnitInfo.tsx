@@ -148,7 +148,7 @@ export function ConsoleUnitInfo() {
           <button className="wg-btn" title={t("Delete Unit")} style={{ ...iconBtn(false), color: "#fca5a5" }}
             onClick={() => {
               const msg = lang === "en" ? `Delete unit "${unit.callsign}"?` : `刪除單位「${unit.callsign}」？`;
-              if (confirm(msg)) scenarioStore.removeUnit(unit.id);
+              if (confirm(msg)) editorStore.deleteUnit(unit.id);
             }}>
             <Trash2 size={14} />
           </button>

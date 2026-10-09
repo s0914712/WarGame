@@ -677,7 +677,7 @@ export function UnitEditorPanel({ embedded = false }: { embedded?: boolean } = {
                     ? `Delete unit "${targetUnit.callsign}"?`
                     : `刪除單位「${targetUnit.callsign}」？`;
                   if (confirm(msg)) {
-                    scenarioStore.removeUnit(targetUnit.id);
+                    editorStore.deleteUnit(targetUnit.id);
                   }
                 }}
                 style={{
