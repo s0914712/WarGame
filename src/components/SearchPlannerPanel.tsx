@@ -75,6 +75,9 @@ export function SearchPlannerPanel(
   const eff = searchPlannerStore.getSearchEffectiveness();
   const sol = solve();
   const units = eligibleSearchUnits();
+  // 落水 Leeway 漂流已算好 → 蒙地卡羅可選「落水漂流粒子」
+  const driftReady = inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel === "leeway"
+    && !!searchPlannerStore.getDrift().result && searchPlannerStore.isDriftCurrent();
 
   const fmtHr = (h: number): string => {
     if (!Number.isFinite(h)) return "—";
@@ -662,7 +665,7 @@ export function SearchPlannerPanel(
                 <Row label={t.mcDistribution}>
                   <select value={inputs.mcDistributionKind} style={select}
                     onChange={(e) => {
-                      const kind = e.target.value as "uniform" | "gaussian" | "lkp";
+                      const kind = e.target.value as "uniform" | "gaussian" | "lkp" | "drift";
                       // 首次切到 LKP 且尚未輸入 → 以搜索區中心起頭
                       if (kind === "lkp" && !inputs.mcLkp && a && b) {
                         patch({ mcDistributionKind: kind, mcLkp: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] });
@@ -673,10 +676,24 @@ export function SearchPlannerPanel(
                     <option value="uniform">{t.mcUniform}</option>
                     <option value="gaussian">{t.mcGaussian}</option>
                     <option value="lkp">{t.mcLkp}</option>
+                    {(driftReady || inputs.mcDistributionKind === "drift") && (
+                      <option value="drift">{lang === "en" ? "MOB drift particles (Leeway)" : "落水漂流粒子（Leeway）"}</option>
+                    )}
                   </select>
                 </Row>
                 {inputs.mcDistributionKind === "lkp" && (
                   <LkpEditor t={t} fmtHr={fmtHr} />
+                )}
+                {inputs.mcDistributionKind === "drift" && (
+                  <div style={{ fontSize: 13, color: driftReady ? "#fca5a5" : "#fdba74", lineHeight: 1.5 }}>
+                    {driftReady
+                      ? (lang === "en"
+                        ? "Each trial draws one drift particle at search start and moves it with its own current + wind velocity (section ⓪)."
+                        : "每次試驗抽一顆漂流粒子（搜索開始時刻），以它自己的海流＋風壓速度移動（見 ⓪）。")
+                      : (lang === "en"
+                        ? "No current MOB drift result; falling back to LKP + course / speed."
+                        : "目前沒有可用的落水漂流結果，改用最後已知位置 + 航向航速。")}
+                  </div>
                 )}
                 {inputs.mcDistributionKind === "gaussian" && (
                   <NumField label={t.mcSigma} value={inputs.mcSigmaNm} min={0.5} max={40} step={0.5} unit="nm"
@@ -1533,8 +1550,8 @@ function LkpEditor({ t, fmtHr, shared = false }: { t: SearchStrings; fmtHr: (h: 
   // 事前分布用多情境時才需要「帶入」；依 LKP 時兩邊本來就是同一組參數
   const priorDatum = inputs.bayesEnabled && !inputs.priorFromLkp ? searchPlannerStore.primaryScenarioDatum() : null;
   const linked = shared || (inputs.bayesEnabled && inputs.priorFromLkp);
-  // Leeway 漂流時，事前分布與蒙地卡羅都改用漂流粒子 → 航向航速與其推算線都不適用
-  const leeway = inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel === "leeway";
+  // 只有⑧事前分布（shared）在 Leeway 漂流時才不用航向航速；蒙地卡羅的「最後已知位置 + 航向航速」永遠要
+  const leeway = shared && inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel === "leeway";
   const lang = useLang() === "en" ? "en" : "zh";
 
   return (
@@ -1557,8 +1574,13 @@ function LkpEditor({ t, fmtHr, shared = false }: { t: SearchStrings; fmtHr: (h: 
       {leeway ? (
         <div style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.5 }}>
           {lang === "en"
-            ? "Leeway drift is on: the target moves with forecast current + wind (section ⓪), so course / speed are not used."
-            : "已啟用 Leeway 漂流：目標隨海流＋風場預報移動（見 ⓪），不使用航向 / 航速。"}
+            ? "Using MOB Leeway drift (section ⓪): the target moves with forecast current + wind, not a course / speed."
+            : "目前使用落水 Leeway 漂流（見 ⓪）：目標隨海流＋風場移動，不用航向 / 航速。"}
+          <button className="wg-btn" data-testid="lkp-use-course"
+            style={{ ...smallBtn, marginTop: 6, color: "#e2e8f0" }}
+            onClick={() => patch({ driftModel: "linear" })}>
+            {lang === "en" ? "Use course / speed instead (vessel / fleet)" : "改用航向 / 航速（船舶 / 船團）"}
+          </button>
         </div>
       ) : (
       <>

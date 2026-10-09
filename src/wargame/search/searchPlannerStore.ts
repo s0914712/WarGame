@@ -90,7 +90,8 @@ export interface PlannerInputs {
   mcDriftBearingDeg: number | null;
   mcNavErrorSigmaNm: number;
   mcSensorAvailability: number;
-  mcDistributionKind: "uniform" | "gaussian" | "lkp";
+  /** drift = 落水 Leeway 漂流粒子（需先算好漂流）；lkp 一律為航向航速直線推算（船團 / 船舶） */
+  mcDistributionKind: "uniform" | "gaussian" | "lkp" | "drift";
   /** gaussian：散布 σ；lkp：LKP 位置誤差 σ */
   mcSigmaNm: number;
   // ── 蒙地卡羅：最後已知位置（LKP）+ 目標航向航速 ──
@@ -1038,13 +1039,14 @@ export const searchPlannerStore = {
     if (!sol || tracks.length === 0 || !box) return null;
     const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
     const centre = measureBox(box).centre;
-    // Leeway 漂流：目標樣本 = 漂流粒子在「搜索開始」時刻的位置與速度（不再以航向航速直線推算）
-    const leewaySamples = inputs.mcDistributionKind === "lkp" && usesLeeway() && driftUsable()
+    // Leeway 漂流：目標樣本 = 漂流粒子在「搜索開始」時刻的位置與速度
+    // （只在明確選「落水漂流粒子」時；「最後已知位置 + 航向航速」永遠走直線推算）
+    const leewaySamples = inputs.mcDistributionKind === "drift" && usesLeeway() && driftUsable()
       ? particlesFromDrift(drift.result!, inputs.mcLkpElapsedHr)
       : null;
     const distribution: TargetDistribution = leewaySamples
       ? { kind: "samples", points: leewaySamples }
-      : inputs.mcDistributionKind === "lkp"
+      : inputs.mcDistributionKind === "lkp" || inputs.mcDistributionKind === "drift"
       ? {
         kind: "lkp", lkp: inputs.mcLkp ?? centre, sigmaNm: inputs.mcSigmaNm,
         courseDeg: inputs.mcTargetCourseDeg, courseSigmaDeg: inputs.mcTargetCourseSigmaDeg,
