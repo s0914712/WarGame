@@ -576,8 +576,15 @@ Stone 還指出 SEP 有個病態：一旦取得接觸 Eⱼ = 0，SEP 反而下�
 
 ### 落水（MOB）· Leeway 漂流（`drift/leeway.ts` / `drift/seaFields.ts`）
 
-「依 LKP」事前分布多一個漂流模型選項：**Leeway（海流＋風）**。面板最上方「⓪ 落水（MOB）」
-點地圖標落水點 → 自動開啟事前分布、設 LKP、落水時刻 = 現在、位置誤差 0.3 浬，並計算漂流。
+面板最上方「搜索對象」二選一，決定 ⓪ 區塊與後續參數（存在 `driftModel`，`setTargetType()` 切換）：
+
+| 搜索對象 | 漂流模型 | ⓪ 區塊 | 蒙地卡羅分布 |
+|---|---|---|---|
+| 船舶 / 船團 | `linear` 航向航速直線推算 | 點地圖標 LKP（`startVessel`）→ 航向 / 航速 / 誤差 → 以 95% 事前分布設搜索區 → 最佳矩形 → 航線 | 最後已知位置 + 航向航速 |
+| 落水人員 / 漂浮物 | `leeway` 海流＋風 | 點地圖標落水點（`startMob`）→ 落水物 / 時刻 / 漂流播放 → 以 95% 粒子設搜索區 → … | 落水漂流粒子（Leeway） |
+
+兩者共用 LKP / 位置誤差 / 經過時間，切換不會清掉已輸入的值。
+點落水點 → 自動開啟事前分布、設 LKP、落水時刻 = 現在、位置誤差 0.3 浬，並計算漂流。
 
 - **場資料**：[seacurrent](https://github.com/s0914712/seacurrent) 發布在 GitHub Pages 的
   `scheduled_results/frames/`：`current/hNNN.json`（CWA 海流，每小時、0.2°，陸地 u=v=0）、

@@ -344,7 +344,9 @@ export type LkpPickTarget =
   | { kind: "priorAll" }
   | { kind: "scenario"; id: string }
   /** 落水（MOB）快速設定：點下去即以該點為 LKP、現在為落水時刻，跑 Leeway 漂流 */
-  | { kind: "mob" };
+  | { kind: "mob" }
+  /** 船舶 / 船團快速設定：點下去即以該點為 LKP，依航向航速建事前分布 */
+  | { kind: "vessel" };
 let lkpPickTarget: LkpPickTarget | null = null;
 let densityBands: DensityField["bands"] = DEFAULT_DENSITY_BANDS.map((b) => ({ ...b }));
 
@@ -491,6 +493,21 @@ export function priorScenarios(): SearchScenario[] {
     driftCourseDeg: inputs.mcTargetCourseDeg,
     driftCourseSigmaDeg: inputs.mcTargetCourseSigmaDeg,
   }];
+}
+
+/** 粒子各方向取 (1−coverage)/2 ~ (1+coverage)/2 分位數的外接框（至少 1 浬見方）；會就地排序傳入陣列 */
+function quantileBox(lngs: Float64Array, lats: Float64Array, coverage: number): [LngLat, LngLat] {
+  const n = lngs.length;
+  lngs.sort(); lats.sort();
+  const q = (arr: Float64Array, f: number) => arr[Math.min(n - 1, Math.max(0, Math.floor(f * (n - 1))))]!;
+  const lo = (1 - coverage) / 2, hi = 1 - lo;
+  // 至少 1 浬見方，避免粒子幾乎沒擴散時框成一個點
+  const midLat = (q(lats, lo) + q(lats, hi)) / 2;
+  const minDLat = 0.5 / 60, minDLng = minDLat / Math.cos((midLat * Math.PI) / 180);
+  let w = q(lngs, lo), e = q(lngs, hi), s = q(lats, lo), nn = q(lats, hi);
+  if (e - w < 2 * minDLng) { const c = (w + e) / 2; w = c - minDLng; e = c + minDLng; }
+  if (nn - s < 2 * minDLat) { const c = (s + nn) / 2; s = c - minDLat; nn = c + minDLat; }
+  return [[w, s], [e, nn]];
 }
 
 function usesLeeway(): boolean {
@@ -1209,7 +1226,40 @@ export const searchPlannerStore = {
       mcLkp: p,
       lkpTimeMs: Math.floor(Date.now() / 60_000) * 60_000,
       mcSigmaNm: 0.3,
+      ...(inputs.mcDistributionKind === "lkp" ? { mcDistributionKind: "drift" as const } : {}),
     });
+  },
+
+  /** 船舶 / 船團快速設定：以 p 為 LKP，切到「依 LKP 事前分布 + 航向航速直線推算」，蒙地卡羅同用 LKP */
+  startVessel(p: LngLat): void {
+    this.patch({
+      bayesEnabled: true,
+      priorFromLkp: true,
+      driftModel: "linear",
+      mcLkp: p,
+      mcDistributionKind: "lkp",
+    });
+  },
+
+  /**
+   * 搜索對象：船舶 / 船團（航向航速）或落水人員 / 漂浮物（Leeway）。
+   * 兩者共用 LKP / 誤差 / 經過時間，只切漂流模型與蒙地卡羅分布，不清掉已輸入的值。
+   */
+  setTargetType(kind: "vessel" | "mob"): void {
+    const k = inputs.mcDistributionKind;
+    if (kind === "mob") this.patch({ driftModel: "leeway", mcDistributionKind: k === "lkp" ? "drift" : k });
+    else this.patch({ driftModel: "linear", mcDistributionKind: k === "drift" ? "lkp" : k });
+  },
+
+  /** 船舶 / 船團：搜索區 = 事前分布粒子（搜索期中點）的外接框 */
+  setAreaFromPrior(coverage = 0.95): boolean {
+    if (particles.length === 0) return false;
+    const n = particles.length;
+    const lngs = new Float64Array(n), lats = new Float64Array(n);
+    for (let i = 0; i < n; i++) { lngs[i] = particles[i]!.lng; lats[i] = particles[i]!.lat; }
+    const [sw, ne] = quantileBox(lngs, lats, coverage);
+    this.setRectangle(sw, ne);
+    return true;
   },
 
   /**
@@ -1222,16 +1272,8 @@ export const searchPlannerStore = {
     const n = drift.result.count;
     const lngs = new Float64Array(n), lats = new Float64Array(n);
     for (let i = 0; i < n; i++) { lngs[i] = pos[i * 2]!; lats[i] = pos[i * 2 + 1]!; }
-    lngs.sort(); lats.sort();
-    const q = (arr: Float64Array, f: number) => arr[Math.min(n - 1, Math.max(0, Math.floor(f * (n - 1))))]!;
-    const lo = (1 - coverage) / 2, hi = 1 - lo;
-    // 至少 1 浬見方，避免粒子幾乎沒擴散時框成一個點
-    const midLat = (q(lats, lo) + q(lats, hi)) / 2;
-    const minDLat = 0.5 / 60, minDLng = minDLat / Math.cos((midLat * Math.PI) / 180);
-    let w = q(lngs, lo), e = q(lngs, hi), s = q(lats, lo), nn = q(lats, hi);
-    if (e - w < 2 * minDLng) { const c = (w + e) / 2; w = c - minDLng; e = c + minDLng; }
-    if (nn - s < 2 * minDLat) { const c = (s + nn) / 2; s = c - minDLat; nn = c + minDLat; }
-    this.setRectangle([w, s], [e, nn]);
+    const [sw, ne] = quantileBox(lngs, lats, coverage);
+    this.setRectangle(sw, ne);
     // 有了搜索區 → 掃區時間變了 → 搜索期中點跟著變，粒子重取該時刻；地圖拉桿也跳到該時刻，
     // 免得畫面上的粒子雲（例如 T+24h）跟剛框出的區域（搜索期中點）對不起來
     if (usesLeeway()) {
@@ -1268,6 +1310,7 @@ export const searchPlannerStore = {
     else if (target.kind === "transit") this.patch({ transitPos: p });
     else if (target.kind === "priorAll") this.setAllScenarioDatums(p);
     else if (target.kind === "mob") this.startMob(p);
+    else if (target.kind === "vessel") this.startVessel(p);
     else this.updateScenario(target.id, { datum: p });
   },
 

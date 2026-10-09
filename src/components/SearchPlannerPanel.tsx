@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste,
-  ChevronUp, ChevronDown, Upload, Download, ArrowDownUp, LifeBuoy, Pause, Check,
+  ChevronUp, ChevronDown, Upload, Download, ArrowDownUp, LifeBuoy, Pause, Check, Ship,
 } from "lucide-react";
 import { LEEWAY_OBJECTS } from "../wargame/search/drift/leeway";
 import { SeaVectorControls } from "./wargame/SeaVectorControls";
@@ -75,6 +75,8 @@ export function SearchPlannerPanel(
   const eff = searchPlannerStore.getSearchEffectiveness();
   const sol = solve();
   const units = eligibleSearchUnits();
+  // 搜索對象：落水人員（Leeway 漂流）或船舶 / 船團（航向航速）
+  const isMob = inputs.driftModel === "leeway";
   // 落水 Leeway 漂流已算好 → 蒙地卡羅可選「落水漂流粒子」
   const driftReady = inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel === "leeway"
     && !!searchPlannerStore.getDrift().result && searchPlannerStore.isDriftCurrent();
@@ -200,7 +202,10 @@ export function SearchPlannerPanel(
       )}
 
       <div style={embedded ? bodyEmbedded : body}>
-        <MobDriftSection t={t} lang={lang} fmtHr={fmtHr} />
+        <TargetTypeSection lang={lang} />
+        {isMob
+          ? <MobDriftSection t={t} lang={lang} fmtHr={fmtHr} />
+          : <VesselSection t={t} lang={lang} fmtHr={fmtHr} />}
 
         {/* ① 搜索區 */}
         <Section title={t.secArea}>
@@ -675,8 +680,8 @@ export function SearchPlannerPanel(
                     }}>
                     <option value="uniform">{t.mcUniform}</option>
                     <option value="gaussian">{t.mcGaussian}</option>
-                    <option value="lkp">{t.mcLkp}</option>
-                    {(driftReady || inputs.mcDistributionKind === "drift") && (
+                    {(!isMob || inputs.mcDistributionKind === "lkp") && <option value="lkp">{t.mcLkp}</option>}
+                    {(isMob || inputs.mcDistributionKind === "drift") && (
                       <option value="drift">{lang === "en" ? "MOB drift particles (Leeway)" : "落水漂流粒子（Leeway）"}</option>
                     )}
                   </select>
@@ -1550,8 +1555,8 @@ function LkpEditor({ t, fmtHr, shared = false }: { t: SearchStrings; fmtHr: (h: 
   // 事前分布用多情境時才需要「帶入」；依 LKP 時兩邊本來就是同一組參數
   const priorDatum = inputs.bayesEnabled && !inputs.priorFromLkp ? searchPlannerStore.primaryScenarioDatum() : null;
   const linked = shared || (inputs.bayesEnabled && inputs.priorFromLkp);
-  // 只有⑧事前分布（shared）在 Leeway 漂流時才不用航向航速；蒙地卡羅的「最後已知位置 + 航向航速」永遠要
-  const leeway = shared && inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel === "leeway";
+  // 搜索對象為落水人員 → 目標隨海流＋風漂流，不用航向航速（參數在 ⓪）
+  const leeway = inputs.driftModel === "leeway";
   const lang = useLang() === "en" ? "en" : "zh";
 
   return (
@@ -1578,8 +1583,8 @@ function LkpEditor({ t, fmtHr, shared = false }: { t: SearchStrings; fmtHr: (h: 
             : "目前使用落水 Leeway 漂流（見 ⓪）：目標隨海流＋風場移動，不用航向 / 航速。"}
           <button className="wg-btn" data-testid="lkp-use-course"
             style={{ ...smallBtn, marginTop: 6, color: "#e2e8f0" }}
-            onClick={() => patch({ driftModel: "linear" })}>
-            {lang === "en" ? "Use course / speed instead (vessel / fleet)" : "改用航向 / 航速（船舶 / 船團）"}
+            onClick={() => searchPlannerStore.setTargetType("vessel")}>
+            {lang === "en" ? "Switch search object to vessel / fleet" : "搜索對象改為船舶 / 船團"}
           </button>
         </div>
       ) : (
@@ -1933,15 +1938,6 @@ function MobDriftSection({ t, lang, fmtHr }: { t: SearchStrings; lang: "zh" | "e
         </button>
       )}
 
-      {inputs.bayesEnabled && inputs.priorFromLkp && (
-        <Row label={m.model}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Toggle active={inputs.driftModel === "linear"} onClick={() => patch({ driftModel: "linear" })} label={m.linear} />
-            <Toggle active={inputs.driftModel === "leeway"} onClick={() => patch({ driftModel: "leeway" })} label={m.leeway} />
-          </div>
-        </Row>
-      )}
-
       {leeway && (
         <>
           {/* 地圖上同時看海流 / 風場箭頭（跟著下方時間軸） */}
@@ -2040,13 +2036,13 @@ function MobDriftSection({ t, lang, fmtHr }: { t: SearchStrings; lang: "zh" | "e
   );
 }
 
-function MobStep({ n, label, done, disabled = false, hint, onClick }: {
-  n: number; label: string; done: boolean; disabled?: boolean; hint?: string; onClick?: () => void;
+function MobStep({ n, label, done, disabled = false, hint, onClick, idPrefix = "mob" }: {
+  n: number; label: string; done: boolean; disabled?: boolean; hint?: string; onClick?: () => void; idPrefix?: string;
 }) {
   const clickable = !!onClick && !disabled;
   return (
     <button className={clickable ? "wg-btn" : undefined} disabled={!clickable} onClick={onClick} title={hint}
-      data-testid={`mob-step-${n}`} data-done={done ? "1" : "0"}
+      data-testid={`${idPrefix}-step-${n}`} data-done={done ? "1" : "0"}
       style={{
         display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
         padding: "6px 8px", borderRadius: 5, fontSize: 14, fontFamily: "inherit",
@@ -2064,5 +2060,117 @@ function MobStep({ n, label, done, disabled = false, hint, onClick }: {
       </span>
       <span style={{ flex: 1 }}>{label}</span>
     </button>
+  );
+}
+
+// ── 搜索對象：船舶 / 船團 ↔ 落水人員 ──────────────────────────
+const TYPE_TEXT = {
+  zh: {
+    title: "搜索對象",
+    vessel: "船舶 / 船團", vesselSub: "依航向 / 航速推算",
+    mob: "落水人員 / 漂浮物", mobSub: "依海流＋風（Leeway）漂流",
+  },
+  en: {
+    title: "Search object",
+    vessel: "Vessel / fleet", vesselSub: "Course / speed dead reckoning",
+    mob: "Person / object in water", mobSub: "Current + wind (Leeway) drift",
+  },
+} as const;
+
+function TargetTypeSection({ lang }: { lang: "zh" | "en" }) {
+  const x = TYPE_TEXT[lang];
+  const mob = searchPlannerStore.getInputs().driftModel === "leeway";
+  const card = (active: boolean, color: string): React.CSSProperties => ({
+    flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8, textAlign: "left",
+    padding: "8px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
+    background: active ? `${color}33` : "rgba(30,41,59,0.6)",
+    border: `1px solid ${active ? color : "rgba(148,163,184,0.25)"}`,
+    color: active ? "#f8fafc" : "#94a3b8",
+  });
+  return (
+    <Section title={x.title}>
+      <div style={{ display: "flex", gap: 6 }} role="radiogroup" aria-label={x.title}>
+        <button className="wg-btn" role="radio" aria-checked={!mob} data-testid="target-type-vessel"
+          style={card(!mob, "#38bdf8")} onClick={() => searchPlannerStore.setTargetType("vessel")}>
+          <Ship size={18} color={!mob ? "#7dd3fc" : "#64748b"} />
+          <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>{x.vessel}</span>
+            <span style={{ fontSize: 12, opacity: 0.8 }}>{x.vesselSub}</span>
+          </span>
+        </button>
+        <button className="wg-btn" role="radio" aria-checked={mob} data-testid="target-type-mob"
+          style={card(mob, "#ef4444")} onClick={() => searchPlannerStore.setTargetType("mob")}>
+          <LifeBuoy size={18} color={mob ? "#fca5a5" : "#64748b"} />
+          <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>{x.mob}</span>
+            <span style={{ fontSize: 12, opacity: 0.8 }}>{x.mobSub}</span>
+          </span>
+        </button>
+      </div>
+    </Section>
+  );
+}
+
+const VESSEL_TEXT = {
+  zh: {
+    title: "⓪ 船舶 / 船團 · 航向航速推算",
+    intro: "點地圖標最後已知位置（LKP），輸入估計航向 / 航速，推算目標機率分布，再一路排到派機。",
+    pick: "點地圖標最後已知位置", picking: "點地圖上的最後已知位置…", cancel: "取消",
+    next: "下一步",
+    step1: "以 95% 機率分布設搜索區", step2: "套用最佳搜索矩形（依可用架數）", step3: "產生搜索航線",
+    step4: "到下方「航線」區勾選無人機並下達",
+    needArea: "先完成上一步",
+  },
+  en: {
+    title: "⓪ Vessel / fleet · course & speed",
+    intro: "Mark the last known position (LKP) and enter the estimated course / speed to project the target distribution, then carry it through to tasking assets.",
+    pick: "Mark LKP on map", picking: "Click the last known position on the map…", cancel: "Cancel",
+    next: "Next steps",
+    step1: "Set area to 95% of the distribution", step2: "Apply optimal rectangle (for available assets)", step3: "Generate search tracks",
+    step4: "Pick drones and task them in the Tracks section below",
+    needArea: "Finish the previous step first",
+  },
+} as const;
+
+function VesselSection({ t, lang, fmtHr }: { t: SearchStrings; lang: "zh" | "en"; fmtHr: (h: number) => string }) {
+  const x = VESSEL_TEXT[lang];
+  const inputs = searchPlannerStore.getInputs();
+  const picking = searchPlannerStore.getLkpPickTarget()?.kind === "vessel";
+  const active = inputs.bayesEnabled && inputs.priorFromLkp && !!inputs.mcLkp;
+  const { a, b } = searchPlannerStore.getCorners();
+  const hasArea = !!(a && b);
+  const sol = active ? solve() : null;
+  const hasTracks = searchPlannerStore.getTracks().length > 0;
+
+  return (
+    <Section title={x.title}>
+      <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{x.intro}</div>
+      {picking ? (
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <span style={{ color: "#7dd3fc", fontWeight: 600, flex: 1 }}>{x.picking}</span>
+          <button className="wg-btn" style={smallBtn} data-testid="vessel-pick-cancel" onClick={() => searchPlannerStore.setPickingLkp(null)}>{x.cancel}</button>
+        </div>
+      ) : (
+        <button className="wg-btn" data-testid="vessel-pick"
+          style={{ ...primaryBtn, background: "rgba(56,189,248,0.18)", borderColor: "rgba(56,189,248,0.55)", color: "#e0f2fe" }}
+          onClick={() => searchPlannerStore.setPickingLkp({ kind: "vessel" })}>
+          <Ship size={15} /> {x.pick}
+        </button>
+      )}
+
+      {active && (
+        <>
+          <LkpEditor t={t} fmtHr={fmtHr} shared />
+          <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 4 }}>{x.next}</div>
+          <MobStep idPrefix="vessel" n={1} done={hasArea} label={x.step1}
+            onClick={() => searchPlannerStore.setAreaFromPrior(0.95)} />
+          <MobStep idPrefix="vessel" n={2} done={false} label={x.step2} disabled={!sol?.rectangle} hint={!hasArea ? x.needArea : undefined}
+            onClick={() => searchPlannerStore.applyOptimalRectangle()} />
+          <MobStep idPrefix="vessel" n={3} done={hasTracks} label={x.step3} disabled={!sol} hint={!hasArea ? x.needArea : undefined}
+            onClick={() => searchPlannerStore.generateTracks()} />
+          <MobStep idPrefix="vessel" n={4} done={searchPlannerStore.getAssignedUnitIds().length > 0} label={x.step4} disabled />
+        </>
+      )}
+    </Section>
   );
 }
