@@ -13,6 +13,7 @@ import { PovSwitcher } from "../PovSwitcher";
 import { ReplayPanel } from "../ReplayPanel";
 import { uiStore } from "../../wargame/uiStore";
 import { launchTutorial } from "../TutorialOverlay";
+import { GrayzoneControls } from "./GrayzonePanel";
 
 interface Props {
   map: MapboxMap | null;
@@ -34,6 +35,10 @@ export function WargameMobileSettings({
 
       <Section label="底圖">
         <MapStyleSwitcher selectedId={styleId} onChange={onStyleChange} embedded />
+      </Section>
+
+      <Section label="灰色地帶情資">
+        <GrayzoneControls />
       </Section>
 
       <Section label="視角 POV">

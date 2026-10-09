@@ -9,6 +9,7 @@ import { UnitPalette } from "./components/UnitPalette";
 import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
 import { attachRulerLayer, rulerStore } from "./map/rulerTool";
 import { attachWargameReconLayer } from "./map/wargameReconLayer";
+import { attachWargameGrayzoneLayer } from "./map/wargameGrayzoneLayer";
 import { RulerControl } from "./components/RulerControl";
 import { AssetPanel, ASSET_PANEL_WIDTH, assetPanelStore } from "./components/wargame/AssetPanel";
 import { useLang } from "./wargame/i18n/lang";
@@ -90,6 +91,7 @@ export default function WargameApp() {
     registerFlagMarkers(map);
     detachersRef.current.push(
       attachWargameHexLayer(map),   // 最底：六角格 / 勢力範圍壓在所有兵棋圖層下
+      attachWargameGrayzoneLayer(map),   // 灰色地帶情資（航跡 / 高風險 / 暗船 / 海纜），壓在單位下
       attachWargameObjectiveLayer(map),
       attachWargameRadarLayer(map),
       attachWargameSelectionLayer(map),

@@ -136,6 +136,13 @@
   偵察資產進場 / 在站 / POD（掃掠寬 = 2×偵測距離×0.5、隨機搜索公式）、貪心派遣到目標 POD、
   未確認追蹤的高優先接觸 → 最近偵察資產。UI：資產面板「偵察計畫」分頁；盲區圖層 `map/wargameReconLayer.ts`
 
+### `src/wargame/grayzone/` — 灰色地帶情資（外部資料，非模擬）
+- `grayzoneStore.ts`：四個子圖層開關（近 24h 航跡 / 高風險船 / SAR 暗船 / 海纜障礙，存 localStorage）+ 載入狀態。
+  第一次勾選才 fetch `taiwan-grayzone-monitor` 的 `docs/pulse_feed.json`（其 `update-ais.yml` 每輪由
+  `src/build_pulse_feed.py` 產生，~1 MB / gzip ~200 KB）；網址可用 `VITE_GRAYZONE_FEED_URL` 覆寫。
+- 圖層 `map/wargameGrayzoneLayer.ts`（六角格之上、單位之下；換算航速 > 60 kn 的 AIS 跳點斷線）；
+  UI：桌面頂部列「情資」、行動版設定面板（`components/wargame/GrayzonePanel.tsx`）。純本機顯示，不進模擬、不同步多人。
+
 ### `src/wargame/llm/` — LLM 介接
 | 檔 | 用途 |
 |---|---|
