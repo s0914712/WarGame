@@ -8,6 +8,7 @@ import { BattleStatsHud } from "./components/BattleStatsHud";
 import { UnitPalette } from "./components/UnitPalette";
 import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
 import { attachRulerLayer, rulerStore } from "./map/rulerTool";
+import { attachWargameReconLayer } from "./map/wargameReconLayer";
 import { RulerControl } from "./components/RulerControl";
 import { AssetPanel, ASSET_PANEL_WIDTH, assetPanelStore } from "./components/wargame/AssetPanel";
 import { useLang } from "./wargame/i18n/lang";
@@ -98,6 +99,7 @@ export default function WargameApp() {
       attachWargameWrecksLayer(map),
       attachWargameSonobuoyLayer(map),
       attachWargameSearchLayer(map),
+      attachWargameReconLayer(map),   // 偵察盲區（資產面板 · 偵察計畫分頁）
       attachWargameBearingLayer(map),
       attachWargameCombatLayer(map),
       attachWargameCommandPingLayer(map),   // 右鍵 / 指令卡下令 → 攻擊準星 / 移動標記
@@ -223,13 +225,17 @@ export default function WargameApp() {
       : { top: 0, bottom: 0, left: 0, right: 0 });
   }, [desktopChrome, mapReady]);
 
-  // 處理底圖切換：detach → setStyle → 等 load 事件 → re-mount
+  // 處理底圖切換：detach → setStyle → 等 load 事件 → re-mount。
+  // 以「已套用的底圖 id」判斷是否真的要換：mapReady 首次變 true 也會觸發此 effect，
+  // 若此時 detach 再 setStyle(同一個 url)，Mapbox diff 出無變更而不發 style.load，
+  // 所有兵棋圖層就掛不回來（原本以 sprite url 比對，遇到無 sprite 的樣式會失效）。
+  const appliedStyleRef = useRef(DEFAULT_STYLE_ID);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    if (appliedStyleRef.current === styleId) return;
+    appliedStyleRef.current = styleId;
     const target = getStyleById(styleId);
-    const current = map.getStyle();
-    if (current?.sprite?.toString().includes(target.id)) return;  // 簡單避免重複
 
     for (const d of detachersRef.current) d();
     detachersRef.current = [];
