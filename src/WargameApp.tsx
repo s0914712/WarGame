@@ -127,6 +127,8 @@ export default function WargameApp() {
       antialias: true,
     });
     mapRef.current = map;
+    // 開發模式：讓自動化測試能用經緯度換算點擊位置（map.project），不必猜像素；production 不暴露
+    if (import.meta.env.DEV) (window as unknown as { __wgMap?: mapboxgl.Map }).__wgMap = map;
 
     map.on("load", () => {
       mountAllLayers(map);

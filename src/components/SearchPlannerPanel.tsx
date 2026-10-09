@@ -1900,10 +1900,10 @@ function MobDriftSection({ t, lang, fmtHr }: { t: SearchStrings; lang: "zh" | "e
       {pickingMob ? (
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <span style={{ color: "#fca5a5", fontWeight: 600, flex: 1 }}>{m.picking}</span>
-          <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.setPickingLkp(null)}>{m.cancel}</button>
+          <button className="wg-btn" style={smallBtn} data-testid="mob-pick-cancel" onClick={() => searchPlannerStore.setPickingLkp(null)}>{m.cancel}</button>
         </div>
       ) : (
-        <button className="wg-btn"
+        <button className="wg-btn" data-testid="mob-pick"
           style={{ ...primaryBtn, background: "rgba(239,68,68,0.22)", borderColor: "rgba(239,68,68,0.6)", color: "#fee2e2" }}
           onClick={() => searchPlannerStore.setPickingLkp({ kind: "mob" })}>
           <LifeBuoy size={15} /> {m.pick}
@@ -1963,14 +1963,14 @@ function MobDriftSection({ t, lang, fmtHr }: { t: SearchStrings; lang: "zh" | "e
           {ready && res && (
             <>
               <Row label={m.viewHour}>
-                <button className="wg-btn" style={{ ...smallBtn, padding: "4px 6px" }} title={playing ? m.pause : m.play}
+                <button className="wg-btn" style={{ ...smallBtn, padding: "4px 6px" }} title={playing ? m.pause : m.play} data-testid="mob-play"
                   onClick={() => {
                     if (!playing && viewHour >= res.hours) searchPlannerStore.setDriftViewHour(0);
                     setPlaying((p) => !p);
                   }}>
                   {playing ? <Pause size={12} /> : <Play size={12} />}
                 </button>
-                <input type="range" min={0} max={res.hours} step={1} value={viewHour}
+                <input type="range" min={0} max={res.hours} step={1} value={viewHour} data-testid="mob-hour"
                   onChange={(e) => { setPlaying(false); searchPlannerStore.setDriftViewHour(Number(e.target.value)); }}
                   style={{ flex: 1, accentColor: "#ef4444", minWidth: 0 }} />
                 <span style={{ fontSize: 14, color: "#e2e8f0", width: 52, textAlign: "right", fontFamily: "ui-monospace, monospace" }}>
@@ -1985,7 +1985,7 @@ function MobDriftSection({ t, lang, fmtHr }: { t: SearchStrings; lang: "zh" | "e
                 </button>
               </div>
               {stats && (
-                <div style={{ ...resultBox, marginBottom: 0, padding: 10 }}>
+                <div style={{ ...resultBox, marginBottom: 0, padding: 10 }} data-testid="mob-stats">
                   <KV k={m.drift} v={`${stats.distNm.toFixed(1)} nm @ ${stats.brg.toFixed(0)}°`} />
                   <KV k={m.spread} v={`${stats.sdE.toFixed(1)} / ${stats.sdN.toFixed(1)} nm`} />
                   <KV k={m.stranded} v={`${stats.strandedPct.toFixed(1)}%`} highlight={stats.strandedPct >= 5} />
@@ -2021,6 +2021,7 @@ function MobStep({ n, label, done, disabled = false, hint, onClick }: {
   const clickable = !!onClick && !disabled;
   return (
     <button className={clickable ? "wg-btn" : undefined} disabled={!clickable} onClick={onClick} title={hint}
+      data-testid={`mob-step-${n}`} data-done={done ? "1" : "0"}
       style={{
         display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
         padding: "6px 8px", borderRadius: 5, fontSize: 14, fontFamily: "inherit",

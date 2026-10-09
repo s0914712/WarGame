@@ -255,6 +255,7 @@ export function ScenarioBriefingModal({ open: openOverride, onClose }: Props = {
           </button>
           <button
             onClick={close}
+            data-testid="briefing-start"
             className="wg-btn"
             style={{
               padding: "10px 24px",

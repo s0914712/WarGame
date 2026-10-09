@@ -268,6 +268,7 @@ export function LandingScreen({ map }: Props) {
           <MenuButton
             key={m.id}
             label={lang === "en" ? m.en : m.zh}
+            testId={`landing-menu-${m.id}`}
             index={i}
             isMobile={isMobile}
             active={activeMenu === m.id}
@@ -333,8 +334,8 @@ export function LandingScreen({ map }: Props) {
 }
 
 // ── 選單按鈕 ──
-function MenuButton({ label, index, isMobile, active, pressKey, onHover, onClick }: {
-  label: string; index: number; isMobile: boolean; active: boolean; pressKey: number;
+function MenuButton({ label, testId, index, isMobile, active, pressKey, onHover, onClick }: {
+  label: string; testId?: string; index: number; isMobile: boolean; active: boolean; pressKey: number;
   onHover: () => void; onClick: () => void;
 }) {
   return (
@@ -344,6 +345,7 @@ function MenuButton({ label, index, isMobile, active, pressKey, onHover, onClick
       onMouseEnter={onHover}
       onFocus={onHover}
       onClick={onClick}
+      data-testid={testId}
       className={`wg-ld-menu wg-ld-menu-in${active ? " is-active" : ""}${pressKey ? " is-pressed" : ""}`}
       style={{
         animationDelay: `${0.15 + index * 0.08}s`,
@@ -471,6 +473,7 @@ function CampaignPane({
           return (
             <button
               key={entry.scenario.id}
+              data-testid={`landing-scenario-${entry.scenario.id}`}
               onClick={() => setSelectedScenarioId(entry.scenario.id)}
               className="wg-btn"
               style={{
@@ -520,7 +523,7 @@ function CampaignPane({
             </button>
           </div>
 
-          <button onClick={onStart} className="wg-btn wg-ld-start" style={{
+          <button onClick={onStart} data-testid="landing-start" className="wg-btn wg-ld-start" style={{
             width: "100%", padding: isMobile ? "12px 20px" : "14px 24px",
             background: `linear-gradient(90deg, ${ACCENT}, #f59e0b)`, color: "#fff", border: "none", borderRadius: 8,
             fontSize: isMobile ? 16 : 20, fontWeight: 800, letterSpacing: 2, cursor: "pointer", fontFamily: "inherit",

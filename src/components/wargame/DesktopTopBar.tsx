@@ -89,7 +89,7 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
         <BarButton title={lang === "zh" ? "Switch to English" : "切換為中文"} onClick={() => langStore.toggle()}>
           <Languages size={15} />{lang === "zh" ? " 中" : " EN"}
         </BarButton>
-        <BarButton accent="#facc15" active={searchOpen}
+        <BarButton accent="#facc15" active={searchOpen} testId="topbar-search"
           title="搜索規劃器（掃區時間 / POD / 建議架數與搜索圖形）"
           onClick={() => searchPlannerStore.setOpen(!searchOpen)}>
           <Radar size={15} />{!iconOnly && " 搜索"}
@@ -100,7 +100,7 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
           <Crosshair size={15} />{!iconOnly && (lang === "en" ? " Assets" : " 資產")}
         </BarButton>
         <GrayzoneBarButton iconOnly={iconOnly} renderButton={({ active, onClick, title, children }) => (
-          <BarButton accent="#22d3ee" active={active} onClick={onClick} title={title}>
+          <BarButton accent="#22d3ee" active={active} onClick={onClick} title={title} testId="topbar-grayzone">
             {children}
           </BarButton>
         )} />
@@ -244,11 +244,13 @@ function MenuItem({ icon, onClick, children }: { icon: React.ReactNode; onClick:
   );
 }
 
-function BarButton({ children, onClick, title, active = false, accent = "#3b82f6", disabled = false }: {
+function BarButton({ children, onClick, title, active = false, accent = "#3b82f6", disabled = false, testId }: {
   children: React.ReactNode; onClick: () => void; title?: string; active?: boolean; accent?: string; disabled?: boolean;
+  /** 自動化測試用穩定選擇器（不依賴中文文字，避開 Windows 編碼問題） */
+  testId?: string;
 }) {
   return (
-    <button onClick={disabled ? undefined : onClick} title={title} className="wg-btn" disabled={disabled} style={{
+    <button onClick={disabled ? undefined : onClick} title={title} className="wg-btn" disabled={disabled} data-testid={testId} style={{
       height: 36, padding: "0 10px", borderRadius: 6, flexShrink: 0,
       display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
       border: `1px solid ${active ? accent : "rgba(148, 163, 184, 0.3)"}`,

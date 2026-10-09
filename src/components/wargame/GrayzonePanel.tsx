@@ -74,7 +74,7 @@ export function GrayzoneControls() {
             display: "flex", alignItems: "center", gap: 8, padding: "6px 6px", borderRadius: 6,
             cursor: "pointer", fontSize: 14, color: "#e2e8f0",
           }}>
-            <input type="checkbox" checked={grayzoneStore.isOn(k)}
+            <input type="checkbox" checked={grayzoneStore.isOn(k)} data-testid={`grayzone-layer-${k}`}
               onChange={(e) => grayzoneStore.setOn(k, e.target.checked)}
               style={{ accentColor: DOT[k], width: 15, height: 15 }} />
             <span style={{ width: 10, height: 10, borderRadius: "50%", background: DOT[k], flexShrink: 0 }} />
