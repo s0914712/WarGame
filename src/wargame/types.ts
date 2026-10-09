@@ -20,6 +20,8 @@ export type UnitId = string;
  *   - us：美國海軍 / 空軍（藍方盟軍）
  *   - japan：JMSDF / JASDF（保留，未來用）
  */
+import type { TargetPriorityProfile } from "./sim/targetPriority";
+
 export type SideId = "blue" | "red" | "neutral" | "us" | "japan";
 export type CommandId = string;
 export type LngLat = [number, number];
@@ -345,6 +347,11 @@ export interface Side {
   isHostileTo: SideId[];
   /** 陣營預設 ROE；省略 → "weapons_free"。可被 unit.roe 覆寫 */
   roe?: RoeMode;
+  /**
+   * 攻擊優序（每類目標 0–5 分 + 優序 / 距離權衡）。省略 → 自動交戰打最近目標（原行為）。
+   * 見 sim/targetPriority.ts。
+   */
+  targetPriority?: TargetPriorityProfile;
 }
 
 // ── scenario ─────────────────────────────────────────────

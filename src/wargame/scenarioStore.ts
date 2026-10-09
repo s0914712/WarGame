@@ -139,6 +139,21 @@ export const scenarioStore = {
     notify();
   },
 
+  /**
+   * 設定陣營攻擊優序（null = 清除 → 回到「打最近目標」）。
+   * 存在 scenario.sides，隨場景匯出；多人時由 host 快照同步給 client。
+   */
+  setSideTargetPriority(sideId: import("./types").SideId, profile: import("./sim/targetPriority").TargetPriorityProfile | null): void {
+    const sides = state.scenario.sides.map((s) => {
+      if (s.id !== sideId) return s;
+      if (profile) return { ...s, targetPriority: profile };
+      const { targetPriority: _drop, ...rest } = s;
+      return rest;
+    });
+    state = { ...state, scenario: { ...state.scenario, sides } };
+    notify();
+  },
+
   /** Phase 3 內部 tick 呼叫；其他地方不要直接寫 */
   setState(next: SimulationState): void {
     state = next;

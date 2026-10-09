@@ -9,6 +9,7 @@ import { UnitPalette } from "./components/UnitPalette";
 import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
 import { attachRulerLayer, rulerStore } from "./map/rulerTool";
 import { RulerControl } from "./components/RulerControl";
+import { AssetPanel, ASSET_PANEL_WIDTH, assetPanelStore } from "./components/wargame/AssetPanel";
 import { useLang } from "./wargame/i18n/lang";
 import { DemoModeToggle } from "./components/DemoModeToggle";
 import { TutorialOverlay } from "./components/TutorialOverlay";
@@ -73,6 +74,7 @@ export default function WargameApp() {
   const demoMode = useSyncExternalStore(uiStore.subscribe, isDemo, isDemo);
   const { isMobile, isLandscape } = useIsMobile();
   const uiLang = useLang() === "en" ? "en" : "zh";
+  const assetOpen = useSyncExternalStore(assetPanelStore.subscribe, assetPanelStore.isOpen, assetPanelStore.isOpen);
 
   useSimLoop();
   useAiSideLoop();
@@ -290,8 +292,11 @@ export default function WargameApp() {
             onOpenCheat={() => setCheatOpen(true)}
           />
           <HexToolbar top={TOP_BAR_HEIGHT + 12} />
-          {/* 入口在頂部列「尺規」鈕；這裡只在量測中顯示控制面板 */}
-          <RulerControl hideLauncher lang={uiLang} style={{ top: TOP_BAR_HEIGHT + 12, left: 16 }} />
+          {/* 資產面板（攻擊優序）：入口在頂部列「資產」鈕 */}
+          <AssetPanel top={TOP_BAR_HEIGHT + 12} />
+          {/* 入口在頂部列「尺規」鈕；這裡只在量測中顯示控制面板（資產面板開著時讓到右側） */}
+          <RulerControl hideLauncher lang={uiLang}
+            style={{ top: TOP_BAR_HEIGHT + 12, left: assetOpen ? 16 + ASSET_PANEL_WIDTH + 12 : 16 }} />
           <ThreatAlert top={TOP_BAR_HEIGHT + 10} />
           <ObjectivesHud map={mapRef.current} bottom={CONSOLE_HEIGHT + 34} />
           <UnitPalette hideLauncher />

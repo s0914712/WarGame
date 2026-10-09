@@ -115,10 +115,15 @@ export default function SearchPlannerApp() {
     };
   }, []);
 
-  // 底圖切換
+  // 底圖切換。只在真的換了底圖時才動：mapReady 首次變 true 也會觸發這個 effect，
+  // 若此時 detach 再 setStyle(同一個 url)，Mapbox 會 diff 出「無變更」而**不發 style.load**，
+  // 搜索圖層（含地圖繪製搜索區的點擊處理）就再也掛不回來 —— 地圖點不出搜索區。
+  const appliedStyleRef = useRef(DEFAULT_STYLE_ID);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    if (appliedStyleRef.current === styleId) return;
+    appliedStyleRef.current = styleId;
     detachRef.current?.();
     detachRef.current = null;
     rulerDetachRef.current?.();

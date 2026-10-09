@@ -83,6 +83,7 @@
 | `detection.ts` | `computeDetection(units, sides)` — 全陣營 sensor pool + stealth 折扣 |
 | `commands.ts` | `applyDueCommands(state)` — 到期指令套用 |
 | `combat.ts` | `runCombat(state, ruleSet, dt)` — auto-engage / 開火 / 飛彈推進 / 命中 / 擊毀 |
+| `targetPriority.ts` | 攻擊優序：9 類目標 × 0–5 分 + 優序 / 距離權衡（`Side.targetPriority`）；auto-engage 依 `targetScore()` 選目標，未設定 = 打最近（原行為）。UI：頂部列「資產」 |
 | `rules/v1.ts` | `COMBAT_RULES_V1` — CombatRuleSet 預設實作（pluggable） |
 | `terrain.ts` | `TerrainProbe` 介面 + 台灣陸地多邊形預設 |
 | `validate.ts` | `validatePlan(unit, waypoints, opts)` — 燃料 / 時間 / domain 違規 |

@@ -13,6 +13,7 @@
  * 採用 CombatRuleSet 抽象，v1 規則在 rules/v1.ts；之後想換 sophisticated 模型（Salvo Combat）
  * 直接 swap ruleSet 即可。
  */
+import { targetScore } from "./targetPriority";
 import type {
   EngagementEvent, Explosion, LngLat, Missile, MissileProfile, RoeMode, SideId,
   SimulationState, Unit, UnitId, Wreck,
@@ -151,8 +152,11 @@ export function runCombat(
       if (hostiles.length === 0) continue;
       const roe = effectiveRoe(u.roe, mySide.roe);
       if (roe === "weapons_hold") continue;   // 不主動接戰，只接受明確 engage 命令
-      // 找最近、符合 ROE + 已分類（≥ classified）+ 有可用武器（域+射程+彈）的敵方
-      let best: { id: UnitId; dist: number } | null = null;
+      // 找符合 ROE + 已分類（≥ classified）+ 有可用武器（域+射程+彈）的敵方：
+      //   陣營未設攻擊優序 → 最近者（原行為）
+      //   有設 → 依 targetScore（類別分數 × 權衡 − 距離），0 分類別不主動攻擊
+      const priority = mySide.targetPriority;
+      let best: { id: UnitId; dist: number; score: number } | null = null;
       for (const o of Object.values(units)) {
         if (!hostiles.includes(o.sideId)) continue;
         if (o.hpCurrent <= 0) continue;
@@ -163,7 +167,13 @@ export function runCombat(
         if (roe === "defensive_only" && !isShootingAtSide(o, u.sideId, missiles, units)) continue;
         if (!selectOffenseWeapon(u, o, simSec)) continue;     // 無合適武器（域/射程/彈）→ 跳過
         const d = haversineKm([u.position.lng, u.position.lat], [o.position.lng, o.position.lat]);
-        if (!best || d < best.dist) best = { id: o.id, dist: d };
+        if (priority) {
+          const score = targetScore(priority, o.kind, d, u.core.rangeKm);
+          if (score === null) continue;
+          if (!best || score > best.score || (score === best.score && d < best.dist)) best = { id: o.id, dist: d, score };
+        } else if (!best || d < best.dist) {
+          best = { id: o.id, dist: d, score: 0 };
+        }
       }
       if (best) {
         units = { ...units, [u.id]: { ...u, engagingTargetId: best.id } };

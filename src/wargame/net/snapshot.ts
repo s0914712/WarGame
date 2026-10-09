@@ -7,7 +7,8 @@
  * Client 端不跑 engine：收到快照後在「上一則 → 這一則」之間對單位 / 飛彈位置
  * 做線性插值，渲染延遲一個廣播週期換取平滑。
  */
-import type { AcousticEnvironment, EngagementEvent, SimulationState } from "../types";
+import type { AcousticEnvironment, EngagementEvent, SideId, SimulationState } from "../types";
+import type { TargetPriorityProfile } from "../sim/targetPriority";
 import { scenarioStore } from "../scenarioStore";
 import { wargameClock } from "../clock";
 
@@ -23,6 +24,8 @@ export interface StateSnapshot {
   rate: number;
   paused: boolean;
   acousticEnv?: AcousticEnvironment;
+  /** 各陣營攻擊優序（host 決定；未設定的陣營不列） */
+  targetPriorities?: Partial<Record<SideId, TargetPriorityProfile>>;
   units: SimulationState["units"];
   pendingCommands: SimulationState["pendingCommands"];
   missiles: SimulationState["missiles"];
@@ -51,6 +54,7 @@ export function buildSnapshot(
     rate: wargameClock.getRate(),
     paused: wargameClock.isPaused(),
     acousticEnv: state.scenario.acousticEnv,
+    targetPriorities: collectTargetPriorities(state),
     units: state.units,
     pendingCommands: state.pendingCommands,
     missiles: state.missiles,
@@ -63,6 +67,23 @@ export function buildSnapshot(
     eventsFrom,
     events: state.eventsAll.slice(eventsFrom),
   };
+}
+
+function collectTargetPriorities(state: SimulationState): StateSnapshot["targetPriorities"] {
+  const out: Partial<Record<SideId, TargetPriorityProfile>> = {};
+  for (const s of state.scenario.sides) if (s.targetPriority) out[s.id] = s.targetPriority;
+  return out;
+}
+
+/** 依快照的攻擊優序更新本地 sides（有變化才寫，避免每則快照都 notify） */
+function applyTargetPriorities(tp: StateSnapshot["targetPriorities"]): void {
+  if (!tp) return;
+  for (const s of scenarioStore.getState().scenario.sides) {
+    const want = tp[s.id] ?? null;
+    if (JSON.stringify(want) !== JSON.stringify(s.targetPriority ?? null)) {
+      scenarioStore.setSideTargetPriority(s.id, want);
+    }
+  }
 }
 
 /** 把快照（DB 存的 / 重連用）還原成完整 state — host 重連時用 */
@@ -86,6 +107,7 @@ export function restoreFullState(snap: StateSnapshot): void {
   });
   wargameClock.seek(snap.simTimeSec);
   wargameClock.setRate(snap.rate);
+  applyTargetPriorities(snap.targetPriorities);
 }
 
 // ── Client 端：插值套用 ─────────────────────────────────────────
@@ -181,6 +203,9 @@ export const clientApplier = {
     else if (snap.eventsFrom <= authEvents.length) {
       authEvents = authEvents.slice(0, snap.eventsFrom).concat(snap.events);
     }
+
+    // 攻擊優序由 host 決定
+    applyTargetPriorities(snap.targetPriorities);
 
     // 聲學環境由 host 決定
     const st = scenarioStore.getState();
