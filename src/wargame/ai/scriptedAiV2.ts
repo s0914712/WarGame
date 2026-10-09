@@ -18,6 +18,7 @@ import { scenarioStore } from "../scenarioStore";
 import { wargameClock } from "../clock";
 import { advanceTowardKm, haversineKm } from "../sim/geo";
 import { aiConfigStore, DEFAULT_V2_PARAMS, type ScriptedV2Params } from "../llm/aiConfig";
+import { DEFAULT_WEIGHT, MAX_PRIORITY, weightOf, type TargetPriorityProfile } from "../sim/targetPriority";
 
 export interface ScriptedTickResult {
   commandsIssued: number;
@@ -80,11 +81,16 @@ function computeUtility(
   distKm: number,
   assignedToTarget: number,
   p: ScriptedV2Params,
+  priority?: TargetPriorityProfile,
 ): number {
   const inRange = distKm <= i.core.rangeKm;
   const distNorm = distKm / Math.max(1, i.core.rangeKm);
   const hpFrac = e.hpCurrent / e.core.hpMax;
-  const hvuBonus = isHighValue(e) ? p.hvuPriority : 0;
+  // 陣營有攻擊優序 → 以使用者的類別分數取代寫死的 HVU 名單：
+  //   5 分 = +hvuPriority、3 分（預設）= 0、1 分 = −hvuPriority（0 分在配對階段就排除）
+  const hvuBonus = priority
+    ? p.hvuPriority * (weightOf(priority, e.kind, i.kind) - DEFAULT_WEIGHT) / (MAX_PRIORITY - DEFAULT_WEIGHT)
+    : (isHighValue(e) ? p.hvuPriority : 0);
   const threat = threatScore(e);
   // 已有 N 個 unit 排隊打這目標 → 邊際效益遞減（係數越大越分散）
   const crowdPenalty = assignedToTarget * p.coordination;
@@ -149,6 +155,8 @@ export function runScriptedAiV2Tick(sideId: SideId): ScriptedTickResult {
     if (u.ammoCurrent <= 0 && role !== "defender") continue;  // 沒彈藥 → engine 的 RTB 接手
 
     for (const e of detectedEnemies) {
+      // 攻擊優序 0 分 = 此陣營不主動攻擊這類目標 → 不派人接近
+      if (side.targetPriority && weightOf(side.targetPriority, e.kind, u.kind) <= 0) continue;
       const d = haversineKm([u.position.lng, u.position.lat], [e.position.lng, e.position.lat]);
       // 連 2x range 都搆不到的 → 不考慮（行進耗油不划算）
       if (d > u.core.rangeKm * 2.5) continue;
@@ -161,7 +169,7 @@ export function runScriptedAiV2Tick(sideId: SideId): ScriptedTickResult {
   const assignedToUnit: Record<string, Pair> = {};
 
   // 先粗算 utility（assignedToTarget 為 0）
-  for (const p of pairs) p.utility = computeUtility(p.unit, p.target, p.dist, 0, params);
+  for (const p of pairs) p.utility = computeUtility(p.unit, p.target, p.dist, 0, params, side.targetPriority);
   // 從最高 utility 開始貪心
   pairs.sort((a, b) => b.utility - a.utility);
 
@@ -170,7 +178,7 @@ export function runScriptedAiV2Tick(sideId: SideId): ScriptedTickResult {
     const cur = assignedToTarget[p.target.id] ?? 0;
     if (cur >= maxAssignableTo(p.target)) continue;           // 目標已滿
     // 重算 utility（考慮已分配人數）
-    const realUtility = computeUtility(p.unit, p.target, p.dist, cur, params);
+    const realUtility = computeUtility(p.unit, p.target, p.dist, cur, params, side.targetPriority);
     if (realUtility < 0.2) continue;                          // 太爛就放棄
     assignedToTarget[p.target.id] = cur + 1;
     assignedToUnit[p.unit.id] = { ...p, utility: realUtility };

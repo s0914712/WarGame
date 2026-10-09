@@ -3,6 +3,7 @@
  *
  * 純讀 — 沒副作用。LLM 拿到後可分析戰場做決策。
  */
+import { describeProfile } from "../sim/targetPriority";
 import { scenarioStore } from "../scenarioStore";
 import { wargameClock, formatTPlus } from "../clock";
 import { viewStore } from "../viewStore";
@@ -97,6 +98,8 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
       name: s.displayName,
       isPlayer: s.isPlayer,
       hostileTo: s.isHostileTo,
+      // 攻擊優序只給本方（敵方的設定屬於不可見情報）
+      ...(s.id === povSide && s.targetPriority ? { targetPriority: describeProfile(s.targetPriority) } : {}),
     })),
     units,
     ...(ownBuoys.length > 0 ? { sonobuoys: ownBuoys } : {}),

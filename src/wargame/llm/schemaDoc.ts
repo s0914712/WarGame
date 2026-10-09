@@ -113,6 +113,15 @@ export const SCHEMA_DOC = `# 兵棋 LLM 控制協定 v1
 
 戰術用途：佈防階段可下 \`weapons_hold\` 避免過早暴露 / 誤擊；接敵時切 \`weapons_free\`。
 
+## 攻擊優序（陣營設定，必須遵守）
+若 \`sides[本方].targetPriority\` 存在，代表指揮官已率定各類目標的攻擊優先程度：
+- \`ranked\`：由高到低的類別與分數（5 最高）；選 \`engage\` 目標與推進方向時優先高分類別
+- \`doNotEngage\`：**不得主動攻擊**這些類別（除非它正對本方發射飛彈的自衛情況）
+- \`byShooter\`：特定攻擊方類別的覆寫（例：防空對無人機另給分數），優先於陣營預設
+- 類別：amphibious 登陸 / air_defense 防空 / sensor 雷達 / base_logistics 基地後勤 /
+  surface_combatant 水面艦 / submarine 潛艦 / aircraft 戰機直升機 / uav 無人機 / missile_launcher 飛彈車
+- 自動交戰（ROE weapons_free 等）也已依此優序選目標，你的 \`engage\` 命令應與之一致
+
 ## 分層防空（自動）
 艦艇 / SAM 車會**自動**對來襲飛彈發射攔截彈（你不需下令）：愛國者（長程）→ 中程 SAM
 → 艦載點防禦逐層接戰，每發攔截有機率失敗。**單發攻擊常被攔下** — 想突破密集防空網

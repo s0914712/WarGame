@@ -2,8 +2,10 @@
  * 行動版「設定」面板內容 — 原右側抽屜的次要控制，改為底部 dock 內的流式內容。
  * 場景 / 底圖 / 視角 POV / 錄製回放 + 動作鈕（LLM・簡報・教學・說明・Demo・返回主選單）。
  */
+import { assetPanelStore } from "./AssetPanel";
+import { rulerStore } from "../../map/rulerTool";
 import type { Map as MapboxMap } from "mapbox-gl";
-import { Bot, Swords, GraduationCap, HelpCircle, Monitor, Menu, Hexagon } from "lucide-react";
+import { Bot, Swords, GraduationCap, HelpCircle, Monitor, Menu, Hexagon, Crosshair, Ruler } from "lucide-react";
 import { hexStore } from "../../wargame/hex/hexStore";
 import { ScenarioPicker } from "../ScenarioPicker";
 import { MapStyleSwitcher } from "../MapStyleSwitcher";
@@ -46,6 +48,8 @@ export function WargameMobileSettings({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <ActionBtn Icon={Bot} label="LLM 介接" onClick={onOpenLlm} primary />
           <ActionBtn Icon={Hexagon} label="六角格 / 勢力範圍" onClick={() => hexStore.setVisible(!hexStore.isVisible())} />
+          <ActionBtn Icon={Crosshair} label="資產 / 攻擊優序" onClick={() => assetPanelStore.toggle()} />
+          <ActionBtn Icon={Ruler} label="尺規" onClick={() => rulerStore.setActive(!rulerStore.isActive())} />
           <ActionBtn Icon={Swords} label="場景簡報" onClick={onOpenBriefing} />
           <ActionBtn Icon={GraduationCap} label="教學導覽" onClick={launchTutorial} />
           <ActionBtn Icon={HelpCircle} label="介面說明" onClick={onOpenCheat} />

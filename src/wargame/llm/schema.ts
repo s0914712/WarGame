@@ -30,6 +30,8 @@ export interface LlmStateExport {
     name: string;
     isPlayer: boolean;
     hostileTo: SideId[];
+    /** 攻擊優序（僅本方、有設定時） */
+    targetPriority?: ReturnType<typeof import("../sim/targetPriority").describeProfile>;
   }>;
   units: LlmUnitView[];
   /** 己方已佈放的聲標屏幕（反潛）；無則省略 */
