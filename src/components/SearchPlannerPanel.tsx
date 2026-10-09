@@ -19,7 +19,7 @@ import { LEEWAY_OBJECTS } from "../wargame/search/drift/leeway";
 import { SeaVectorControls } from "./wargame/SeaVectorControls";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
-  currentRangeLimits, lkpProjection, transitProjection, type LkpPickTarget,
+  currentRangeLimits, lkpProjection, transitProjection, transitShip, type LkpPickTarget,
 } from "../wargame/search/searchPlannerStore";
 import { SEARCH_PATTERNS, type SearchPatternId } from "../wargame/search/patterns";
 import { podForDisplay, POD_DISPLAY_CAP, podFromCoverage } from "../wargame/search/pod";
@@ -745,7 +745,7 @@ export function SearchPlannerPanel(
                 onChange={(v) => patch({ particleCount: v })} />
               <div style={{ display: "flex", gap: 6 }}>
                 <Toggle active={inputs.priorFromLkp} onClick={() => patch({ priorFromLkp: true })} label={t.priorModeLkp} />
-                <Toggle active={!inputs.priorFromLkp} onClick={() => patch({ priorFromLkp: false })} label={t.priorModeScenarios} />
+                <Toggle active={!inputs.priorFromLkp} onClick={() => patch({ priorFromLkp: false })} label={t.priorModeScenarios} testId="prior-mode-scenarios" />
               </div>
               {inputs.priorFromLkp ? (
                 <>
@@ -838,7 +838,7 @@ export function SearchPlannerPanel(
         {/* ⑪ 突穿機率（已知船舶航經搜索區、未被發現） */}
         <Section title={t.secTransit}>
           <label style={checkRow}>
-            <input type="checkbox" checked={inputs.transitEnabled}
+            <input type="checkbox" checked={inputs.transitEnabled} data-testid="transit-enable"
               onChange={(e) => patch({ transitEnabled: e.target.checked })} />
             {t.transitEnable}
           </label>
@@ -1457,6 +1457,10 @@ function TransitEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => s
   const tracks = searchPlannerStore.getTracks();
   const r = searchPlannerStore.getTransitResult();
   const proj = transitProjection();
+  const ship = transitShip();
+  const linked = inputs.transitLinkLkp;
+  const order = useCoordOrder();
+  const lang = useLang() === "en" ? "en" : "zh";
   const [busy, setBusy] = useState(false);
   const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
   const ci = (c: [number, number]) => `95% CI [${(c[0] * 100).toFixed(1)}%, ${(c[1] * 100).toFixed(1)}%]`;
@@ -1467,25 +1471,56 @@ function TransitEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => s
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{
-        padding: "7px 9px", borderRadius: 4,
-        background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.3)",
-      }}>
-        <LkpInput key={JSON.stringify(inputs.transitPos)} t={t} title={t.transitShipPos} accent="#fca5a5"
-          value={inputs.transitPos} onApply={(p) => patch({ transitPos: p })} pickTarget={{ kind: "transit" }} />
-      </div>
-      <NumField label={t.transitReportToStart} value={inputs.transitReportToStartHr} min={0} max={48} step={0.25} unit="hr"
-        onChange={(v) => patch({ transitReportToStartHr: v })} />
-      <NumField label={t.lkpSigma} value={inputs.transitSigmaNm} min={0} max={20} step={0.5} unit="nm"
-        onChange={(v) => patch({ transitSigmaNm: v })} />
-      <NumField label={t.targetCourse} value={inputs.transitCourseDeg} min={0} max={359} step={1} unit="°"
-        onChange={(v) => patch({ transitCourseDeg: v })} />
-      <NumField label={t.targetCourseSigma} value={inputs.transitCourseSigmaDeg} min={0} max={90} step={1} unit="°"
-        onChange={(v) => patch({ transitCourseSigmaDeg: v })} />
-      <NumField label={t.targetSpeed} value={inputs.transitSpeedKn} min={0} max={40} step={0.5} unit="kn"
-        onChange={(v) => patch({ transitSpeedKn: v })} />
-      <NumField label={t.targetSpeedSigma} value={inputs.transitSpeedSigmaKn} min={0} max={10} step={0.1} unit="kn"
-        onChange={(v) => patch({ transitSpeedSigmaKn: v })} />
+      <label style={checkRow}>
+        <input type="checkbox" checked={linked} data-testid="transit-link"
+          onChange={(e) => patch({ transitLinkLkp: e.target.checked })} />
+        {lang === "en" ? "Use the LKP and course / speed from section ⓪" : "沿用 ⓪ 的最後已知位置與航向航速"}
+      </label>
+      {linked ? (
+        <div data-testid="transit-linked-summary" style={{
+          padding: "7px 9px", borderRadius: 4, fontSize: 13, lineHeight: 1.6, color: "#cbd5e1",
+          background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.3)",
+        }}>
+          {ship ? (
+            <>
+              <div style={{ fontFamily: "ui-monospace, monospace", color: "#fca5a5" }}>LKP: {fmtLngLat(ship.position, order)} ± {ship.sigmaNm} nm</div>
+              <div>{t.targetCourse} {ship.courseDeg}° ± {ship.courseSigmaDeg}° · {t.targetSpeed} {ship.speedKn} ± {ship.speedSigmaKn} kn</div>
+              <div>{t.transitReportToStart} {fmtHr(ship.reportToStartHr)}</div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>
+                {lang === "en"
+                  ? "Edit these in section ⓪; untick to enter a different ship (starts from these values)."
+                  : "在 ⓪ 修改；取消勾選可另外輸入別艘船（以這組值起頭）。"}
+              </div>
+            </>
+          ) : (
+            <span style={{ color: "#fed7aa" }}>
+              {lang === "en" ? "No LKP yet: mark it in section ⓪ first." : "尚未設定最後已知位置：先在 ⓪ 標定。"}
+            </span>
+          )}
+        </div>
+      ) : (
+        <>
+          <div style={{
+            padding: "7px 9px", borderRadius: 4,
+            background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.3)",
+          }}>
+            <LkpInput key={JSON.stringify(inputs.transitPos)} t={t} title={t.transitShipPos} accent="#fca5a5"
+              value={inputs.transitPos} onApply={(p) => patch({ transitPos: p })} pickTarget={{ kind: "transit" }} />
+          </div>
+          <NumField label={t.transitReportToStart} value={inputs.transitReportToStartHr} min={0} max={48} step={0.25} unit="hr"
+            onChange={(v) => patch({ transitReportToStartHr: v })} />
+          <NumField label={t.lkpSigma} value={inputs.transitSigmaNm} min={0} max={20} step={0.5} unit="nm"
+            onChange={(v) => patch({ transitSigmaNm: v })} />
+          <NumField label={t.targetCourse} value={inputs.transitCourseDeg} min={0} max={359} step={1} unit="°"
+            onChange={(v) => patch({ transitCourseDeg: v })} />
+          <NumField label={t.targetCourseSigma} value={inputs.transitCourseSigmaDeg} min={0} max={90} step={1} unit="°"
+            onChange={(v) => patch({ transitCourseSigmaDeg: v })} />
+          <NumField label={t.targetSpeed} value={inputs.transitSpeedKn} min={0} max={40} step={0.5} unit="kn"
+            onChange={(v) => patch({ transitSpeedKn: v })} />
+          <NumField label={t.targetSpeedSigma} value={inputs.transitSpeedSigmaKn} min={0} max={10} step={0.1} unit="kn"
+            onChange={(v) => patch({ transitSpeedSigmaKn: v })} />
+        </>
+      )}
 
       {proj && (
         <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.55 }}>
@@ -1498,7 +1533,7 @@ function TransitEditor({ t, fmtHr }: { t: SearchStrings; fmtHr: (h: number) => s
 
       {tracks.length === 0 ? (
         <div style={warnBox}>{t.mcNeedTracks}</div>
-      ) : !inputs.transitPos ? (
+      ) : !ship ? (
         <div style={warnBox}>{t.transitNeedPos}</div>
       ) : (
         <button className="wg-btn" style={{ ...primaryBtn, marginTop: 4 }} disabled={busy} onClick={run}>
@@ -1678,9 +1713,9 @@ function MiniField(props: {
   );
 }
 
-function Toggle({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function Toggle({ active, onClick, label, testId }: { active: boolean; onClick: () => void; label: string; testId?: string }) {
   return (
-    <button onClick={onClick} className="wg-btn" style={{
+    <button onClick={onClick} className="wg-btn" data-testid={testId} style={{
       flex: 1, padding: "7px 8px", borderRadius: 4, fontSize: 15, cursor: "pointer",
       fontFamily: "inherit", fontWeight: active ? 700 : 400, lineHeight: 1.3,
       border: `1px solid ${active ? "#facc15" : "rgba(148,163,184,0.25)"}`,

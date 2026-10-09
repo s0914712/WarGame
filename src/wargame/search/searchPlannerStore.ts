@@ -107,6 +107,11 @@ export interface PlannerInputs {
   mcLkpElapsedHr: number;
   // ── 突穿機率：已知船舶航經搜索區、未被發現的機率 ──
   transitEnabled: boolean;
+  /**
+   * 突穿分析沿用 ⓪ 的 LKP / 誤差 / 航向航速 / LKP→開始搜索時數（預設）。
+   * false = 下列 transit* 欄位獨立輸入（取消連動時以當下 LKP 的值起頭）。
+   */
+  transitLinkLkp: boolean;
   /** 船舶回報位置；null = 尚未輸入 */
   transitPos: LngLat | null;
   transitSigmaNm: number;
@@ -241,6 +246,7 @@ const DEFAULT_INPUTS: PlannerInputs = {
   mcTargetSpeedSigmaKn: 1,
   mcLkpElapsedHr: 1,
   transitEnabled: false,
+  transitLinkLkp: true,
   transitPos: null,
   transitSigmaNm: 1,
   transitCourseDeg: 90,
@@ -493,6 +499,10 @@ export function priorScenarios(): SearchScenario[] {
     driftCourseDeg: inputs.mcTargetCourseDeg,
     driftCourseSigmaDeg: inputs.mcTargetCourseSigmaDeg,
   }];
+}
+
+function samePoint(a: LngLat | null | undefined, b: LngLat | null | undefined): boolean {
+  return !!a && !!b && Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
 }
 
 /** 粒子各方向取 (1−coverage)/2 ~ (1+coverage)/2 分位數的外接框（至少 1 浬見方）；會就地排序傳入陣列 */
@@ -819,6 +829,29 @@ export function lkpProjection(): {
   return { lkp, atStart, atEnd, insideAtStart };
 }
 
+/** 突穿分析實際使用的船舶參數：連動時取 ⓪ LKP 那組，否則用 transit* 欄位 */
+export function transitShip(): {
+  position: LngLat; sigmaNm: number; courseDeg: number; courseSigmaDeg: number;
+  speedKn: number; speedSigmaKn: number; reportToStartHr: number;
+} | null {
+  if (inputs.transitLinkLkp) {
+    if (!inputs.mcLkp) return null;
+    return {
+      position: inputs.mcLkp, sigmaNm: inputs.mcSigmaNm,
+      courseDeg: inputs.mcTargetCourseDeg, courseSigmaDeg: inputs.mcTargetCourseSigmaDeg,
+      speedKn: inputs.mcTargetSpeedKn, speedSigmaKn: inputs.mcTargetSpeedSigmaKn,
+      reportToStartHr: inputs.mcLkpElapsedHr,
+    };
+  }
+  if (!inputs.transitPos) return null;
+  return {
+    position: inputs.transitPos, sigmaNm: inputs.transitSigmaNm,
+    courseDeg: inputs.transitCourseDeg, courseSigmaDeg: inputs.transitCourseSigmaDeg,
+    speedKn: inputs.transitSpeedKn, speedSigmaKn: inputs.transitSpeedSigmaKn,
+    reportToStartHr: inputs.transitReportToStartHr,
+  };
+}
+
 /**
  * 突穿分析的名目航線（不含誤差）—— 給地圖畫船舶預計航跡與進出點。
  * 時間以搜索開始為 0；回報時刻為 −T。
@@ -827,8 +860,9 @@ export function transitProjection(): {
   report: LngLat; atStart: LngLat; entry: LngLat | null; exit: LngLat | null; end: LngLat;
   entryHr: number | null; exitHr: number | null;
 } | null {
-  if (!inputs.transitEnabled || !inputs.transitPos) return null;
-  const { transitPos: rep0, transitCourseDeg: c, transitSpeedKn: v, transitReportToStartHr: T } = inputs;
+  const ship = transitShip();
+  if (!inputs.transitEnabled || !ship) return null;
+  const { position: rep0, courseDeg: c, speedKn: v, reportToStartHr: T } = ship;
   const at = (hr: number) => deadReckon(rep0, c, v, T + hr);
   const atStart = at(0);
   const box = areaBox();
@@ -989,7 +1023,36 @@ export const searchPlannerStore = {
   },
 
   patch(p: Partial<PlannerInputs>): void {
+    const prevLkp = inputs.mcLkp;
+    // 取消突穿連動 → 以目前 ⓪ LKP 那組值起頭（繼承），之後才各自修改
+    if (p.transitLinkLkp === false && inputs.transitLinkLkp) {
+      const ship = transitShip();
+      if (ship) {
+        p = {
+          transitPos: ship.position, transitSigmaNm: ship.sigmaNm,
+          transitCourseDeg: ship.courseDeg, transitCourseSigmaDeg: ship.courseSigmaDeg,
+          transitSpeedKn: ship.speedKn, transitSpeedSigmaKn: ship.speedSigmaKn,
+          transitReportToStartHr: ship.reportToStartHr, ...p,
+        };
+      }
+    }
     inputs = { ...inputs, ...p };
+    // ⓪ LKP 移動 → 多情境事前分布中「還沒個別改過」的情境基準點跟著移
+    // （還在預設點，或與舊 LKP 相同 = 之前就是繼承來的）
+    if ("mcLkp" in p && inputs.mcLkp && !samePoint(prevLkp, inputs.mcLkp)) {
+      const to = inputs.mcLkp;
+      let moved = false;
+      scenarios = scenarios.map((sc) => {
+        const def = DEFAULT_SCENARIOS.find((d) => d.id === sc.id)?.datum ?? null;
+        if (!samePoint(sc.datum, prevLkp) && !samePoint(sc.datum, def)) return sc;
+        moved = true;
+        return { ...sc, datum: [to[0], to[1]] as LngLat };
+      });
+      if (moved && !inputs.priorFromLkp && inputs.bayesEnabled) {
+        particles = buildPriorParticles();
+        sortiePos = [];
+      }
+    }
     // 依 LKP 建事前分布但還沒有 LKP → 以搜索區中心起頭（兩個功能共用同一點）
     if (inputs.bayesEnabled && inputs.priorFromLkp && !inputs.mcLkp && ("bayesEnabled" in p || "priorFromLkp" in p)) {
       const box = areaBox();
@@ -1095,7 +1158,8 @@ export const searchPlannerStore = {
   runTransit(): TransitResult | null {
     const sol = solve();
     const box = areaBox();
-    if (!sol || tracks.length === 0 || !box || !inputs.transitPos) return null;
+    const ship = transitShip();
+    if (!sol || tracks.length === 0 || !box || !ship) return null;
     const W = sol.forward?.sweepWidth.correctedNm ?? sol.inverse?.sweepWidth.correctedNm ?? 0;
     transitResult = runTransitAnalysis({
       box, polygon: polygon ?? undefined, tracks,
@@ -1103,13 +1167,7 @@ export const searchPlannerStore = {
       speedKn: inputs.speedKn,
       navErrorSigmaNm: inputs.mcNavErrorSigmaNm,
       sensorAvailability: inputs.mcSensorAvailability,
-      ship: {
-        position: inputs.transitPos,
-        sigmaNm: inputs.transitSigmaNm,
-        courseDeg: inputs.transitCourseDeg, courseSigmaDeg: inputs.transitCourseSigmaDeg,
-        speedKn: inputs.transitSpeedKn, speedSigmaKn: inputs.transitSpeedSigmaKn,
-        reportToStartHr: inputs.transitReportToStartHr,
-      },
+      ship,
       trials: inputs.mcTrials,
       seed: inputs.mcSeed,
     });
