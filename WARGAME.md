@@ -136,6 +136,11 @@
   偵察資產進場 / 在站 / POD（掃掠寬 = 2×偵測距離×0.5、隨機搜索公式）、貪心派遣到目標 POD、
   未確認追蹤的高優先接觸 → 最近偵察資產。UI：資產面板「偵察計畫」分頁；盲區圖層 `map/wargameReconLayer.ts`
 
+### `src/wargame/search/drift/` — 落水（MOB）Leeway 漂流
+- `leeway.ts`：OpenDrift Leeway 公式移植（純函式）+ 12 類物件係數；`seaFields.ts`：讀 seacurrent 發布的
+  海流 / 風場 frames。搜索規劃器「⓪ 落水（MOB）」點地圖即算漂流，粒子當事前分布 → 搜索區 → 航線 → 派機；
+  粒子雲圖層 `map/wargameDriftLayer.ts`（由搜索圖層一併掛載）。詳見 `docs/search-planning.md`。
+
 ### `src/wargame/grayzone/` — 灰色地帶情資（外部資料，非模擬）
 - `grayzoneStore.ts`：四個子圖層開關（近 24h 航跡 / 高風險船 / SAR 暗船 / 海纜障礙，存 localStorage）+ 載入狀態。
   第一次勾選才 fetch `taiwan-grayzone-monitor` 的 `docs/pulse_feed.json`（其 `update-ais.yml` 每輪由

@@ -574,6 +574,29 @@ Stone 還指出 SEP 有個病態：一旦取得接觸 Eⱼ = 0，SEP 反而下�
 
 門檻可調（預設 0.9）。
 
+### 落水（MOB）· Leeway 漂流（`drift/leeway.ts` / `drift/seaFields.ts`）
+
+「依 LKP」事前分布多一個漂流模型選項：**Leeway（海流＋風）**。面板最上方「⓪ 落水（MOB）」
+點地圖標落水點 → 自動開啟事前分布、設 LKP、落水時刻 = 現在、位置誤差 0.3 浬，並計算漂流。
+
+- **場資料**：[seacurrent](https://github.com/s0914712/seacurrent) 發布在 GitHub Pages 的
+  `scheduled_results/frames/`：`current/hNNN.json`（CWA 海流，每小時、0.2°，陸地 u=v=0）、
+  `wind_10m/hNNN.json`（每 6 小時、1°）。只抓需要的時段；網址可用 `VITE_SEACURRENT_FRAMES_URL` 覆寫。
+  預報每 2 天發布一次、長 72 小時 —— 落水時刻＋推算時數超出範圍時，超出部分沿用端點的場並在面板警示。
+- **物理**：照 OpenDrift `leeway.py` 的 `update()` 移植（係數取自其 `OBJECTPROP.DAT`，同序號）：
+  順風 `dw = ((DWSLOPE + ε/20)·W + DWOFFSET + ε/2)·0.01`、側風同式用左右偏各自係數，
+  奇偶粒子交替偏左右、每小時 4% 換邊，再疊加海流；10 分鐘一步 Euler 積分。
+  不模擬翻覆、Stokes drift；進到陸地格（最近格點 u=v=0）即擱淺停止，面板顯示擱淺比例。
+- **接到規劃**：漂流結果在「搜索期中點」的粒子直接當事前分布（取代等速直線推進），
+  之後的最佳矩形、貝氏更新、產生航線、指派無人機全部沿用。「以 95% 粒子設搜索區」
+  用 2.5%–97.5% 分位數框起頭（MOB 一開始沒有搜索區，`solve()` 算不出最佳矩形）。
+- **驗證**：解析案例（0.5 m/s 東向流、10 m/s 北向風，PIW-1）1 小時東向位移 1804 m（理論 1800）；
+  北向 400 m 比單純係數的 346 m 多，是 OpenDrift「拒絕負順風斜率」截斷抽樣造成的正偏（理論 +51 m）。
+  與 seacurrent 自己的 OpenDrift 排程結果（澎湖、2026-10-07 00Z、物件 26、24 h）比對：
+  方向一致（227° vs 223°），距離 23.7 nm vs 7.6 nm —— 差在風壓項：frames 上該點風速約 11 m/s，
+  物件 26 順風 3.7% 單此一項就約 19 nm/日；seacurrent 那次 OpenDrift 的風壓位移只約 5 nm，
+  疑似其 run 讀到的風場（`wind_fixed.nc`）比發布的 frames 弱，尚未查證。
+
 ---
 
 ## 六、已知限制

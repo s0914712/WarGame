@@ -13,8 +13,9 @@
 import { useRef, useState, useSyncExternalStore } from "react";
 import {
   Radar, X, Crosshair, Wand2, Send, RotateCcw, Trash2, Play, MapPin, Hexagon, Plus, ClipboardPaste,
-  ChevronUp, ChevronDown, Upload, Download, ArrowDownUp,
+  ChevronUp, ChevronDown, Upload, Download, ArrowDownUp, LifeBuoy,
 } from "lucide-react";
+import { LEEWAY_OBJECTS } from "../wargame/search/drift/leeway";
 import {
   searchPlannerStore, solve, eligibleSearchUnits, assetProfileFromUnit, midSearchElapsedHr,
   currentRangeLimits, lkpProjection, transitProjection, type LkpPickTarget,
@@ -195,6 +196,8 @@ export function SearchPlannerPanel(
       )}
 
       <div style={embedded ? bodyEmbedded : body}>
+        <MobDriftSection lang={lang} fmtHr={fmtHr} />
+
         {/* ① 搜索區 */}
         <Section title={t.secArea}>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -1773,3 +1776,179 @@ const warnBox: React.CSSProperties = {
   background: "rgba(251, 146, 60, 0.12)", border: "1px solid rgba(251, 146, 60, 0.35)",
   color: "#fed7aa",
 };
+
+// ── 落水（MOB）· Leeway 漂流 ──────────────────────────────────
+const MOB_TEXT = {
+  zh: {
+    title: "⓪ 落水（MOB）· 漂流推算",
+    intro: "點地圖標出落水位置 → 以 seacurrent 海流＋風場、OpenDrift Leeway 係數推算粒子漂流 → 作為下方事前分布，接著框搜索區、產生航線、派機。",
+    pick: "點地圖標落水位置", picking: "點地圖上的落水位置…", cancel: "取消",
+    model: "漂流模型", linear: "直線（航向航速）", leeway: "Leeway（海流＋風）",
+    object: "落水物", time: "落水時刻（台北）", now: "現在", sigma: "位置誤差 1σ", onScene: "落水 → 開始搜索",
+    loading: "下載海流 / 風場預報…", running: "計算漂流…", stale: "參數已變更，重算中…",
+    error: "漂流計算失敗", retry: "重新計算",
+    extrapolated: "落水時刻＋推算時數超出 seacurrent 預報範圍，超出部分沿用端點的場（海流 / 風不再變化），結果僅供參考。",
+    forecast: "預報發布", viewHour: "地圖顯示", midSearch: "搜索期中點",
+    drift: "質心漂移", stranded: "擱淺（觸岸）", spread: "散布 1σ（東 / 北）",
+    areaFromDrift: "以 95% 粒子設搜索區", windMissing: "部分粒子漂出風場範圍，該段只算海流",
+    needBayes: "會自動開啟「目標機率分布 · 依 LKP」",
+  },
+  en: {
+    title: "⓪ Man overboard · drift",
+    intro: "Mark the MOB position on the map → particles drift with seacurrent's current + wind forecast using OpenDrift Leeway coefficients → used as the prior below; then set the area, generate tracks and assign assets.",
+    pick: "Mark MOB position on map", picking: "Click the MOB position on the map…", cancel: "Cancel",
+    model: "Drift model", linear: "Linear (course/speed)", leeway: "Leeway (current + wind)",
+    object: "Object", time: "MOB time (Taipei)", now: "Now", sigma: "Position error 1σ", onScene: "MOB → search start",
+    loading: "Downloading current / wind forecast…", running: "Computing drift…", stale: "Parameters changed, recomputing…",
+    error: "Drift failed", retry: "Recompute",
+    extrapolated: "MOB time + drift hours run past the seacurrent forecast; the end-point field is held constant beyond it, so treat results as indicative.",
+    forecast: "Forecast issued", viewHour: "Map shows", midSearch: "mid-search",
+    drift: "Centroid drift", stranded: "Stranded (ashore)", spread: "Spread 1σ (E / N)",
+    areaFromDrift: "Set area to 95% of particles", windMissing: "Some particles left the wind grid; current only there",
+    needBayes: "Turns on Target distribution (from LKP) automatically",
+  },
+} as const;
+
+/** datetime-local 用的 YYYY-MM-DDTHH:mm（台北時間） */
+function fmtTaipei(ms: number): string {
+  return new Date(ms + 8 * 3_600_000).toISOString().slice(0, 16);
+}
+function parseTaipei(v: string): number | null {
+  const ms = Date.parse(`${v}:00+08:00`);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function MobDriftSection({ lang, fmtHr }: { lang: "zh" | "en"; fmtHr: (h: number) => string }) {
+  const m = MOB_TEXT[lang];
+  const inputs = searchPlannerStore.getInputs();
+  const drift = searchPlannerStore.getDrift();
+  const pickingMob = searchPlannerStore.getLkpPickTarget()?.kind === "mob";
+  const leeway = inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel === "leeway";
+  const patch = searchPlannerStore.patch.bind(searchPlannerStore);
+  const res = drift.result;
+  const viewHour = searchPlannerStore.getDriftViewHour();
+  const mid = midSearchElapsedHr();
+  const current = searchPlannerStore.isDriftCurrent();
+
+  // 第 viewHour 小時的質心漂移、散布、擱淺比例
+  let stats: { distNm: number; brg: number; sdE: number; sdN: number; strandedPct: number } | null = null;
+  if (res && inputs.mcLkp) {
+    const h = Math.min(viewHour, res.hours);
+    const pos = res.hourly[h]!;
+    const st = res.strandedHourly[h]!;
+    const [lng0, lat0] = inputs.mcLkp;
+    const kx = 60 * Math.cos((lat0 * Math.PI) / 180);
+    let sx = 0, sy = 0, sxx = 0, syy = 0, ns = 0;
+    for (let i = 0; i < res.count; i++) {
+      const x = (pos[i * 2]! - lng0) * kx, y = (pos[i * 2 + 1]! - lat0) * 60;
+      sx += x; sy += y; sxx += x * x; syy += y * y; ns += st[i]!;
+    }
+    const mx = sx / res.count, my = sy / res.count;
+    stats = {
+      distNm: Math.hypot(mx, my),
+      brg: ((Math.atan2(mx, my) * 180) / Math.PI + 360) % 360,
+      sdE: Math.sqrt(Math.max(0, sxx / res.count - mx * mx)),
+      sdN: Math.sqrt(Math.max(0, syy / res.count - my * my)),
+      strandedPct: (ns / res.count) * 100,
+    };
+  }
+  const busy = drift.status === "loading" || drift.status === "running";
+
+  return (
+    <Section title={m.title}>
+      <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{m.intro}</div>
+      {pickingMob ? (
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <span style={{ color: "#fca5a5", fontWeight: 600, flex: 1 }}>{m.picking}</span>
+          <button className="wg-btn" style={smallBtn} onClick={() => searchPlannerStore.setPickingLkp(null)}>{m.cancel}</button>
+        </div>
+      ) : (
+        <button className="wg-btn"
+          style={{ ...primaryBtn, background: "rgba(239,68,68,0.22)", borderColor: "rgba(239,68,68,0.6)", color: "#fee2e2" }}
+          onClick={() => searchPlannerStore.setPickingLkp({ kind: "mob" })}>
+          <LifeBuoy size={15} /> {m.pick}
+        </button>
+      )}
+      {!inputs.bayesEnabled && <div style={{ fontSize: 13, color: "#64748b" }}>{m.needBayes}</div>}
+
+      {inputs.bayesEnabled && inputs.priorFromLkp && (
+        <Row label={m.model}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Toggle active={inputs.driftModel === "linear"} onClick={() => patch({ driftModel: "linear" })} label={m.linear} />
+            <Toggle active={inputs.driftModel === "leeway"} onClick={() => patch({ driftModel: "leeway" })} label={m.leeway} />
+          </div>
+        </Row>
+      )}
+
+      {leeway && (
+        <>
+          <Row label={m.object}>
+            <select style={select} value={inputs.leewayObjectId}
+              onChange={(e) => patch({ leewayObjectId: Number(e.target.value) })}>
+              {LEEWAY_OBJECTS.map((o) => (
+                <option key={o.id} value={o.id}>{o.key} · {lang === "en" ? o.en : o.zh}</option>
+              ))}
+            </select>
+          </Row>
+          <Row label={m.time}>
+            <input type="datetime-local" style={{ ...select, cursor: "text" }}
+              value={fmtTaipei(inputs.lkpTimeMs ?? Date.now())}
+              onChange={(e) => { const ms = parseTaipei(e.target.value); if (ms !== null) patch({ lkpTimeMs: ms }); }} />
+            <button className="wg-btn" style={smallBtn}
+              onClick={() => patch({ lkpTimeMs: Math.floor(Date.now() / 60_000) * 60_000 })}>{m.now}</button>
+          </Row>
+          <NumField label={m.sigma} value={inputs.mcSigmaNm} min={0.1} max={10} step={0.1} unit="nm"
+            onChange={(v) => patch({ mcSigmaNm: v })} />
+          <NumField label={m.onScene} value={inputs.mcLkpElapsedHr} min={0} max={48} step={0.5} unit="hr"
+            onChange={(v) => patch({ mcLkpElapsedHr: v })} />
+
+          {(busy || (!current && drift.status !== "error")) && (
+            <div style={{ fontSize: 14, color: "#facc15" }}>
+              {drift.status === "loading" ? `${m.loading} ${drift.framesLoaded}`
+                : drift.status === "running" ? m.running : m.stale}
+            </div>
+          )}
+          {drift.status === "error" && (
+            <div style={warnBox}>
+              {m.error}：{drift.error}
+              <button className="wg-btn" style={{ ...smallBtn, marginTop: 6 }} onClick={() => searchPlannerStore.recomputeDrift()}>
+                <RotateCcw size={12} /> {m.retry}
+              </button>
+            </div>
+          )}
+
+          {res && current && !busy && (
+            <>
+              <Row label={m.viewHour}>
+                <input type="range" min={0} max={res.hours} step={1} value={viewHour}
+                  onChange={(e) => searchPlannerStore.setDriftViewHour(Number(e.target.value))}
+                  style={{ flex: 1, accentColor: "#ef4444", minWidth: 0 }} />
+                <span style={{ fontSize: 14, color: "#e2e8f0", width: 56, textAlign: "right", fontFamily: "ui-monospace, monospace" }}>
+                  T+{viewHour}h
+                </span>
+              </Row>
+              <div style={{ fontSize: 13, color: "#64748b" }}>
+                {fmtTaipei(res.startMs + viewHour * 3_600_000).replace("T", " ")} · {m.midSearch} T+{mid.toFixed(1)}h（{fmtHr(mid)}）
+              </div>
+              {stats && (
+                <div style={{ ...resultBox, marginBottom: 0 }}>
+                  <KV k={m.drift} v={`${stats.distNm.toFixed(1)} nm @ ${stats.brg.toFixed(0)}°`} />
+                  <KV k={m.spread} v={`${stats.sdE.toFixed(1)} / ${stats.sdN.toFixed(1)} nm`} />
+                  <KV k={m.stranded} v={`${stats.strandedPct.toFixed(1)}%`} />
+                  <KV k={m.forecast} v={drift.baseTime ? `${drift.baseTime.slice(0, 16).replace("T", " ")} UTC` : "—"} />
+                </div>
+              )}
+              {drift.coverage && (drift.coverage.currentExtrapolated || drift.coverage.windExtrapolated) && (
+                <div style={warnBox}>{m.extrapolated}</div>
+              )}
+              {res.windMissingSteps > 0 && <div style={{ fontSize: 13, color: "#fdba74" }}>{m.windMissing}</div>}
+              <button className="wg-btn" style={primaryBtn} onClick={() => searchPlannerStore.setAreaFromDrift(0.95)}>
+                <Crosshair size={13} /> {m.areaFromDrift}
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}

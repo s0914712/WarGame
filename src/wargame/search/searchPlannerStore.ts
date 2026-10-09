@@ -45,6 +45,8 @@ import {
   stopAdvice, updateForUnsuccessfulSearch,
   type DistributionStats, type Particle, type ProbabilityCell, type SearchScenario, type StopAdvice,
 } from "./targetDistribution";
+import { positionsAt, runLeeway, type LeewayResult } from "./drift/leeway";
+import { loadSeaFields, type SeaFieldsCoverage } from "./drift/seaFields";
 
 type Listener = () => void;
 
@@ -135,6 +137,16 @@ export interface PlannerInputs {
    * false = 使用多情境手動設定（scenarios）。
    */
   priorFromLkp: boolean;
+  /**
+   * 依 LKP 建事前分布時的漂流模型：
+   *   linear → 目標航向航速（及誤差）等速直線推進
+   *   leeway → seacurrent 海流 + 風場，OpenDrift Leeway 係數逐步推進（落水 MOB 用）
+   */
+  driftModel: "linear" | "leeway";
+  /** Leeway 物件類別（OpenDrift OBJECTPROP 序號，見 drift/leeway.ts） */
+  leewayObjectId: number;
+  /** LKP / 落水時刻（epoch ms）；null = 計算當下 */
+  lkpTimeMs: number | null;
   particleCount: number;
   /**
    * 從基準點（事發／最後已知位置）到**抵達搜索區**的時數。
@@ -182,6 +194,7 @@ const GEOMETRY_KEYS = new Set<string>([
 const LKP_PRIOR_KEYS = new Set<string>([
   "mcLkp", "mcSigmaNm", "mcTargetCourseDeg", "mcTargetCourseSigmaDeg",
   "mcTargetSpeedKn", "mcTargetSpeedSigmaKn", "mcLkpElapsedHr",
+  "driftModel", "leewayObjectId", "lkpTimeMs",
 ]);
 
 /** 變動後需要重建事前分布的參數 */
@@ -244,6 +257,9 @@ const DEFAULT_INPUTS: PlannerInputs = {
   sweepWidthSpread: 0,
   bayesEnabled: false,
   priorFromLkp: true,
+  driftModel: "linear",
+  leewayObjectId: 1,
+  lkpTimeMs: null,
   particleCount: 5000,
   elapsedHr: 0,
   stopThreshold: 0.9,
@@ -325,9 +341,34 @@ export type LkpPickTarget =
   | { kind: "mc" }
   | { kind: "transit" }
   | { kind: "priorAll" }
-  | { kind: "scenario"; id: string };
+  | { kind: "scenario"; id: string }
+  /** 落水（MOB）快速設定：點下去即以該點為 LKP、現在為落水時刻，跑 Leeway 漂流 */
+  | { kind: "mob" };
 let lkpPickTarget: LkpPickTarget | null = null;
 let densityBands: DensityField["bands"] = DEFAULT_DENSITY_BANDS.map((b) => ({ ...b }));
+
+// ── Leeway 漂流（driftModel = leeway）──────────────────────────
+export interface DriftState {
+  status: "idle" | "loading" | "running" | "ready" | "error";
+  error: string;
+  /** 已下載的海流 / 風場 frame 數（進度顯示用） */
+  framesLoaded: number;
+  result: LeewayResult | null;
+  /** 這次結果對應的參數簽章；與目前參數不符 = 結果過期 */
+  key: string;
+  coverage: SeaFieldsCoverage | null;
+  /** seacurrent 預報發布時刻 */
+  baseTime: string;
+}
+let drift: DriftState = { status: "idle", error: "", framesLoaded: 0, result: null, key: "", coverage: null, baseTime: "" };
+/** 地圖上顯示第幾小時的粒子雲（時間軸拉桿；不影響規劃） */
+let driftViewHour = 0;
+let driftTimer = 0;
+let driftSeq = 0;
+/** 最少推算時數 —— 拉桿至少能看一天 */
+const DRIFT_MIN_HOURS = 24;
+/** seacurrent 預報長度 */
+const DRIFT_MAX_HOURS = 72;
 
 const listeners = new Set<Listener>();
 
@@ -449,6 +490,104 @@ export function priorScenarios(): SearchScenario[] {
     driftCourseDeg: inputs.mcTargetCourseDeg,
     driftCourseSigmaDeg: inputs.mcTargetCourseSigmaDeg,
   }];
+}
+
+function usesLeeway(): boolean {
+  return inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel === "leeway";
+}
+
+/** 漂流結果的參數簽章（不含時數：時數夠長就沿用） */
+function driftKey(): string {
+  return JSON.stringify([inputs.mcLkp, inputs.mcSigmaNm, inputs.lkpTimeMs, inputs.leewayObjectId,
+    inputs.particleCount, inputs.mcSeed]);
+}
+
+/** 需要推算到幾小時：搜索期中點再多留餘裕，至少一天、至多預報長度 */
+function driftHorizonHr(): number {
+  return Math.min(DRIFT_MAX_HOURS, Math.max(DRIFT_MIN_HOURS, Math.ceil(midSearchElapsedHr() + 6)));
+}
+
+function driftUsable(): boolean {
+  return !!drift.result && drift.key === driftKey() && drift.result.hours >= Math.min(DRIFT_MAX_HOURS, Math.ceil(midSearchElapsedHr()));
+}
+
+/** Leeway 結果在 tHr 的粒子（每顆等權重；速度取前後一小時的位移，給需要速度的分析用） */
+function particlesFromDrift(result: LeewayResult, tHr: number): Particle[] {
+  const { pos } = positionsAt(result, tHr);
+  const next = positionsAt(result, Math.min(result.hours, tHr + 1)).pos;
+  const dtHr = Math.min(result.hours, tHr + 1) - Math.min(result.hours, tHr);
+  const out: Particle[] = [];
+  const w = 1 / result.count;
+  for (let i = 0; i < result.count; i++) {
+    const lng = pos[i * 2]!, lat = pos[i * 2 + 1]!;
+    let uKn = 0, vKn = 0;
+    if (dtHr > 0) {
+      uKn = ((next[i * 2]! - lng) * 111.32 * Math.cos((lat * Math.PI) / 180)) / 1.852 / dtHr;
+      vKn = ((next[i * 2 + 1]! - lat) * 111.32) / 1.852 / dtHr;
+    }
+    out.push({ lng, lat, uKn, vKn, weight: w, scenarioId: "lkp" });
+  }
+  return out;
+}
+
+/**
+ * 事前分布粒子，推進到搜索期中點。
+ * Leeway 模式：漂流結果可用就直接取；過期 / 時數不夠 → 排程重算，先回空陣列（面板顯示計算中）。
+ */
+function buildPriorParticles(): Particle[] {
+  if (usesLeeway()) {
+    if (driftUsable()) return particlesFromDrift(drift.result!, midSearchElapsedHr());
+    scheduleDrift();
+    return [];
+  }
+  const ps = sampleParticles(priorScenarios(), inputs.particleCount, inputs.mcSeed);
+  const t = midSearchElapsedHr();
+  return t > 0 ? propagate(ps, t) : ps;
+}
+
+/** 參數連續變動（拉數字欄位）時合併成一次計算 */
+function scheduleDrift(): void {
+  if (driftTimer) clearTimeout(driftTimer);
+  driftTimer = window.setTimeout(() => { driftTimer = 0; void computeDrift(); }, 300);
+}
+
+async function computeDrift(): Promise<void> {
+  if (!usesLeeway()) return;
+  const lkp = inputs.mcLkp;
+  if (!lkp) { drift = { ...drift, status: "error", error: "尚未設定落水位置（LKP）" }; notify(); return; }
+  const seq = ++driftSeq;
+  const key = driftKey();
+  const hours = driftHorizonHr();
+  const startMs = inputs.lkpTimeMs ?? Date.now();
+  drift = { ...drift, status: "loading", error: "", framesLoaded: 0 };
+  notify();
+  try {
+    const fields = await loadSeaFields(startMs, startMs + hours * 3_600_000, (n) => {
+      if (seq !== driftSeq) return;
+      drift = { ...drift, framesLoaded: n };
+      notify();
+    });
+    if (seq !== driftSeq) return;
+    drift = { ...drift, status: "running" };
+    notify();
+    // 讓「計算中」先畫出來再跑（數千粒子 × 數百步約數百毫秒，會卡住主執行緒）
+    await new Promise((r) => setTimeout(r, 0));
+    const result = runLeeway({
+      lkp, positionSigmaNm: inputs.mcSigmaNm, startMs, hours,
+      objectId: inputs.leewayObjectId, count: inputs.particleCount, seed: inputs.mcSeed,
+    }, fields.env);
+    if (seq !== driftSeq) return;
+    drift = { status: "ready", error: "", framesLoaded: drift.framesLoaded, result, key, coverage: fields.coverage, baseTime: fields.baseTime };
+    driftViewHour = Math.min(result.hours, Math.round(midSearchElapsedHr()));
+    if (usesLeeway() && driftUsable()) {
+      particles = particlesFromDrift(result, midSearchElapsedHr());
+      sortiePos = [];
+    }
+  } catch (e) {
+    if (seq !== driftSeq) return;
+    drift = { ...drift, status: "error", error: e instanceof Error ? e.message : String(e) };
+  }
+  notify();
 }
 
 /** 掃完全區所需時數（不依賴粒子，故可安全地在重建分布時呼叫） */
@@ -640,7 +779,9 @@ export function lkpProjection(): {
   lkp: LngLat; atStart: LngLat; atEnd: LngLat | null; insideAtStart: boolean | null;
 } | null {
   // 蒙地卡羅用 LKP 分布，或事前分布依 LKP 建立時都顯示推算航跡
-  const usesLkp = inputs.mcDistributionKind === "lkp" || (inputs.bayesEnabled && inputs.priorFromLkp);
+  // Leeway 漂流時事前分布不走航向航速直線，那條推算線會誤導（漂流路徑由 drift 圖層畫）
+  const usesLkp = inputs.mcDistributionKind === "lkp"
+    || (inputs.bayesEnabled && inputs.priorFromLkp && inputs.driftModel !== "leeway");
   if (!usesLkp || !inputs.mcLkp) return null;
   const { mcLkp: lkp, mcTargetCourseDeg: c, mcTargetSpeedKn: v, mcLkpElapsedHr: T } = inputs;
   const atStart = deadReckon(lkp, c, v, T);
@@ -839,9 +980,7 @@ export const searchPlannerStore = {
     // 影響事前分布的參數變動 → 重建粒子（並清掉搜索歷程）
     if (Object.keys(p).some((k) => DISTRIBUTION_KEYS.has(k) || (inputs.priorFromLkp && LKP_PRIOR_KEYS.has(k)))) {
       if (inputs.bayesEnabled) {
-        particles = sampleParticles(priorScenarios(), inputs.particleCount, inputs.mcSeed);
-        const t = midSearchElapsedHr();
-        if (t > 0) particles = propagate(particles, t);
+        particles = buildPriorParticles();
       } else {
         particles = [];
       }
@@ -860,6 +999,10 @@ export const searchPlannerStore = {
     loggedContacts = [];
     loggingContact = false;
     densityBands = DEFAULT_DENSITY_BANDS.map((b) => ({ ...b }));
+    driftSeq++;   // 作廢進行中的漂流計算
+    if (driftTimer) { clearTimeout(driftTimer); driftTimer = 0; }
+    drift = { status: "idle", error: "", framesLoaded: 0, result: null, key: "", coverage: null, baseTime: "" };
+    driftViewHour = 0;
     notify();
   },
 
@@ -965,9 +1108,7 @@ export const searchPlannerStore = {
    * 當成靜止目標問題來規劃 —— elapsedHr 即該時刻。
    */
   rebuildDistribution(): void {
-    particles = sampleParticles(priorScenarios(), inputs.particleCount, inputs.mcSeed);
-    const t = midSearchElapsedHr();
-    if (t > 0) particles = propagate(particles, t);
+    particles = buildPriorParticles();
     sortiePos = [];
     notify();
   },
@@ -1026,6 +1167,70 @@ export const searchPlannerStore = {
     return true;
   },
 
+  // ── Leeway 漂流（落水 MOB）────────────────────────────────
+  getDrift: (): DriftState => drift,
+  /** 漂流結果是否對應目前參數（false = 參數改過、等重算） */
+  isDriftCurrent: (): boolean => drift.key === driftKey(),
+  getDriftViewHour: (): number => driftViewHour,
+  setDriftViewHour(h: number): void {
+    const max = drift.result?.hours ?? 0;
+    const next = Math.min(max, Math.max(0, Math.round(h)));
+    if (next === driftViewHour) return;
+    driftViewHour = next;
+    notify();
+  },
+  /** 立即重算（例：seacurrent 剛發布新預報） */
+  recomputeDrift(): void {
+    if (driftTimer) { clearTimeout(driftTimer); driftTimer = 0; }
+    void computeDrift();
+  },
+
+  /**
+   * 落水快速設定：以 p 為 LKP、現在為落水時刻，切到「依 LKP 事前分布 + Leeway 漂流」。
+   * 位置誤差預設 0.3 浬（GPS / 目視落水點），物件類別沿用目前選擇。
+   */
+  startMob(p: LngLat): void {
+    this.patch({
+      bayesEnabled: true,
+      priorFromLkp: true,
+      driftModel: "leeway",
+      mcLkp: p,
+      lkpTimeMs: Math.floor(Date.now() / 60_000) * 60_000,
+      mcSigmaNm: 0.3,
+    });
+  },
+
+  /**
+   * 搜索區 = 某時刻粒子雲的外接框（各方向取 (1−coverage)/2 ~ (1+coverage)/2 分位數）。
+   * MOB 一開始還沒有搜索區，solve() / 最佳矩形都算不出來；先用這個框起頭。
+   */
+  setAreaFromDrift(coverage = 0.95, tHr = midSearchElapsedHr()): boolean {
+    if (!drift.result) return false;
+    const { pos } = positionsAt(drift.result, tHr);
+    const n = drift.result.count;
+    const lngs = new Float64Array(n), lats = new Float64Array(n);
+    for (let i = 0; i < n; i++) { lngs[i] = pos[i * 2]!; lats[i] = pos[i * 2 + 1]!; }
+    lngs.sort(); lats.sort();
+    const q = (arr: Float64Array, f: number) => arr[Math.min(n - 1, Math.max(0, Math.floor(f * (n - 1))))]!;
+    const lo = (1 - coverage) / 2, hi = 1 - lo;
+    // 至少 1 浬見方，避免粒子幾乎沒擴散時框成一個點
+    const midLat = (q(lats, lo) + q(lats, hi)) / 2;
+    const minDLat = 0.5 / 60, minDLng = minDLat / Math.cos((midLat * Math.PI) / 180);
+    let w = q(lngs, lo), e = q(lngs, hi), s = q(lats, lo), nn = q(lats, hi);
+    if (e - w < 2 * minDLng) { const c = (w + e) / 2; w = c - minDLng; e = c + minDLng; }
+    if (nn - s < 2 * minDLat) { const c = (s + nn) / 2; s = c - minDLat; nn = c + minDLat; }
+    this.setRectangle([w, s], [e, nn]);
+    // 有了搜索區 → 掃區時間變了 → 搜索期中點跟著變，粒子重取該時刻；地圖拉桿也跳到該時刻，
+    // 免得畫面上的粒子雲（例如 T+24h）跟剛框出的區域（搜索期中點）對不起來
+    if (usesLeeway()) {
+      particles = buildPriorParticles();
+      sortiePos = [];
+      driftViewHour = Math.min(drift.result.hours, Math.round(midSearchElapsedHr()));
+      notify();
+    }
+    return true;
+  },
+
   // ── Stone §6 式(5)：接觸記錄與優先查證順序 ───────────────
   /** 進入 / 離開「點地圖記錄接觸」模式 */
   setLoggingContact(on: boolean): void {
@@ -1050,6 +1255,7 @@ export const searchPlannerStore = {
     if (!target || target.kind === "mc") this.patch({ mcLkp: p });
     else if (target.kind === "transit") this.patch({ transitPos: p });
     else if (target.kind === "priorAll") this.setAllScenarioDatums(p);
+    else if (target.kind === "mob") this.startMob(p);
     else this.updateScenario(target.id, { datum: p });
   },
 
