@@ -104,7 +104,7 @@ const BLUE_UNITS: Unit[] = [
 
 const RED_UNITS: Unit[] = [
   // 3 兩棲艦群從廈門方向接近
-  mkUnit("RED-SH-01", "red", "ship_surface", "071-101", "船塢登陸艦 1", 118.10, 24.45, {
+  mkUnit("RED-SH-01", "red", "landing_ship", "071-101", "船塢登陸艦 1", 118.10, 24.45, {
     speedKnots: 20,
     waypoints: [[118.25, 24.45], [118.35, 24.45]],
   }),

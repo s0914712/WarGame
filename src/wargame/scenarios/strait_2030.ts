@@ -217,7 +217,7 @@ const RED_UNITS: Unit[] = [
   }),
 
   // 紅方艦隊向中線推進
-  mkUnit("RED-SH-01", "red", "ship_surface", "052D-101", "055 型驅逐艦", 119.50, 24.00, {
+  mkUnit("RED-SH-01", "red", "ship_surface", "052D-101", "052D 型驅逐艦", 119.50, 24.00, {
     speedKnots: 22,
     waypoints: [[120.00, 24.00], [120.40, 24.00]],
   }),
