@@ -96,7 +96,7 @@ const SHORTCUTS = [
   { key: "Enter", action: "規劃航線時套用" },
   { key: "Backspace", action: "規劃航線時移除上一點" },
   { key: "R / C / H / A", action: "選中單位：規劃航線 / 清線 / 停止 / 攻擊（再點敵方）" },
-  { key: "Delete", action: "Plan Mode 刪除選中單位；規劃航線時移除上一點" },
+  { key: "Delete / Backspace", action: "Plan Mode 刪除選中單位（放下的單位會自動選中）；規劃航線時移除上一點" },
   { key: "Ctrl+Z", action: "復原上一動（最多 1 次）：指令 / 刪除 / 放置單位" },
   { key: "Esc", action: "取消攻擊選標 / 取消選取單位" },
   { key: "?", action: "開啟本速查表" },

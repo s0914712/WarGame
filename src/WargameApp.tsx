@@ -66,6 +66,27 @@ import { PlanModeUnitCard } from "./components/wargame/PlanModeUnitCard";
  */
 function isDemo() { return uiStore.isDemoMode(); }
 
+/**
+ * 點擊位置附近（±UNIT_HIT_PX）的單位，取離點擊最近的一個。
+ * 只用 e.point 精確命中時，點到圖示邊緣 / 呼號標籤會落空 —— Plan Mode 還會因此在原地多放一個單位。
+ */
+const UNIT_HIT_PX = 14;
+function unitAtPoint(map: mapboxgl.Map, pt: mapboxgl.Point): string | null {
+  const feats = map.queryRenderedFeatures(
+    [[pt.x - UNIT_HIT_PX, pt.y - UNIT_HIT_PX], [pt.x + UNIT_HIT_PX, pt.y + UNIT_HIT_PX]],
+    { layers: [SYMBOL_LAYER_ID] },
+  );
+  let best: string | null = null, bestD = Infinity;
+  for (const f of feats) {
+    const id = f.properties?.unitId as string | undefined;
+    if (!id || f.geometry.type !== "Point") continue;
+    const p = map.project(f.geometry.coordinates as [number, number]);
+    const d = Math.hypot(p.x - pt.x, p.y - pt.y);
+    if (d < bestD) { bestD = d; best = id; }
+  }
+  return best;
+}
+
 function isPlaceMode(): boolean { return editorStore.getMode() === "placeUnit"; }
 
 export default function WargameApp() {
@@ -166,26 +187,19 @@ export default function WargameApp() {
         }
         if (mode === "attackTarget") {
           // A 鍵攻擊選標：點到有效敵方 → 接戰；點空白 / 非敵方 → 取消
-          const feats = map.queryRenderedFeatures(e.point, { layers: [SYMBOL_LAYER_ID] });
-          const targetId = feats[0]?.properties?.unitId as string | undefined;
+          const targetId = unitAtPoint(map, e.point);
           if (!targetId || !editorStore.pickAttackTarget(targetId)) editorStore.cancel();
           return;
         }
         if (mode === "placeUnit") {
-          const features = map.queryRenderedFeatures(e.point, { layers: [SYMBOL_LAYER_ID] });
-          if (features.length > 0) {
-            const unitId = features[0]?.properties?.unitId as string | undefined;
-            if (unitId) { scenarioStore.setSelectedUnitId(unitId); return; }
-          }
-          editorStore.placeUnitAt(e.lngLat.lng, e.lngLat.lat);
+          // 點到（或點在旁邊）既有單位 → 選取；空白處 → 放新單位並選取它（可直接 Delete / 刪除）
+          const unitId = unitAtPoint(map, e.point);
+          if (unitId) { scenarioStore.setSelectedUnitId(unitId); return; }
+          const placed = editorStore.placeUnitAt(e.lngLat.lng, e.lngLat.lat);
+          if (placed) scenarioStore.setSelectedUnitId(placed.id);
           return;
         }
-        const features = map.queryRenderedFeatures(e.point, { layers: [SYMBOL_LAYER_ID] });
-        if (features.length > 0) {
-          const unitId = features[0]?.properties?.unitId as string | undefined;
-          if (unitId) { scenarioStore.setSelectedUnitId(unitId); return; }
-        }
-        scenarioStore.setSelectedUnitId(null);
+        scenarioStore.setSelectedUnitId(unitAtPoint(map, e.point));
       });
 
       // 右鍵：RTS 式指令（已選單位）。

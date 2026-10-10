@@ -145,12 +145,13 @@ export function ConsoleUnitInfo() {
           </button>
         )}
         {mode === "placeUnit" && (
-          <button className="wg-btn" title={t("Delete Unit")} style={{ ...iconBtn(false), color: "#fca5a5" }}
+          <button className="wg-btn" title={`${t("Delete Unit")} (Delete)`} data-testid="unit-delete"
+            style={{ ...iconBtn(false), width: "auto", padding: "0 8px", gap: 4, color: "#fca5a5", borderColor: "rgba(239,68,68,0.5)" }}
             onClick={() => {
               const msg = lang === "en" ? `Delete unit "${unit.callsign}"?` : `刪除單位「${unit.callsign}」？`;
               if (confirm(msg)) editorStore.deleteUnit(unit.id);
             }}>
-            <Trash2 size={14} />
+            <Trash2 size={14} /> {lang === "en" ? "Delete" : "刪除"}
           </button>
         )}
         <button className="wg-btn" title={t("Close")} style={iconBtn(false)}

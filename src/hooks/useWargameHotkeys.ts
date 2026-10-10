@@ -1,7 +1,7 @@
 /**
  * 兵棋全域快捷鍵（指令卡字母鍵之外的部分）。
  *
- *   Delete        Plan Mode：刪除選中單位 ／ 規劃航線：移除最後一個航點
+ *   Delete / ⌫   Plan Mode：刪除選中單位 ／ 規劃航線：移除最後一個航點
  *   Ctrl/⌘ + Z    復原上一動（最多 1 次）；規劃航線中 = 移除最後一個航點
  *   Esc           攻擊選標中 = 取消；一般模式 = 取消選取單位
  *   ?             開啟 UI 速查表
@@ -38,7 +38,8 @@ export function useWargameHotkeys({ onOpenCheat }: { onOpenCheat: () => void }) 
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-      if (e.key === "Delete") {
+      // Delete；筆電 / Mac 沒有獨立 Del 鍵 → Backspace 也算
+      if (e.key === "Delete" || e.key === "Backspace") {
         if (mode === "planRoute") {
           e.preventDefault();
           editorStore.removeLastWaypoint();
