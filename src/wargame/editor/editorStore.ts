@@ -16,6 +16,7 @@ import { scenarioStore } from "../scenarioStore";
 import { viewStore } from "../viewStore";
 import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
+import { allowedKinds, isKindAllowed, kindLabel } from "../catalog/sideCatalog";
 import { DEFAULT_MDR_KM } from "../sim/sonobuoyField";
 import { submitCommand } from "../net/commandBus";
 import { netStore } from "../net/netStore";
@@ -85,7 +86,9 @@ export const editorStore = {
   },
   setPlacingSide(s: SideId): void {
     if (s === placingSide) return;
-    placingSide = s; notify();
+    placingSide = s;
+    if (!isKindAllowed(s, placingKind)) placingKind = allowedKinds(s)?.[0] ?? placingKind;
+    notify();
   },
 
   /** 進入 Plan Mode（放置單位） */
@@ -118,7 +121,7 @@ export const editorStore = {
       sideId: placingSide,
       kind: placingKind,
       callsign: id,
-      displayName: cat.displayName,
+      displayName: kindLabel(placingSide, placingKind),
       position: {
         lng, lat,
         altMeters: cat.defaultAltitudeM,

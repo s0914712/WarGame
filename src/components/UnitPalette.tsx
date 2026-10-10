@@ -12,7 +12,7 @@ import { ClipboardList, Rocket, Plane, Ship, Anchor, PlaneTakeoff, Radio, Downlo
 import type { LucideIcon } from "lucide-react";
 import { editorStore } from "../wargame/editor/editorStore";
 import { scenarioStore } from "../wargame/scenarioStore";
-import { UNIT_CATALOG } from "../wargame/catalog/units";
+import { isKindAllowed, kindLabel } from "../wargame/catalog/sideCatalog";
 import type { SideId, UnitKind } from "../wargame/types";
 import { netStore } from "../wargame/net/netStore";
 
@@ -170,9 +170,8 @@ function UnitPaletteInner({ embedded = false, hideLauncher = false }: { embedded
             display: "grid", gridTemplateColumns: "1fr 1fr",
             gap: 6, marginTop: 6,
           }}>
-            {KIND_OPTIONS.map(({ kind, Icon }) => {
+            {KIND_OPTIONS.filter(({ kind }) => isKindAllowed(s.placingSide, kind)).map(({ kind, Icon }) => {
               const active = kind === s.placingKind;
-              const cat = UNIT_CATALOG[kind];
               return (
                 <button
                   key={kind}
@@ -191,7 +190,7 @@ function UnitPaletteInner({ embedded = false, hideLauncher = false }: { embedded
                   }}
                 >
                   <Icon size={16} />
-                  {cat.displayName}
+                  {kindLabel(s.placingSide, kind)}
                 </button>
               );
             })}
