@@ -5,6 +5,8 @@
  *   - 線段：點地圖加點，雙擊或 Enter 完成（≥ 2 點）；右鍵刪最後一點
  *   - 矩形：點第一角 → 移動預覽 → 點對角完成
  *   - 圓：點圓心 → 移動預覽半徑 → 再點完成
+ *   - 多邊形：點地圖加頂點，雙擊或 Enter 完成（≥ 3 點）；右鍵刪最後一點；
+ *     或在尺規面板貼上十進位經緯度（addPolygon）
  *   - Esc：取消目前草稿；沒有草稿時離開工具
  * 完成一個圖形後工具保持啟用，可連續畫。
  *
@@ -18,12 +20,12 @@ import { haversineKm } from "../wargame/sim/geo";
 import { scenarioStore } from "../wargame/scenarioStore";
 import { formatDistance, rulerStore } from "./rulerTool";
 
-export type DrawKind = "line" | "rect" | "circle";
+export type DrawKind = "line" | "rect" | "circle" | "polygon";
 
 export interface DrawShape {
   id: string;
   kind: DrawKind;
-  /** line：各頂點；rect：[角 A, 對角 B]；circle：[圓心, 圓周上一點] */
+  /** line / polygon：各頂點（polygon 不重複首點）；rect：[角 A, 對角 B]；circle：[圓心, 圓周上一點] */
   pts: LngLat[];
   color: string;
 }
@@ -49,7 +51,7 @@ function load(id: string): DrawShape[] {
   try {
     const raw = localStorage.getItem(storageKey(id));
     const arr = raw ? (JSON.parse(raw) as DrawShape[]) : [];
-    return Array.isArray(arr) ? arr.filter((s) => s && Array.isArray(s.pts) && (s.kind === "line" || s.kind === "rect" || s.kind === "circle")) : [];
+    return Array.isArray(arr) ? arr.filter((s) => s && Array.isArray(s.pts) && (s.kind === "line" || s.kind === "rect" || s.kind === "circle" || s.kind === "polygon")) : [];
   } catch {
     return [];
   }
@@ -121,7 +123,7 @@ export const drawStore = {
   addPoint(p: LngLat): void {
     if (!tool) return;
     if (same(draft[draft.length - 1], p)) return;   // 雙擊會先觸發兩次 click
-    if (tool === "line") { draft = [...draft, p]; notify(); return; }
+    if (tool === "line" || tool === "polygon") { draft = [...draft, p]; notify(); return; }
     // rect / circle：第一點起頭，第二點完成
     if (draft.length === 0) { draft = [p]; notify(); return; }
     commit(tool, [draft[0]!, p]);
@@ -132,9 +134,20 @@ export const drawStore = {
     if (tool && draft.length > 0) notify();
   },
 
-  /** 線段完成（雙擊 / Enter） */
+  /** 線段 / 多邊形完成（雙擊 / Enter） */
   finish(): void {
     if (tool === "line" && draft.length >= 2) commit("line", draft);
+    else if (tool === "polygon" && draft.length >= 3) commit("polygon", draft);
+  },
+
+  /** 以座標直接建立多邊形（手動輸入）；首尾重複的閉合點會去掉 */
+  addPolygon(pts: LngLat[]): boolean {
+    const ring = pts.length > 1 && same(pts[0], pts[pts.length - 1]!) ? pts.slice(0, -1) : pts;
+    if (ring.length < 3) return false;
+    const keepTool = tool;
+    commit("polygon", ring);
+    tool = keepTool;
+    return true;
   },
 
   /** 右鍵：草稿退一點 */
@@ -198,6 +211,18 @@ function rectRing(a: LngLat, b: LngLat): LngLat[] {
   return [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]], [a[0], a[1]]];
 }
 
+/** 球面多邊形面積（km²），以頂點中心做等距方位近似；搜索區尺度（數百 km）誤差 < 1% */
+function polygonAreaKm2(pts: LngLat[]): number {
+  const lat0 = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  const kx = 111.32 * Math.cos((lat0 * Math.PI) / 180), ky = 110.57;
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!, q = pts[(i + 1) % pts.length]!;
+    a += p[0] * kx * (q[1] * ky) - q[0] * kx * (p[1] * ky);
+  }
+  return Math.abs(a) / 2;
+}
+
 function lineKm(pts: LngLat[]): number {
   let km = 0;
   for (let i = 1; i < pts.length; i++) km += haversineKm(pts[i - 1]!, pts[i]!);
@@ -208,6 +233,11 @@ function shapeLabel(kind: DrawKind, pts: LngLat[]): string {
   const u = rulerStore.getUnit();
   const a = pts[0]!, b = pts[1] ?? pts[0]!;
   if (kind === "line") return formatDistance(lineKm(pts), u);
+  if (kind === "polygon") {
+    const k = u === "nm" ? 1.852 * 1.852 : 1;
+    const area = polygonAreaKm2(pts) / k;
+    return `${pts.length} 點 · 周長 ${formatDistance(lineKm([...pts, pts[0]!]), u)} · ${area.toFixed(area < 100 ? 1 : 0)} ${u}²`;
+  }
   if (kind === "circle") {
     const r = haversineKm(a, b);
     return `r ${formatDistance(r, u)}`;
@@ -222,7 +252,7 @@ function shapeLabel(kind: DrawKind, pts: LngLat[]): string {
 
 /** 圖形清單 / 標籤共用的一行描述 */
 export function describeShape(s: DrawShape): string {
-  const name = s.kind === "line" ? "線段" : s.kind === "rect" ? "矩形" : "圓";
+  const name = s.kind === "line" ? "線段" : s.kind === "rect" ? "矩形" : s.kind === "polygon" ? "多邊形" : "圓";
   return `${name} · ${shapeLabel(s.kind, s.pts)}`;
 }
 
@@ -230,10 +260,14 @@ function shapeFeatures(kind: DrawKind, pts: LngLat[], col: string, isDraft: bool
   const props = { color: col, draft: isDraft ? 1 : 0 };
   const out: GeoJSON.Feature[] = [];
   const a = pts[0], b = pts[1];
-  if (kind === "line") {
+  if (kind === "polygon" && pts.length >= 3) {
+    out.push({ type: "Feature", properties: props, geometry: { type: "Polygon", coordinates: [[...pts, pts[0]!]] } });
+    const top = pts.reduce((m, p) => (p[1] > m[1] ? p : m), pts[0]!);
+    out.push({ type: "Feature", properties: { ...props, kind: "label", label: shapeLabel("polygon", pts) }, geometry: { type: "Point", coordinates: top } });
+  } else if (kind === "line" || kind === "polygon") {   // 多邊形草稿 < 3 點時先畫成線
     if (pts.length >= 2) out.push({ type: "Feature", properties: props, geometry: { type: "LineString", coordinates: pts } });
     const end = pts[pts.length - 1];
-    if (pts.length >= 2 && end) {
+    if (kind === "line" && pts.length >= 2 && end) {
       out.push({ type: "Feature", properties: { ...props, kind: "label", label: shapeLabel("line", pts) }, geometry: { type: "Point", coordinates: end } });
     }
   } else if (a && b) {

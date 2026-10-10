@@ -5,8 +5,8 @@
  * withDraw（兵推用）：同一面板多出繪圖模式 —— 線段 / 矩形 / 圓（map/drawTool.ts），
  * 與量測共用單位；模式列切換「量測 ↔ 繪圖工具」，兩者互斥（都要攔地圖點擊）。
  */
-import { useSyncExternalStore } from "react";
-import { Ruler, Undo2, Trash2, Check, X, Spline, Square, Circle } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
+import { Ruler, Undo2, Trash2, Check, X, Spline, Square, Circle, Pentagon } from "lucide-react";
 import { formatBearing, formatDistance, rulerStore, type RulerUnit } from "../map/rulerTool";
 import { drawStore, describeShape, DRAW_COLORS, type DrawKind } from "../map/drawTool";
 
@@ -16,28 +16,38 @@ const TEXT = {
     undo: "復原", clear: "清除", done: "結束", close: "關閉尺規",
     hint: "點地圖加點 · 雙擊結束 · 右鍵刪最後一點 · Esc 結束",
     hintDone: "已結束 —— 再點地圖開始新的量測",
-    measure: "量測", line: "線段", rect: "矩形", circle: "圓",
+    measure: "量測", line: "線段", rect: "矩形", circle: "圓", polygon: "多邊形",
     drawHint: {
       line: "點地圖加點，雙擊或 Enter 完成 · 右鍵退一點 · Esc 取消",
       rect: "點第一角，再點對角完成 · Esc 取消",
       circle: "點圓心，再點決定半徑 · Esc 取消",
-      none: "選擇線段 / 矩形 / 圓後在地圖上畫",
+      polygon: "點地圖加頂點，雙擊或 Enter 完成（≥ 3 點）· 右鍵退一點 · Esc 取消；或在下方輸入座標",
+      none: "選擇線段 / 矩形 / 圓 / 多邊形後在地圖上畫",
     },
     clearAll: "全部清除", del: "刪除",
+    coordTitle: "手動輸入座標（十進位度）",
+    coordPh: "每行一點：經度, 緯度\n120.50, 24.10\n120.90, 24.10\n120.70, 23.80",
+    coordNote: "可用逗號、空白或 Tab 分隔；先寫緯度也可（自動判斷）；至少 3 點",
+    coordAdd: "建立多邊形", coordBad: "第 {n} 行無法解讀：", coordFew: "至少需要 3 個點",
   },
   en: {
     ruler: "Ruler", nm: "NM", km: "km", total: "Total", segments: "seg", bearing: "Last bearing",
     undo: "Undo", clear: "Clear", done: "Done", close: "Close ruler",
     hint: "Click to add points · double-click to finish · right-click removes last · Esc to finish",
     hintDone: "Finished — click the map to start a new measurement",
-    measure: "Measure", line: "Line", rect: "Rect", circle: "Circle",
+    measure: "Measure", line: "Line", rect: "Rect", circle: "Circle", polygon: "Polygon",
     drawHint: {
       line: "Click to add points, double-click or Enter to finish · right-click undo · Esc cancel",
       rect: "Click one corner, then the opposite corner · Esc cancel",
       circle: "Click the centre, then click to set the radius · Esc cancel",
-      none: "Pick line / rectangle / circle, then draw on the map",
+      polygon: "Click to add vertices, double-click or Enter to finish (≥ 3) · right-click undo · Esc cancel; or type coordinates below",
+      none: "Pick line / rectangle / circle / polygon, then draw on the map",
     },
     clearAll: "Clear all", del: "Delete",
+    coordTitle: "Enter coordinates (decimal degrees)",
+    coordPh: "One point per line: lng, lat\n120.50, 24.10\n120.90, 24.10\n120.70, 23.80",
+    coordNote: "Comma, space or tab separated; lat-first also works (auto-detected); at least 3 points",
+    coordAdd: "Create polygon", coordBad: "Line {n} not understood: ", coordFew: "Need at least 3 points",
   },
 } as const;
 
@@ -121,7 +131,7 @@ export function RulerControl({ lang = "zh", style, hideLauncher = false, withDra
   };
 
   return (
-    <div data-testid="ruler-panel" style={{ ...box, width: withDraw ? 290 : 250, padding: "9px 11px", display: "flex", flexDirection: "column", gap: 7 }}>
+    <div data-testid="ruler-panel" style={{ ...box, width: withDraw ? 330 : 250, padding: "9px 11px", display: "flex", flexDirection: "column", gap: 7 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <Ruler size={15} color="#f472b6" />
         <span style={{ fontWeight: 700, fontSize: 15 }}>{t.ruler}</span>
@@ -135,6 +145,7 @@ export function RulerControl({ lang = "zh", style, hideLauncher = false, withDra
           {modeBtn("line", <Spline size={12} />, t.line)}
           {modeBtn("rect", <Square size={12} />, t.rect)}
           {modeBtn("circle", <Circle size={12} />, t.circle)}
+          {modeBtn("polygon", <Pentagon size={12} />, t.polygon)}
         </div>
       )}
       <div style={{ display: "flex", gap: 6 }}>
@@ -197,6 +208,7 @@ function DrawSection({ t, iconBtn }: { t: T; iconBtn: React.CSSProperties }) {
         ))}
       </div>
       <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.45 }}>{t.drawHint[tool ?? "none"]}</div>
+      {tool === "polygon" && <CoordPolygonInput t={t} iconBtn={iconBtn} />}
       {shapes.length > 0 && <ShapeList t={t} iconBtn={iconBtn} />}
       <div style={{ display: "flex", gap: 5 }}>
         <button className="wg-btn" style={iconBtn} onClick={() => drawStore.undoShape()} disabled={!shapes.length}>
@@ -225,6 +237,54 @@ function ShapeList({ t, iconBtn }: { t: T; iconBtn: React.CSSProperties }) {
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * 解析十進位經緯度：每行一點（也接受 ; 分隔），數字間逗號 / 空白 / Tab 皆可。
+ * 順序自動判斷：第一個數 |x| ≤ 90 且第二個 |y| > 90 → 視為「緯度, 經度」。
+ */
+export function parseDecimalCoords(text: string): { pts: [number, number][]; badLine: number | null; badText: string } {
+  const pts: [number, number][] = [];
+  const lines = text.split(/[\n;]+/);
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!.trim();
+    if (!raw) continue;
+    const nums = raw.split(/[\s,，、]+/).filter(Boolean).map(Number);
+    if (nums.length !== 2 || nums.some((n) => !Number.isFinite(n))) return { pts, badLine: i + 1, badText: raw };
+    let [a, b] = nums as [number, number];
+    if (Math.abs(a) <= 90 && Math.abs(b) > 90) [a, b] = [b, a];
+    if (Math.abs(a) > 180 || Math.abs(b) > 90) return { pts, badLine: i + 1, badText: raw };
+    pts.push([a, b]);
+  }
+  return { pts, badLine: null, badText: "" };
+}
+
+function CoordPolygonInput({ t, iconBtn }: { t: T; iconBtn: React.CSSProperties }) {
+  const [text, setText] = useState("");
+  const [err, setErr] = useState("");
+  const create = () => {
+    const r = parseDecimalCoords(text);
+    if (r.badLine !== null) { setErr(`${t.coordBad.replace("{n}", String(r.badLine))}${r.badText}`); return; }
+    if (!drawStore.addPolygon(r.pts)) { setErr(t.coordFew); return; }
+    setErr(""); setText("");
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, padding: "7px 8px", borderRadius: 5,
+      background: "rgba(30,41,59,0.5)", border: "1px solid rgba(148,163,184,0.2)" }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{t.coordTitle}</div>
+      <textarea data-testid="draw-coords" value={text} rows={5} placeholder={t.coordPh}
+        onChange={(e) => { setText(e.target.value); setErr(""); }}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) create(); }}
+        style={{ resize: "vertical", fontFamily: "ui-monospace, monospace", fontSize: 13, padding: "5px 7px",
+          background: "#020617", color: "#e2e8f0", border: "1px solid rgba(148,163,184,0.3)", borderRadius: 4 }} />
+      <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{t.coordNote}</div>
+      {err && <div style={{ fontSize: 12, color: "#fca5a5" }}>{err}</div>}
+      <button className="wg-btn" data-testid="draw-coords-add" style={{ ...iconBtn, alignSelf: "flex-start", color: "#fef9c3" }}
+        onClick={create} disabled={!text.trim()}>
+        <Pentagon size={12} /> {t.coordAdd}
+      </button>
     </div>
   );
 }
