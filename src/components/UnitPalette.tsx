@@ -208,7 +208,7 @@ function UnitPaletteInner({ embedded = false, hideLauncher = false }: { embedded
         }}>
           點地圖任意位置 → 放單位<br/>
           點現有單位 → 編輯屬性<br/>
-          點選後在右側 Editor 可刪除
+          選中單位後按 Delete 刪除（Ctrl+Z 復原）
         </div>
 
         {/* 統計 + Export */}

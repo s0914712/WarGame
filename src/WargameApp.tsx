@@ -54,6 +54,7 @@ import { useIsMobile } from "./hooks/useIsMobile";
 import { WargameMobileLayout } from "./components/wargame/WargameMobileLayout";
 import { DesktopTopBar, TOP_BAR_HEIGHT } from "./components/wargame/DesktopTopBar";
 import { CommandConsole, CONSOLE_HEIGHT } from "./components/wargame/CommandConsole";
+import { PlanModeUnitCard } from "./components/wargame/PlanModeUnitCard";
 
 /**
  * 兵推模式頂層 app。
@@ -64,6 +65,8 @@ import { CommandConsole, CONSOLE_HEIGHT } from "./components/wargame/CommandCons
  *   - style 切換：先 detach → setStyle → on style.load → mount 重新掛
  */
 function isDemo() { return uiStore.isDemoMode(); }
+
+function isPlaceMode(): boolean { return editorStore.getMode() === "placeUnit"; }
 
 export default function WargameApp() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +81,8 @@ export default function WargameApp() {
   const { isMobile, isLandscape } = useIsMobile();
   const uiLang = useLang() === "en" ? "en" : "zh";
   const assetOpen = useSyncExternalStore(assetPanelStore.subscribe, assetPanelStore.isOpen, assetPanelStore.isOpen);
+  // Plan Mode（放置單位 / 自訂戰場）：收掉整條底部控制台（戰報 / 單位 / 指令），地圖全高可用
+  const planMode = useSyncExternalStore(editorStore.subscribe, isPlaceMode, isPlaceMode);
 
   useSimLoop();
   useAiSideLoop();
@@ -231,13 +236,14 @@ export default function WargameApp() {
 
   // 桌面頂部列 + 底部控制台會蓋住地圖上下緣 → 鏡頭 padding 讓 flyTo / 置中落在可視區
   const desktopChrome = !isMobile && !demoMode;
+  const consoleH = planMode ? 0 : CONSOLE_HEIGHT;
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     map.setPadding(desktopChrome
-      ? { top: TOP_BAR_HEIGHT, bottom: CONSOLE_HEIGHT, left: 0, right: 0 }
+      ? { top: TOP_BAR_HEIGHT, bottom: consoleH, left: 0, right: 0 }
       : { top: 0, bottom: 0, left: 0, right: 0 });
-  }, [desktopChrome, mapReady]);
+  }, [desktopChrome, consoleH, mapReady]);
 
   // 處理底圖切換：detach → setStyle → 等 load 事件 → re-mount。
   // 以「已套用的底圖 id」判斷是否真的要換：mapReady 首次變 true 也會觸發此 effect，
@@ -263,7 +269,7 @@ export default function WargameApp() {
 
   return (
     <div
-      className={desktopChrome ? "wg-desktop-chrome" : undefined}
+      className={desktopChrome ? (planMode ? "wg-desktop-chrome wg-no-console" : "wg-desktop-chrome") : undefined}
       style={{ position: "relative", width: "100vw", height: "100vh", background: "#020617" }}
     >
       <div ref={mapContainerRef} style={{ position: "absolute", inset: 0 }} />
@@ -318,12 +324,12 @@ export default function WargameApp() {
           <RulerControl hideLauncher lang={uiLang}
             style={{ top: TOP_BAR_HEIGHT + 12, left: assetOpen ? 16 + ASSET_PANEL_WIDTH + 12 : 16 }} />
           <ThreatAlert top={TOP_BAR_HEIGHT + 10} />
-          <ObjectivesHud map={mapRef.current} bottom={CONSOLE_HEIGHT + 34} />
+          <ObjectivesHud map={mapRef.current} bottom={consoleH + 34} />
           <UnitPalette hideLauncher />
-          <CommandConsole />
+          {planMode ? <PlanModeUnitCard /> : <CommandConsole />}
           {/* 搜索規劃器側欄：夾在頂部列與底部控制台之間；入口在頂部列「搜索」鈕 */}
-          <SearchPlannerPanel insetTop={TOP_BAR_HEIGHT} insetBottom={CONSOLE_HEIGHT} />
-          <CinemaControls map={mapRef.current} bottomOffset={CONSOLE_HEIGHT} />
+          <SearchPlannerPanel insetTop={TOP_BAR_HEIGHT} insetBottom={consoleH} />
+          <CinemaControls map={mapRef.current} bottomOffset={consoleH} />
         </>
         )
       )}

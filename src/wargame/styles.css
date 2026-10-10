@@ -70,6 +70,9 @@ button.wg-btn:active {
 .wg-desktop-chrome .mapboxgl-ctrl-top-right { top: 56px; }
 .wg-desktop-chrome .mapboxgl-ctrl-bottom-left,
 .wg-desktop-chrome .mapboxgl-ctrl-bottom-right { bottom: 196px; }
+/* Plan Mode 收掉底部控制台 */
+.wg-desktop-chrome.wg-no-console .mapboxgl-ctrl-bottom-left,
+.wg-desktop-chrome.wg-no-console .mapboxgl-ctrl-bottom-right { bottom: 0; }
 
 /* ── 主選單（LandingScreen）── */
 @keyframes wg-ld-kenburns {
