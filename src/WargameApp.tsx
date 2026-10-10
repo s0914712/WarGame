@@ -8,6 +8,7 @@ import { BattleStatsHud } from "./components/BattleStatsHud";
 import { UnitPalette } from "./components/UnitPalette";
 import { SearchPlannerPanel } from "./components/SearchPlannerPanel";
 import { attachRulerLayer, rulerStore } from "./map/rulerTool";
+import { attachDrawLayer, drawStore } from "./map/drawTool";
 import { attachWargameReconLayer } from "./map/wargameReconLayer";
 import { attachWargameGrayzoneLayer } from "./map/wargameGrayzoneLayer";
 import { RulerControl } from "./components/RulerControl";
@@ -136,6 +137,7 @@ export default function WargameApp() {
       attachWargameCombatLayer(map),
       attachWargameCommandPingLayer(map),   // 右鍵 / 指令卡下令 → 攻擊準星 / 移動標記
       attachWargameFxLayer(map),    // 最上：浮動戰鬥文字 / 來襲警示環
+      attachDrawLayer(map),    // 尺規面板的繪圖模式：線段 / 矩形 / 圓
       attachRulerLayer(map),   // 尺規量測（壓在最上，點擊優先）
     );
   }
@@ -166,6 +168,7 @@ export default function WargameApp() {
       // Click：三種模式（view / planRoute / placeUnit）
       map.on("click", (e) => {
         if (rulerStore.isActive()) return;  // 尺規量測中：點擊由 rulerTool 處理
+        if (drawStore.isCapturing()) return;   // 繪圖中：點擊由 drawTool 處理
         if (hexStore.getBrush()) return;   // 六角格塗色中：點擊由 hex layer 處理
         // 搜索規劃器繪製搜索區（點擊由 searchAreaDraw 處理；這裡只攔下，避免選到單位）
         if (searchPlannerStore.isPicking()) return;
@@ -208,6 +211,7 @@ export default function WargameApp() {
       //   右鍵點空白海面 → 移動（Shift = 接續排隊航點）
       map.on("contextmenu", (e) => {
         if (rulerStore.isActive()) return;              // 尺規：右鍵 = 刪最後一點
+        if (drawStore.isCapturing()) return;            // 繪圖：右鍵 = 退一點
         if (editorStore.getMode() !== "view") return;   // 規劃 / 放置模式不攔右鍵
         if (searchPlannerStore.isMapClickMode()) return;
         const unitId = scenarioStore.getSelectedUnitId();
@@ -232,10 +236,10 @@ export default function WargameApp() {
       editorStore.subscribe(updateCursor);
       searchPlannerStore.subscribe(updateCursor);
       map.on("mouseenter", SYMBOL_LAYER_ID, () => {
-        if (editorStore.getMode() === "view" && !hexStore.getBrush()) map.getCanvas().style.cursor = "pointer";
+        if (editorStore.getMode() === "view" && !hexStore.getBrush() && !drawStore.isCapturing() && !rulerStore.isActive()) map.getCanvas().style.cursor = "pointer";
       });
       map.on("mouseleave", SYMBOL_LAYER_ID, () => {
-        if (editorStore.getMode() === "view" && !hexStore.getBrush()) map.getCanvas().style.cursor = "";
+        if (editorStore.getMode() === "view" && !hexStore.getBrush() && !drawStore.isCapturing() && !rulerStore.isActive()) map.getCanvas().style.cursor = "";
       });
 
       setMapReady(true);
@@ -340,7 +344,7 @@ export default function WargameApp() {
           {/* 資產面板（攻擊優序）：入口在頂部列「資產」鈕 */}
           <AssetPanel top={TOP_BAR_HEIGHT + 12} />
           {/* 入口在頂部列「尺規」鈕；這裡只在量測中顯示控制面板（資產面板開著時讓到右側） */}
-          <RulerControl hideLauncher lang={uiLang}
+          <RulerControl hideLauncher withDraw lang={uiLang}
             style={{ top: TOP_BAR_HEIGHT + 12, left: assetOpen ? 16 + ASSET_PANEL_WIDTH + 12 : 16 }} />
           <ThreatAlert top={TOP_BAR_HEIGHT + 10} />
           <ObjectivesHud map={mapRef.current} bottom={consoleH + 34} />

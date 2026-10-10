@@ -25,6 +25,7 @@ import { replayPlayer } from "../../wargame/replay/player";
 import { langStore, useLang } from "../../wargame/i18n/lang";
 import { searchPlannerStore } from "../../wargame/search/searchPlannerStore";
 import { rulerStore } from "../../map/rulerTool";
+import { drawStore } from "../../map/drawTool";
 import { assetPanelStore } from "./AssetPanel";
 import { GrayzoneBarButton } from "./GrayzonePanel";
 
@@ -43,6 +44,7 @@ function getFow() { return scenarioStore.isFogOfWar(); }
 function getReplayActive() { return replayPlayer.isActive(); }
 function getSearchOpen() { return searchPlannerStore.isOpen(); }
 function getRulerActive() { return rulerStore.isActive(); }
+function getDrawOpen() { return drawStore.isOpen(); }
 function getAssetOpen() { return assetPanelStore.isOpen(); }
 
 export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBriefing, onOpenCheat }: Props) {
@@ -53,7 +55,10 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
   const replayActive = useSyncExternalStore(replayPlayer.subscribe, getReplayActive, getReplayActive);
   const fowLocked = net.role !== "off" && view !== "spectator";
   const searchOpen = useSyncExternalStore(searchPlannerStore.subscribe, getSearchOpen, getSearchOpen);
-  const rulerActive = useSyncExternalStore(rulerStore.subscribe, getRulerActive, getRulerActive);
+  const rulerOn = useSyncExternalStore(rulerStore.subscribe, getRulerActive, getRulerActive);
+  const drawOpen = useSyncExternalStore(drawStore.subscribe, getDrawOpen, getDrawOpen);
+  // 尺規面板含量測與繪圖：任一開著都算開
+  const rulerActive = rulerOn || drawOpen;
   const assetOpen = useSyncExternalStore(assetPanelStore.subscribe, getAssetOpen, getAssetOpen);
   const width = useWindowWidth();
   // 窄螢幕：右側按鈕改純圖示（文字留在 tooltip），避免擠出畫面
@@ -105,8 +110,8 @@ export function DesktopTopBar({ map, styleId, onStyleChange, onOpenLlm, onOpenBr
           </BarButton>
         )} />
         <BarButton accent="#f472b6" active={rulerActive}
-          title={lang === "en" ? "Ruler — measure distance (NM / km) and bearing" : "尺規：量測距離（海里 / 公里）與方位"}
-          onClick={() => rulerStore.setActive(!rulerActive)}>
+          title={lang === "en" ? "Ruler — measure distance / bearing, draw lines, rectangles, circles" : "尺規：量測距離與方位、畫線段 / 矩形 / 圓"}
+          onClick={() => { if (rulerActive) { rulerStore.setActive(false); drawStore.setOpen(false); } else rulerStore.setActive(true); }}>
           <Ruler size={15} />{!iconOnly && (lang === "en" ? " Ruler" : " 尺規")}
         </BarButton>
         <BarButton accent="#3b82f6" active title="LLM 介接（狀態匯出 / 指令匯入 / AI 對手）" onClick={onOpenLlm}>
