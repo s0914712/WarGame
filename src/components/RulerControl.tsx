@@ -9,6 +9,7 @@ import { useState, useSyncExternalStore } from "react";
 import { Ruler, Undo2, Trash2, Check, X, Spline, Square, Circle, Pentagon } from "lucide-react";
 import { formatBearing, formatDistance, rulerStore, type RulerUnit } from "../map/rulerTool";
 import { drawStore, describeShape, DRAW_COLORS, type DrawKind } from "../map/drawTool";
+import { parseCoordList, formatDms } from "../map/parseDmsCoords";
 
 const TEXT = {
   zh: {
@@ -25,10 +26,10 @@ const TEXT = {
       none: "選擇線段 / 矩形 / 圓 / 多邊形後在地圖上畫",
     },
     clearAll: "全部清除", del: "刪除",
-    coordTitle: "手動輸入座標（十進位度）",
-    coordPh: "每行一點：經度, 緯度\n120.50, 24.10\n120.90, 24.10\n120.70, 23.80",
-    coordNote: "可用逗號、空白或 Tab 分隔；先寫緯度也可（自動判斷）；至少 3 點",
-    coordAdd: "建立多邊形", coordBad: "第 {n} 行無法解讀：", coordFew: "至少需要 3 個點",
+    coordTitle: "手動輸入座標（度分秒）",
+    coordPh: "每行一點：經度, 緯度\n120°30'15\"E, 24°06'00\"N\n120 54 00, 24 06 00\n120°42'E 23°48'N",
+    coordNote: "度分秒可用 ° ' \" 、空白或 - 分隔，可加 E/N（或東經 / 北緯）；分可帶小數（24°06.5'）；緯度在前也可；十進位亦可；至少 3 點",
+    coordAdd: "建立多邊形", coordBad: "第 {n} 行無法解讀：", coordFew: "至少需要 3 個點", coordParsed: "已解讀 {n} 點",
   },
   en: {
     ruler: "Ruler", nm: "NM", km: "km", total: "Total", segments: "seg", bearing: "Last bearing",
@@ -44,10 +45,10 @@ const TEXT = {
       none: "Pick line / rectangle / circle / polygon, then draw on the map",
     },
     clearAll: "Clear all", del: "Delete",
-    coordTitle: "Enter coordinates (decimal degrees)",
-    coordPh: "One point per line: lng, lat\n120.50, 24.10\n120.90, 24.10\n120.70, 23.80",
-    coordNote: "Comma, space or tab separated; lat-first also works (auto-detected); at least 3 points",
-    coordAdd: "Create polygon", coordBad: "Line {n} not understood: ", coordFew: "Need at least 3 points",
+    coordTitle: "Enter coordinates (deg / min / sec)",
+    coordPh: "One point per line: lng, lat\n120°30'15\"E, 24°06'00\"N\n120 54 00, 24 06 00\n120°42'E 23°48'N",
+    coordNote: "Separate D/M/S with ° ' \", spaces or -; add E/N if you like; decimal minutes OK (24°06.5'); lat-first OK; decimal degrees also work; at least 3 points",
+    coordAdd: "Create polygon", coordBad: "Line {n} not understood: ", coordFew: "Need at least 3 points", coordParsed: "{n} points parsed",
   },
 } as const;
 
@@ -241,31 +242,13 @@ function ShapeList({ t, iconBtn }: { t: T; iconBtn: React.CSSProperties }) {
   );
 }
 
-/**
- * 解析十進位經緯度：每行一點（也接受 ; 分隔），數字間逗號 / 空白 / Tab 皆可。
- * 順序自動判斷：第一個數 |x| ≤ 90 且第二個 |y| > 90 → 視為「緯度, 經度」。
- */
-export function parseDecimalCoords(text: string): { pts: [number, number][]; badLine: number | null; badText: string } {
-  const pts: [number, number][] = [];
-  const lines = text.split(/[\n;]+/);
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i]!.trim();
-    if (!raw) continue;
-    const nums = raw.split(/[\s,，、]+/).filter(Boolean).map(Number);
-    if (nums.length !== 2 || nums.some((n) => !Number.isFinite(n))) return { pts, badLine: i + 1, badText: raw };
-    let [a, b] = nums as [number, number];
-    if (Math.abs(a) <= 90 && Math.abs(b) > 90) [a, b] = [b, a];
-    if (Math.abs(a) > 180 || Math.abs(b) > 90) return { pts, badLine: i + 1, badText: raw };
-    pts.push([a, b]);
-  }
-  return { pts, badLine: null, badText: "" };
-}
-
 function CoordPolygonInput({ t, iconBtn }: { t: T; iconBtn: React.CSSProperties }) {
   const [text, setText] = useState("");
   const [err, setErr] = useState("");
+  // 即時預覽：已解讀幾點、最後兩點換回度分秒顯示（確認沒打錯）
+  const preview = text.trim() ? parseCoordList(text) : null;
   const create = () => {
-    const r = parseDecimalCoords(text);
+    const r = parseCoordList(text);
     if (r.badLine !== null) { setErr(`${t.coordBad.replace("{n}", String(r.badLine))}${r.badText}`); return; }
     if (!drawStore.addPolygon(r.pts)) { setErr(t.coordFew); return; }
     setErr(""); setText("");
@@ -280,6 +263,12 @@ function CoordPolygonInput({ t, iconBtn }: { t: T; iconBtn: React.CSSProperties 
         style={{ resize: "vertical", fontFamily: "ui-monospace, monospace", fontSize: 13, padding: "5px 7px",
           background: "#020617", color: "#e2e8f0", border: "1px solid rgba(148,163,184,0.3)", borderRadius: 4 }} />
       <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>{t.coordNote}</div>
+      {!err && preview && preview.pts.length > 0 && (
+        <div style={{ fontSize: 12, color: preview.badLine === null ? "#86efac" : "#fcd34d", fontFamily: "ui-monospace, monospace", lineHeight: 1.45 }}>
+          {t.coordParsed.replace("{n}", String(preview.pts.length))}
+          {preview.pts.slice(-2).map((p, i) => <div key={i}>{formatDms(p[0], "lng")} {formatDms(p[1], "lat")}</div>)}
+        </div>
+      )}
       {err && <div style={{ fontSize: 12, color: "#fca5a5" }}>{err}</div>}
       <button className="wg-btn" data-testid="draw-coords-add" style={{ ...iconBtn, alignSelf: "flex-start", color: "#fef9c3" }}
         onClick={create} disabled={!text.trim()}>
