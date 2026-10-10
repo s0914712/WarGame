@@ -158,6 +158,7 @@
 | `exportState.ts` | scenarioStore → JSON（給 LLM 看的戰場態勢） |
 | `applyCommands.ts` | LLM JSON → 驗證 → enqueue → 回 result |
 | `schemaDoc.ts` | Markdown schema doc（給 LLM 當 system prompt） |
+| `adversary.ts` | AI 指揮官：符合戰爭迷霧的精簡戰場摘要（射程內目標 / 威脅圈 / 勝利條件與時限勝負預估）、策略、assessment + 每條指令 reason、跨回合記憶。瀏覽器自動駕駛與 MCP benchmark 共用 |
 
 支援 5 種指令：`set_waypoints`、`set_speed`、`engage`、`hold`、`update_attributes`。
 
@@ -177,7 +178,8 @@
 | `WargameClockHUD.tsx` | 左上 T+ 顯示 + 暫停按鈕 + 速率切換 + FoW 開關 |
 | `UnitEditorPanel.tsx` | 右側選中單位面板：5 slider + 規劃航線 / 驗證 |
 | `EngagementLog.tsx` | 左下戰報滾動（含 50 條最近事件 + 摺疊） |
-| `LLMPanel.tsx` | 全螢幕 modal：State / Commands / Schema 三分頁 |
+| `LLMPanel.tsx` | 「AI 指揮官」modal：預設頁只填 API key / 模型 / 策略 / 指揮哪一方 →「取得 AI 研判」或「AI 接手指揮」；JSON / Schema / 腳本 AI / 比分收在進階 |
+| `wargame/AiCommanderHud.tsx` | AI 接手時地圖右上的浮動小卡：研判、意圖、各指令理由、停止 |
 | `SearchPlannerPanel.tsx` | 右側搜索規劃器：框搜索區 → 解算掃區時間 / POD / 建議架數與圖形 → 產生航線並指派 |
 
 ### `src/hooks/`

@@ -11,9 +11,16 @@ import { netStore } from "../wargame/net/netStore";
 import { submitCommand } from "../wargame/net/commandBus";
 import type { LlmCommandResult } from "../wargame/llm/schema";
 import { SCHEMA_DOC } from "../wargame/llm/schemaDoc";
-import { aiConfigStore, isUsingEnvDefaults, DEFAULT_V2_PARAMS, type ScriptedV2Params } from "../wargame/llm/aiConfig";
+import { aiConfigStore, isUsingEnvDefaults, DEFAULT_V2_PARAMS, AI_MODEL_PRESETS, type ScriptedV2Params } from "../wargame/llm/aiConfig";
+import { viewStore } from "../wargame/viewStore";
+import { wargameClock } from "../wargame/clock";
+import { AssessmentView } from "./wargame/AiAssessmentView";
 import { scenarioStore } from "../wargame/scenarioStore";
-import { callLlm } from "../wargame/llm/aiClient";
+import { callLlm, extractJson } from "../wargame/llm/aiClient";
+import {
+  buildAdversaryPrompts, parseAdversaryResponse, describeCommand, STRATEGY_TEXT,
+  type AdversaryAssessment, type AiOrderView,
+} from "../wargame/llm/adversary";
 import { computeMatchScore } from "../wargame/sim/matchScore";
 import { leaderboardStore } from "../wargame/llm/leaderboard";
 import { t, useLang } from "../wargame/i18n/lang";
@@ -28,11 +35,11 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "state" | "commands" | "schema" | "adversary" | "scoreboard";
+type Tab = "simple" | "state" | "commands" | "schema" | "adversary" | "scoreboard";
 
 export function LLMPanel({ open, onClose }: Props) {
   useLang();  // re-render on language toggle
-  const [tab, setTab] = useState<Tab>("state");
+  const [tab, setTab] = useState<Tab>("simple");
   const [commandsText, setCommandsText] = useState("");
   const [result, setResult] = useState<LlmCommandResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -93,10 +100,14 @@ export function LLMPanel({ open, onClose }: Props) {
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 22, fontWeight: 600 }}>{t("LLM Bridge")}</span>
-            <span style={{ fontSize: 15, color: "#94a3b8" }}>
-              wargame v1 protocol
-            </span>
+            <span style={{ fontSize: 22, fontWeight: 600 }}>🤖 AI 指揮官</span>
+            {tab !== "simple" ? (
+              <button onClick={() => setTab("simple")} style={{ ...secondaryBtn, fontSize: 14, padding: "4px 10px" }}>
+                ← 回 AI 指揮官
+              </button>
+            ) : (
+              <span style={{ fontSize: 15, color: "#94a3b8" }}>填 API Key、選模型與策略，看 AI 研判或讓它接手</span>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -107,8 +118,8 @@ export function LLMPanel({ open, onClose }: Props) {
           >×</button>
         </div>
 
-        {/* Tabs */}
-        <div style={{
+        {/* Tabs（進階） */}
+        {tab !== "simple" && <div style={{
           display: "flex", borderBottom: "1px solid rgba(148, 163, 184, 0.15)",
         }}>
           {(["state", "commands", "schema", "adversary", "scoreboard"] as Tab[]).map((tabId) => (
@@ -132,10 +143,11 @@ export function LLMPanel({ open, onClose }: Props) {
               {tabId === "scoreboard" && `5. 🏆 ${t("Scoreboard")}`}
             </button>
           ))}
-        </div>
+        </div>}
 
         {/* Body */}
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          {tab === "simple" && <SimpleAiTab onTakeover={onClose} onAdvanced={() => setTab("adversary")} />}
           {tab === "state" && (
             <StateTab json={stateJson} onCopy={() => copy(stateJson)} />
           )}
@@ -272,21 +284,30 @@ function SchemaTab({ text, onCopy }: { text: string; onCopy: () => void }) {
 function AdversaryTab() {
   // 訂閱 aiConfigStore (config + status)
   useSyncExternalStore(aiConfigStore.subscribe, aiConfigStore.getConfig, aiConfigStore.getConfig);
+  useSyncExternalStore(aiConfigStore.subscribe, aiConfigStore.getStatus, aiConfigStore.getStatus);
   const cfg = aiConfigStore.getConfig();
   const status = aiConfigStore.getStatus();
   const sides = scenarioStore.getState().scenario.sides;
   const envSet = isUsingEnvDefaults();
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string>("");
+  const [testView, setTestView] = useState<{ assessment: AdversaryAssessment | null; orders: AiOrderView[]; ms: number } | null>(null);
 
+  // 測試：用與自動駕駛相同的 prompt 請 AI 研判戰場 + 擬定指令，但不套用（只顯示）
   const handleTest = async () => {
-    setTesting(true); setTestResult("");
+    setTesting(true); setTestResult(""); setTestView(null);
+    const t0 = performance.now();
     try {
-      const stateForLlm = buildStateExport(cfg.sideId);
-      const prompt = `Current state:\n\`\`\`json\n${JSON.stringify(stateForLlm).slice(0, 2000)}...\n\`\`\`\nReturn a tiny test commands JSON (single hold command on any of your units).`;
-      const sys = `${SCHEMA_DOC}\n\nYou control side ${cfg.sideId}.`;
-      const r = await callLlm(cfg, sys, prompt);
-      setTestResult(`✓ 成功\n\n${r.content.slice(0, 600)}`);
+      const { system, user } = buildAdversaryPrompts(cfg.sideId, { intervalSec: cfg.intervalSimSec });
+      const r = await callLlm(cfg, system, user);
+      const turn = parseAdversaryResponse(extractJson(r.content));
+      const cmds = (turn.doc as { commands?: unknown[] }).commands ?? [];
+      setTestView({
+        assessment: turn.assessment,
+        orders: cmds.map((c, i) => ({ text: describeCommand(c), reason: turn.reasons[i] ?? "", status: "applied" as const })),
+        ms: Math.round(performance.now() - t0),
+      });
+      setTestResult("✓ 成功（以下為 AI 擬定、尚未執行的指令）");
     } catch (e) {
       setTestResult(`✗ 失敗\n\n${(e as Error).message}`);
     } finally {
@@ -474,7 +495,7 @@ function AdversaryTab() {
             disabled={testing || !cfg.apiKey.trim()}
             style={{ ...primaryBtn, opacity: (testing || !cfg.apiKey.trim()) ? 0.4 : 1 }}
           >
-            {testing ? "測試中..." : "測試呼叫（不會套用指令）"}
+            {testing ? "研判中..." : "測試：AI 戰場研判（不會套用指令）"}
           </button>
         )}
         <button
@@ -503,6 +524,10 @@ function AdversaryTab() {
             whiteSpace: "pre-wrap", margin: 0,
           }}>{testResult}</pre>
         )}
+        {testView && (
+          <AssessmentView assessment={testView.assessment} orders={testView.orders} planned
+            footer={`${cfg.model} · ${(testView.ms / 1000).toFixed(1)} s`} />
+        )}
       </div>
 
       {/* Status */}
@@ -529,6 +554,10 @@ function AdversaryTab() {
           </div>
         )}
       </div>
+      {cfg.mode === "llm" && (status.lastAssessment || status.lastOrders.length > 0) && (
+        <AssessmentView assessment={status.lastAssessment} orders={status.lastOrders}
+          footer={status.lastCallSimSec !== null ? `自動駕駛 · T+${Math.round(status.lastCallSimSec)}s` : undefined} />
+      )}
     </div>
   );
 }
@@ -820,4 +849,194 @@ const secondaryBtn: React.CSSProperties = {
   padding: "6px 14px", background: "rgba(148, 163, 184, 0.15)",
   color: "#cbd5e1", border: "1px solid rgba(148, 163, 184, 0.3)",
   borderRadius: 6, fontSize: 16, cursor: "pointer", fontFamily: "inherit",
+};
+
+// ── 預設頁：AI 指揮官（填 key → 選模型 / 策略 / 指揮哪一方 → 研判 / 接手）──
+const PROVIDERS = [
+  { id: "stima", label: "Stima / Apertis", dev: "/llm-proxy/v1/chat/completions", prod: "https://api.stima.tech/v1/chat/completions" },
+  { id: "openai", label: "OpenAI", dev: "https://api.openai.com/v1/chat/completions", prod: "https://api.openai.com/v1/chat/completions" },
+  { id: "openrouter", label: "OpenRouter", dev: "https://openrouter.ai/api/v1/chat/completions", prod: "https://openrouter.ai/api/v1/chat/completions" },
+] as const;
+
+function providerOf(endpoint: string): string {
+  if (endpoint.includes("llm-proxy") || endpoint.includes("stima") || endpoint.includes("apertis")) return "stima";
+  if (endpoint.includes("openrouter")) return "openrouter";
+  if (endpoint.includes("openai.com")) return "openai";
+  return "custom";
+}
+
+function SimpleAiTab({ onTakeover, onAdvanced }: { onTakeover: () => void; onAdvanced: () => void }) {
+  // config 與 status 是兩個獨立快照，各訂一次（只訂 status 時改設定不會重繪）
+  useSyncExternalStore(aiConfigStore.subscribe, aiConfigStore.getConfig, aiConfigStore.getConfig);
+  useSyncExternalStore(aiConfigStore.subscribe, aiConfigStore.getStatus, aiConfigStore.getStatus);
+  const cfg = aiConfigStore.getConfig();
+  const status = aiConfigStore.getStatus();
+  const set = aiConfigStore.updateConfig.bind(aiConfigStore);
+  const sides = scenarioStore.getState().scenario.sides.filter((s) => s.id !== "neutral");
+  const mySide = viewStore.getActiveSideId() ?? sides.find((s) => s.isPlayer)?.id ?? null;
+  const dev = (import.meta as ImportMeta).env?.DEV === true;
+  const provider = providerOf(cfg.endpoint);
+  const presetIds = AI_MODEL_PRESETS.map((m) => m.id);
+  const [customModel, setCustomModel] = useState(!presetIds.includes(cfg.model));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [view, setView] = useState<{ assessment: AdversaryAssessment | null; orders: AiOrderView[]; ms: number } | null>(null);
+  const running = cfg.enabled && cfg.mode === "llm";
+  const hasKey = cfg.apiKey.trim().length > 0;
+
+  const ask = async () => {
+    setBusy(true); setErr(""); setView(null);
+    const t0 = performance.now();
+    try {
+      const { system, user } = buildAdversaryPrompts(cfg.sideId, { intervalSec: cfg.intervalSimSec, strategy: cfg.strategy });
+      const r = await callLlm(cfg, system, user);
+      const turn = parseAdversaryResponse(extractJson(r.content));
+      const cmds = (turn.doc as { commands?: unknown[] }).commands ?? [];
+      setView({
+        assessment: turn.assessment,
+        orders: cmds.map((c, i) => ({ text: describeCommand(c), reason: turn.reasons[i] ?? "", status: "applied" as const })),
+        ms: Math.round(performance.now() - t0),
+      });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const takeover = () => {
+    set({ enabled: true, mode: "llm" });
+    if (wargameClock.isPaused()) wargameClock.resume();
+    onTakeover();
+  };
+
+  const label: React.CSSProperties = { fontSize: 14, color: "#94a3b8", marginBottom: 4 };
+  const row: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
+
+  return (
+    <div style={{ padding: 18, overflow: "auto", height: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* 1. 連線 */}
+      <div style={row}>
+        <div>
+          <div style={label}>服務</div>
+          <select value={provider} style={inputStyle} data-testid="ai-provider"
+            onChange={(e) => {
+              const p = PROVIDERS.find((x) => x.id === e.target.value);
+              if (p) set({ endpoint: dev ? p.dev : p.prod });
+            }}>
+            {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            {provider === "custom" && <option value="custom">自訂（進階設定）</option>}
+          </select>
+        </div>
+        <div>
+          <div style={label}>API Key {isUsingEnvDefaults().apiKey && <EnvBadge />}</div>
+          <input type="password" value={cfg.apiKey} placeholder="sk-..." style={inputStyle} data-testid="ai-key"
+            onChange={(e) => set({ apiKey: e.target.value })} />
+        </div>
+      </div>
+
+      {/* 2. 模型 + 策略 + 指揮哪一方 */}
+      <div style={row}>
+        <div>
+          <div style={label}>模型</div>
+          <select value={customModel ? "__custom__" : cfg.model} style={inputStyle} data-testid="ai-model"
+            onChange={(e) => {
+              if (e.target.value === "__custom__") { setCustomModel(true); return; }
+              setCustomModel(false); set({ model: e.target.value });
+            }}>
+            {AI_MODEL_PRESETS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            <option value="__custom__">其他（自行輸入）…</option>
+          </select>
+          {customModel && (
+            <input value={cfg.model} placeholder="model id" style={{ ...inputStyle, marginTop: 6 }}
+              onChange={(e) => set({ model: e.target.value })} />
+          )}
+        </div>
+        <div>
+          <div style={label}>AI 指揮</div>
+          <select value={cfg.sideId} style={inputStyle} data-testid="ai-side"
+            onChange={(e) => set({ sideId: e.target.value as typeof cfg.sideId })}>
+            {sides.map((s) => (
+              <option key={s.id} value={s.id}>{s.displayName}{s.id === mySide ? "（我方 → AI 接手）" : "（對手）"}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div>
+        <div style={label}>策略</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+          {Object.entries(STRATEGY_TEXT).map(([id, s]) => {
+            const active = cfg.strategy === id;
+            return (
+              <button key={id} data-testid={`ai-strategy-${id}`} onClick={() => set({ strategy: id as typeof cfg.strategy })}
+                style={{
+                  padding: "8px 6px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                  border: `1px solid ${active ? "#60a5fa" : "rgba(148,163,184,0.25)"}`,
+                  background: active ? "rgba(59,130,246,0.18)" : "rgba(30,41,59,0.5)",
+                  color: active ? "#e0f2fe" : "#cbd5e1",
+                }}>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>{s.label}</div>
+                <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2, lineHeight: 1.35 }}>{s.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. 動作 */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button onClick={ask} disabled={busy || !hasKey} data-testid="ai-ask"
+          style={{ ...secondaryBtn, fontSize: 16, padding: "9px 14px", opacity: busy || !hasKey ? 0.45 : 1 }}>
+          {busy ? "AI 研判中…" : "🧭 取得 AI 研判與建議（不執行）"}
+        </button>
+        {running ? (
+          <button onClick={() => set({ enabled: false })} data-testid="ai-stop"
+            style={{ ...primaryBtn, fontSize: 16, padding: "9px 16px", background: "#b91c1c" }}>
+            ■ 停止 AI 指揮
+          </button>
+        ) : (
+          <button onClick={takeover} disabled={!hasKey} data-testid="ai-takeover"
+            style={{ ...primaryBtn, fontSize: 16, padding: "9px 16px", opacity: hasKey ? 1 : 0.45 }}>
+            ▶ AI 接手指揮（關閉視窗觀看）
+          </button>
+        )}
+        <span style={{ fontSize: 13, color: "#64748b" }}>
+          每 {cfg.intervalSimSec} 模擬秒決策一次
+          <select value={cfg.intervalSimSec} onChange={(e) => set({ intervalSimSec: Number(e.target.value) })}
+            style={{ marginLeft: 6, background: "#020617", color: "#cbd5e1", border: "1px solid rgba(148,163,184,0.3)", borderRadius: 4 }}>
+            {[30, 60, 120, 300].map((v) => <option key={v} value={v}>{v}s</option>)}
+          </select>
+        </span>
+      </div>
+      {!hasKey && <div style={{ fontSize: 14, color: "#fbbf24" }}>先填 API Key（只存在這台電腦的瀏覽器）。</div>}
+      {!dev && provider === "stima" && (
+        <div style={{ fontSize: 13, color: "#94a3b8" }}>線上版直接由瀏覽器呼叫 API；若遇 CORS 錯誤，改用 OpenAI / OpenRouter。</div>
+      )}
+      {err && <div style={{ ...warnText, whiteSpace: "pre-wrap" }}>✗ {err}</div>}
+
+      {/* 4. 輸出 */}
+      {view && (
+        <AssessmentView assessment={view.assessment} orders={view.orders} planned
+          footer={`${cfg.model} · ${STRATEGY_TEXT[cfg.strategy]?.label ?? ""} · ${(view.ms / 1000).toFixed(1)} 秒`} />
+      )}
+      {running && (status.lastAssessment || status.inFlight) && (
+        <div>
+          <div style={{ fontSize: 14, color: "#94a3b8", marginBottom: 4 }}>
+            AI 指揮中 {status.inFlight && <span style={{ color: "#fbbf24" }}>· 思考中…</span>}
+          </div>
+          {status.lastAssessment && <AssessmentView assessment={status.lastAssessment} orders={status.lastOrders} />}
+        </div>
+      )}
+      {status.lastError && running && <div style={warnText}>✗ {status.lastError}</div>}
+
+      <button onClick={onAdvanced} style={{ alignSelf: "flex-start", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 13, padding: 0, textDecoration: "underline" }}>
+        進階設定（JSON 狀態 / 手動指令 / Schema / 腳本 AI / 比分）
+      </button>
+    </div>
+  );
+}
+
+const warnText: React.CSSProperties = {
+  fontSize: 14, color: "#fca5a5", padding: "8px 10px", borderRadius: 6,
+  background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)",
 };

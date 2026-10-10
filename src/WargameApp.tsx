@@ -55,6 +55,7 @@ import { WargameMobileLayout } from "./components/wargame/WargameMobileLayout";
 import { DesktopTopBar, TOP_BAR_HEIGHT } from "./components/wargame/DesktopTopBar";
 import { CommandConsole, CONSOLE_HEIGHT } from "./components/wargame/CommandConsole";
 import { PlanModeUnitCard } from "./components/wargame/PlanModeUnitCard";
+import { AiCommanderHud } from "./components/wargame/AiCommanderHud";
 
 /**
  * 兵推模式頂層 app。
@@ -307,6 +308,10 @@ export default function WargameApp() {
       <PlayerRosterHUD isMobile={isMobile} top={isMobile ? undefined : TOP_BAR_HEIGHT + 12} />
       {/* LLM 面板：桌面 / 行動版共用（行動版由選單抽屜開啟），故移出 !demoMode 分支 */}
       <LLMPanel open={llmOpen} onClose={() => setLlmOpen(false)} />
+      {/* LLM 接手指揮時的浮動研判小卡（關掉面板看地圖用） */}
+      {!demoMode && !llmOpen && (
+        <AiCommanderHud top={isMobile ? 64 : TOP_BAR_HEIGHT + 12} onOpenPanel={() => setLlmOpen(true)} />
+      )}
 
       {/* Demo Mode 隱藏所有其他控制 */}
       {!demoMode && (

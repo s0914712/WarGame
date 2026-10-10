@@ -8,19 +8,21 @@
  *   4. 沒有 in-flight 請求
  *   5. clock 沒暫停（暫停時不該推進敵方）
  *
- * 流程：
- *   - 用 buildStateExport(aiSide) 拿 AI 視角 state（過濾 FoW）
- *   - 呼叫 LLM
- *   - 解析 JSON → applyLlmCommands({ pauseFirst: false, sideFilter: aiSide })
- *   - 寫狀態回 aiConfigStore.status
+ * 流程（LLM 模式，見 llm/adversary.ts）：
+ *   - buildAdversaryPrompts：精簡、符合戰爭迷霧的戰場摘要 + 任務目標 + 上回合記憶
+ *   - 呼叫 LLM → 解析 assessment（戰場研判）與各指令 reason
+ *   - applyLlmCommands({ sideFilter, repairRoutes, forbidAttributeEdits })
+ *   - 研判 / 指令 / 結果寫回 aiConfigStore.status；意圖與被拒原因留作下回合記憶
  */
 import { useEffect } from "react";
 import { wargameClock } from "../wargame/clock";
 import { aiConfigStore } from "../wargame/llm/aiConfig";
-import { buildStateExport } from "../wargame/llm/exportState";
 import { callLlm, extractJson } from "../wargame/llm/aiClient";
 import { applyLlmCommands } from "../wargame/llm/applyCommands";
-import { SCHEMA_DOC } from "../wargame/llm/schemaDoc";
+import {
+  buildAdversaryPrompts, parseAdversaryResponse, nextMemory, ordersView, type AdversaryMemory,
+} from "../wargame/llm/adversary";
+import { scenarioStore } from "../wargame/scenarioStore";
 import { runScriptedAiTick } from "../wargame/ai/scriptedAi";
 import { runScriptedAiV2Tick } from "../wargame/ai/scriptedAiV2";
 import type { LlmCommandResult } from "../wargame/llm/schema";
@@ -31,6 +33,8 @@ const CHECK_INTERVAL_MS = 1000;  // 每秒檢查一次條件，不必每幀
 export function useAiSideLoop() {
   useEffect(() => {
     let lastCallSimSec = -Infinity;
+    let memory: AdversaryMemory | null = null;
+    let memoryScenario = "";
     let inFlight = false;
     let abortCtrl: AbortController | null = null;
 
@@ -43,6 +47,13 @@ export function useAiSideLoop() {
       if (cfg.mode === "llm" && !cfg.apiKey.trim()) return;
       if (wargameClock.isPaused()) return;
       const simSec = wargameClock.getSimTime();
+      // 換場景 / 重新開始（時間倒退）→ 重設節奏與記憶，否則 AI 會一直等到超過舊的呼叫時刻
+      const scenId = scenarioStore.getState().scenario.id;
+      if (simSec < lastCallSimSec || scenId !== memoryScenario) {
+        lastCallSimSec = -Infinity;
+        memory = null;
+        memoryScenario = scenId;
+      }
       if (simSec - lastCallSimSec < cfg.intervalSimSec) return;
 
       lastCallSimSec = simSec;
@@ -74,39 +85,24 @@ export function useAiSideLoop() {
       }
 
       try {
-        const stateForLlm = buildStateExport(cfg.sideId);
-        const systemPrompt = `${SCHEMA_DOC}
-
----
-
-# Adversary instructions
-
-You are an autonomous wargame commander controlling side **${cfg.sideId}**.
-Every ${cfg.intervalSimSec} sim seconds you'll be invoked to plan moves.
-Output a SHORT, decisive commands document.
-Prefer 1-3 commands per call. Don't overwhelm with bulk moves.
-Focus on: positioning own forces, engaging detected hostiles, evading threats.`;
-
-        const userPrompt = `Current battlefield state (your POV: ${cfg.sideId}):
-
-\`\`\`json
-${JSON.stringify(stateForLlm, null, 2)}
-\`\`\`
-
-Output ONLY a JSON commands document (no prose, no markdown).`;
-
+        const { system, user } = buildAdversaryPrompts(cfg.sideId, { intervalSec: cfg.intervalSimSec, memory, strategy: cfg.strategy });
         abortCtrl = new AbortController();
-        const { content, raw } = await callLlm(cfg, systemPrompt, userPrompt, abortCtrl.signal);
+        const { content, raw } = await callLlm(cfg, system, user, abortCtrl.signal);
 
-        const parsed = extractJson(content);
-        const result = applyLlmCommands(parsed, {
+        const turn = parseAdversaryResponse(extractJson(content));
+        const result = applyLlmCommands(turn.doc, {
           pauseFirst: false,
           sideFilter: cfg.sideId,
+          repairRoutes: true,
+          forbidAttributeEdits: true,   // AI 不得直接改自己的屬性（等同作弊）
         });
+        memory = nextMemory(turn, result);
 
         aiConfigStore.setStatus({
           inFlight: false,
           lastResult: result,
+          lastAssessment: turn.assessment,
+          lastOrders: ordersView(turn, result),
           lastResponseRaw: typeof content === "string" ? content : JSON.stringify(raw).slice(0, 1000),
         });
       } catch (e) {

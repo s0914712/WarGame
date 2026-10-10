@@ -9,7 +9,7 @@ import { scenarioStore } from "../src/wargame/scenarioStore.ts";
 import { step } from "../src/wargame/sim/engine.ts";
 import { applyLlmCommands } from "../src/wargame/llm/applyCommands.ts";
 import { buildStateExport } from "../src/wargame/llm/exportState.ts";
-import { SCHEMA_DOC } from "../src/wargame/llm/schemaDoc.ts";
+import { buildAdversaryPrompts, parseAdversaryResponse, nextMemory, type AdversaryMemory } from "../src/wargame/llm/adversary.ts";
 import { computeMatchScore } from "../src/wargame/sim/matchScore.ts";
 import type { SideId } from "../src/wargame/types.ts";
 
@@ -231,6 +231,7 @@ export async function runBenchmark(req: BenchmarkRequest): Promise<BenchmarkMode
       if (req.verbose) process.stderr.write(`\n[benchmark] ${model} run ${r + 1}/${runsPerModel}\n`);
       loadScenario(req.scenarioId);
       let llmCalls = 0, llmErrs = 0, applied = 0, rejected = 0;
+      let memory: AdversaryMemory | null = null;
       while (true) {
         const s = scenarioStore.getState();
         if (s.outcome) break;
@@ -242,16 +243,16 @@ export async function runBenchmark(req: BenchmarkRequest): Promise<BenchmarkMode
 
         // 叫 LLM 決策
         try {
-          const stateJson = JSON.stringify(buildStateExport(sideId)).slice(0, 6000);
-          const userPrompt = `Current state:\n\`\`\`json\n${stateJson}\n\`\`\`\nReturn a single wargame-commands-v1 JSON.`;
-          const sys = `${SCHEMA_DOC}\n\nYou control side ${sideId}.`;
+          // 與瀏覽器 AI 自動駕駛同一套 prompt / 記憶（src/wargame/llm/adversary.ts）
+          const { system, user } = buildAdversaryPrompts(sideId, { intervalSec: stepSec, memory });
           const content = await callLlmDirect({
             endpoint: req.endpoint, apiKey: req.apiKey, model, temperature: temp,
-          }, sys, userPrompt);
+          }, system, user);
           llmCalls += 1;
           try {
-            const json = extractJsonLoose(content);
-            const result = applyLlmCommands(json, { sideFilter: sideId });
+            const turn = parseAdversaryResponse(extractJsonLoose(content));
+            const result = applyLlmCommands(turn.doc, { sideFilter: sideId, repairRoutes: true, forbidAttributeEdits: true });
+            memory = nextMemory(turn, result);
             applied += result.summary.applied;
             rejected += result.summary.rejected;
           } catch (e) {

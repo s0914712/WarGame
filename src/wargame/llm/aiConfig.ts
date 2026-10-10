@@ -5,8 +5,20 @@
  */
 import type { SideId } from "../types";
 import type { LlmCommandResult } from "./schema";
+import type { AdversaryAssessment, AiOrderView } from "./adversary";
 
 export type AiMode = "llm" | "scripted" | "scripted_v2";
+
+/** LLM 指揮策略（注入 prompt，見 llm/adversary.ts STRATEGY_TEXT） */
+export type AiStrategy = "balanced" | "aggressive" | "defensive" | "recon";
+
+/** 簡易面板的模型清單（Stima / Apertis 同一把 key） */
+export const AI_MODEL_PRESETS: { id: string; label: string }[] = [
+  { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite — 快、便宜" },
+  { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash — 均衡" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 — 研判最細、較慢" },
+  { id: "gpt-4o-mini", label: "GPT-4o mini" },
+];
 
 /**
  * Scripted AI v2 (QMIX-inspired) 的可調參數。
@@ -46,6 +58,7 @@ export interface AiConfig {
   sideId: SideId;         // AI 控制哪個陣營
   temperature: number;
   v2Params: ScriptedV2Params;  // Scripted v2 (QMIX-inspired) 的可調 weights
+  strategy: AiStrategy;        // LLM 指揮策略
 }
 
 export interface AiStatus {
@@ -55,6 +68,10 @@ export interface AiStatus {
   lastResult: LlmCommandResult | null;
   lastError: string | null;
   lastResponseRaw: string | null;
+  /** LLM 模式：上回合的戰場研判（局勢 / 威脅 / 機會 / 意圖） */
+  lastAssessment: AdversaryAssessment | null;
+  /** LLM 模式：上回合各指令的摘要、理由與套用結果 */
+  lastOrders: AiOrderView[];
 }
 
 const STORAGE_KEY = "wargame.ai.config.v1";
@@ -87,6 +104,7 @@ const DEFAULT_CONFIG: AiConfig = {
   sideId: "red",
   temperature: 0.5,
   v2Params: { ...DEFAULT_V2_PARAMS },
+  strategy: "balanced",
 };
 
 function loadFromStorage(): AiConfig {
@@ -141,6 +159,8 @@ let status: AiStatus = {
   lastResult: null,
   lastError: null,
   lastResponseRaw: null,
+  lastAssessment: null,
+  lastOrders: [],
 };
 
 const listeners = new Set<() => void>();
@@ -181,6 +201,8 @@ export const aiConfigStore = {
       lastResult: null,
       lastError: null,
       lastResponseRaw: null,
+      lastAssessment: null,
+      lastOrders: [],
     };
     notify();
   },

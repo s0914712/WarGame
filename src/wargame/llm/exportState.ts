@@ -27,7 +27,11 @@ export function buildStateExport(povOverride?: import("../types").SideId): LlmSt
 
   const sideMap = new Map(state.scenario.sides.map((s) => [s.id, s]));
 
-  const units: LlmUnitView[] = Object.values(state.units).map((u) => {
+  // 戰爭迷霧：POV 方未偵測（hidden）的敵方單位不匯出 —— 連座標一起給等於開透視
+  const visible = Object.values(state.units).filter((u) =>
+    u.sideId === povSide || !hostileToPov.includes(u.sideId)
+    || (u.detectedBy[povSide] !== undefined && u.detectedBy[povSide] !== "hidden"));
+  const units: LlmUnitView[] = visible.map((u) => {
     const cat = UNIT_CATALOG[u.kind];
     let detectedByPlayer: LlmUnitView["detectedByPlayer"] = "own";
     if (u.sideId !== povSide) {

@@ -16,7 +16,8 @@ import { wargameClock } from "../clock";
 import { UNIT_CATALOG } from "../catalog/units";
 import { validatePlan } from "../sim/validate";
 import { SUB_MAX_DEPTH_M } from "../sim/sonar";
-import type { Command, CoreAttributes, RoeMode, SideId } from "../types";
+import { getTerrainProbe } from "../sim/terrain";
+import type { Command, CoreAttributes, LngLat, RoeMode, SideId, Unit } from "../types";
 
 const VALID_ROE: RoeMode[] = ["weapons_free", "weapons_tight", "defensive_only", "weapons_hold"];
 import {
@@ -37,6 +38,11 @@ export interface ApplyOptions {
   enqueue?: (cmd: Command) => void;
   /** 禁止 update_attributes（多人模式：直接改屬性等同作弊，且 client 改了也會被 host 覆寫） */
   forbidAttributeEdits?: boolean;
+  /**
+   * 海上單位的航點落在陸地時，自動推到最近海面（回 warning）而不是整條拒絕。
+   * AI 指揮官用：LLM 對海岸線的估計常差幾公里，整條拒絕會讓單位整回合原地不動。
+   */
+  repairRoutes?: boolean;
 }
 
 export function applyLlmCommands(
@@ -66,7 +72,7 @@ export function applyLlmCommands(
   // ── 2. 逐條套用 ──
   const enqueue = opts.enqueue ?? ((c: Command) => scenarioStore.enqueueCommand(c));
   const results: LlmCommandResultEntry[] = doc.commands.map((cmd, i) =>
-    applyOne(cmd, i, sideFilter, enqueue, opts.forbidAttributeEdits ?? false));
+    applyOne(cmd, i, sideFilter, enqueue, opts.forbidAttributeEdits ?? false, opts.repairRoutes ?? false));
 
   const applied = results.filter((r) => r.status === "applied").length;
   const rejected = results.filter((r) => r.status === "rejected").length;
@@ -88,7 +94,7 @@ function errResult(results: LlmCommandResultEntry[], submitted: number): LlmComm
 
 function applyOne(
   cmd: LlmCommand, index: number, sideFilter: SideId | undefined,
-  enqueue: (cmd: Command) => void, forbidAttributeEdits: boolean,
+  enqueue: (cmd: Command) => void, forbidAttributeEdits: boolean, repairRoutes: boolean,
 ): LlmCommandResultEntry {
   if (!cmd || typeof cmd !== "object" || !("kind" in cmd)) {
     return { index, status: "rejected", reason: "Command missing 'kind'" };
@@ -109,7 +115,8 @@ function applyOne(
     };
   }
 
-  const currentSimSec = wargameClock.getSimTime();
+  // 權威時間取 engine state（Node / MCP 不會推進 wargameClock，讀 clock 會永遠是 T+0）
+  const currentSimSec = state.simTimeSec;
   const execSimSec = currentSimSec + (("executeAtSimSec" in cmd && cmd.executeAtSimSec) || 0);
 
   switch (cmd.kind) {
@@ -124,6 +131,8 @@ function applyOne(
           return { index, status: "rejected", reason: "Each waypoint must be [lng, lat] numbers" };
         }
       }
+      const repairNotes: string[] = [];
+      if (repairRoutes) cmd.waypoints = repairSeaRoute(unit, cmd.waypoints, repairNotes);
       const validation = validatePlan(unit, cmd.waypoints, {
         currentSimSec,
         mustCompleteBySimSec: cmd.mustCompleteBySimSec,
@@ -146,7 +155,7 @@ function applyOne(
         mustCompleteBySimSec: cmd.mustCompleteBySimSec,
       };
       enqueue(queueCmd);
-      const warnings = validation.issues.filter((x) => x.severity === "warning").map((x) => x.message);
+      const warnings = [...repairNotes, ...validation.issues.filter((x) => x.severity === "warning").map((x) => x.message)];
       return warnings.length > 0
         ? { index, status: "applied", commandId: id, warnings }
         : { index, status: "applied", commandId: id };
@@ -309,6 +318,32 @@ function applyOne(
       return { index, status: "rejected", reason: `Unknown command kind` };
     }
   }
+}
+
+/** 海上單位（禁陸）落在陸地的航點 → 沿 24 個方位往外找最近海面，再多留 3 km 離岸 */
+function repairSeaRoute(unit: Unit, waypoints: LngLat[], notes: string[]): LngLat[] {
+  const forbid = UNIT_CATALOG[unit.kind].constraints.forbidDomains ?? [];
+  if (!forbid.includes("land") || forbid.includes("sea")) return waypoints;
+  const probe = getTerrainProbe();
+  return waypoints.map((wp, i) => {
+    const [lng, lat] = wp;
+    if (!probe.isLand(lng, lat)) return wp;
+    const kLng = 111 * Math.cos((lat * Math.PI) / 180);
+    for (let km = 3; km <= 150; km += 3) {
+      for (let b = 0; b < 360; b += 15) {
+        const rad = (b * Math.PI) / 180;
+        const p: LngLat = [lng + (Math.sin(rad) * km) / kLng, lat + (Math.cos(rad) * km) / 111];
+        if (probe.isLand(p[0], p[1])) continue;
+        const out = km + 3;
+        const q: LngLat = [lng + (Math.sin(rad) * out) / kLng, lat + (Math.cos(rad) * out) / 111];
+        const fixed: LngLat = probe.isLand(q[0], q[1]) ? p : q;
+        const r = (n: number) => Math.round(n * 1000) / 1000;
+        notes.push(`航點 ${i + 1} 在陸地，已移到最近海面 [${r(fixed[0])}, ${r(fixed[1])}]`);
+        return [r(fixed[0]), r(fixed[1])];
+      }
+    }
+    return wp;
+  });
 }
 
 function clamp(v: number, min: number, max: number): number {
