@@ -1,7 +1,7 @@
 /**
  * 場景：H 時 — 共軍登島作戰 2030
  *
- * 高難度全面入侵情境。紅方總兵力 ~38 單位（含 13 兩棲艦 + 護衛艦群 + 戰機 + 彈道飛彈），
+ * 高難度全面入侵情境。紅方總兵力 ~48 單位（含 10 兩棲艦 + 護衛艦群 + 戰機 + 彈道飛彈），
  * 藍方 ~40 單位（含 4 機場 / 3 Patriot / 6 雄三 / 全艦隊），美軍 4 單位有限介入。
  *
  * 紅方戰略目標：3 個兩棲艦群分別在台中、台南、桃園外海登陸 → hold_area（限登陸艦 landing_ship）
@@ -203,112 +203,123 @@ const US_UNITS: Unit[] = [
 
 // ════════════════════════════════════════════════
 // PLA 紅方 — 全面入侵
+// 部署依公開資料（美國防部《中國軍力報告》、CMSI、IISS、國防部共機動態）：
+//   - 東部戰區前沿機場：福州、龍田（福清）、惠安、漳州
+//   - 兩棲集結：平潭外海（北）、泉州圍頭灣（中）、東山 / 古雷外海（南）— 歷年「聯合利劍 / 海峽雷霆」演習區
+//   - 火箭軍：DF-17 旅（贛州 616 旅、普寧 627 旅）、DF-26 旅（清遠 626 旅、信陽 666 旅）
+//   - 第 73 集團軍（廈門）PHL-16 遠程火箭砲；福建沿海 HQ-9B 防空
+//   - 無人機以國防部常報的 無偵-7 / TB-001 為準
 // ════════════════════════════════════════════════
 const RED_UNITS: Unit[] = [
   // ── 戰略雷達 + 機場 ──
-  mkUnit("RED-RAD-FJ", "red", "radar_station", "FJ-RAD", "福建戰區雷達", 118.40, 25.50),
-  mkUnit("RED-AB-FZ", "red", "airbase", "AB-FZ", "福州機場", 119.31, 26.07),
-  mkUnit("RED-AB-XM", "red", "airbase", "AB-XM", "廈門機場", 118.13, 24.54),
-  mkUnit("RED-AB-LT", "red", "airbase", "AB-LT", "龍田基地", 117.10, 23.30),
+  mkUnit("RED-RAD-FJ", "red", "radar_station", "FJ-RAD", "福建沿海雷達", 118.40, 25.50),
+  mkUnit("RED-AB-FZ", "red", "airbase", "AB-FZ", "福州基地", 119.31, 26.07),
+  mkUnit("RED-AB-LT", "red", "airbase", "AB-LT", "龍田基地（福清）", 119.48, 25.64),
+  mkUnit("RED-AB-HA", "red", "airbase", "AB-HA", "惠安基地", 118.80, 25.03),
+  mkUnit("RED-AB-ZZ", "red", "airbase", "AB-ZZ", "漳州基地", 117.68, 24.56),
 
-  // ══════════ 兩棲艦群 A：北線（桃園外海登陸）══════════
-  // 4 LHA + LPD + LST 編隊
-  mkUnit("RED-LHA-A1", "red", "landing_ship", "075-A1", "075 兩棲攻擊艦 A1", 118.50, 25.10, {
+  // ══════════ 兩棲艦群 A：北線（平潭外海集結 → 桃園外海登陸）══════════
+  mkUnit("RED-LHA-A1", "red", "landing_ship", "075-A1", "075 兩棲攻擊艦 A1", 120.00, 25.50, {
     speedKnots: 18,
     coreOverride: { hpMax: 700 },
-    waypoints: [[119.50, 25.05], [120.30, 25.00], [120.80, 25.00]],
+    waypoints: [[120.40, 25.25], [120.80, 25.00]],
   }),
-  mkUnit("RED-LPD-A2", "red", "landing_ship", "071-A2", "071 船塢登陸艦 A2", 118.40, 25.00, {
+  mkUnit("RED-LPD-A2", "red", "landing_ship", "071-A2", "071 船塢登陸艦 A2", 119.98, 25.42, {
     speedKnots: 18,
     coreOverride: { hpMax: 600 },
-    waypoints: [[119.40, 25.00], [120.30, 24.95], [120.80, 24.95]],
+    waypoints: [[120.40, 25.15], [120.80, 24.95]],
   }),
-  mkUnit("RED-LST-A3", "red", "landing_ship", "072-A3", "072 戰車登陸艦 A3", 118.35, 25.15, {
+  mkUnit("RED-LST-A3", "red", "landing_ship", "072-A3", "072A 戰車登陸艦 A3", 120.05, 25.58, {
     speedKnots: 16,
     coreOverride: { hpMax: 450 },
-    waypoints: [[119.30, 25.10], [120.20, 25.05], [120.80, 25.05]],
+    waypoints: [[120.45, 25.30], [120.80, 25.05]],
   }),
 
-  // ══════════ 兩棲艦群 B：中線（台中外海登陸）══════════
-  mkUnit("RED-LHA-B1", "red", "landing_ship", "075-B1", "075 兩棲攻擊艦 B1", 118.50, 24.30, {
+  // ══════════ 兩棲艦群 B：中線（圍頭灣集結 → 台中外海登陸）══════════
+  mkUnit("RED-LHA-B1", "red", "landing_ship", "075-B1", "075 兩棲攻擊艦 B1", 118.90, 24.70, {
     speedKnots: 18,
     coreOverride: { hpMax: 700 },
     waypoints: [[119.30, 24.30], [120.10, 24.25], [120.50, 24.20]],
   }),
-  mkUnit("RED-LPD-B2", "red", "landing_ship", "071-B2", "071 船塢登陸艦 B2", 118.40, 24.20, {
+  mkUnit("RED-LPD-B2", "red", "landing_ship", "071-B2", "071 船塢登陸艦 B2", 118.85, 24.60, {
     speedKnots: 18,
     coreOverride: { hpMax: 600 },
     waypoints: [[119.20, 24.20], [120.00, 24.20], [120.50, 24.15]],
   }),
-  mkUnit("RED-LST-B3", "red", "landing_ship", "072-B3", "072 戰車登陸艦 B3", 118.35, 24.40, {
+  mkUnit("RED-LST-B3", "red", "landing_ship", "072-B3", "072A 戰車登陸艦 B3", 118.95, 24.65, {
     speedKnots: 16,
     coreOverride: { hpMax: 450 },
     waypoints: [[119.20, 24.35], [120.00, 24.25], [120.50, 24.25]],
   }),
-  mkUnit("RED-LST-B4", "red", "landing_ship", "072-B4", "072 戰車登陸艦 B4", 118.40, 24.15, {
+  mkUnit("RED-LST-B4", "red", "landing_ship", "072-B4", "072A 戰車登陸艦 B4", 118.92, 24.55, {
     speedKnots: 16,
     coreOverride: { hpMax: 450 },
     waypoints: [[119.25, 24.15], [120.05, 24.10], [120.50, 24.10]],
   }),
 
-  // ══════════ 兩棲艦群 C：南線（台南外海登陸）══════════
-  mkUnit("RED-LHA-C1", "red", "landing_ship", "075-C1", "075 兩棲攻擊艦 C1", 118.50, 23.20, {
+  // ══════════ 兩棲艦群 C：南線（東山外海集結 → 台南外海登陸）══════════
+  mkUnit("RED-LHA-C1", "red", "landing_ship", "075-C1", "075 兩棲攻擊艦 C1", 117.80, 23.60, {
     speedKnots: 18,
     coreOverride: { hpMax: 700 },
     waypoints: [[119.30, 23.15], [120.00, 23.10], [120.30, 23.05]],
   }),
-  mkUnit("RED-LPD-C2", "red", "landing_ship", "071-C2", "071 船塢登陸艦 C2", 118.40, 23.10, {
+  mkUnit("RED-LPD-C2", "red", "landing_ship", "071-C2", "071 船塢登陸艦 C2", 117.75, 23.52, {
     speedKnots: 18,
     coreOverride: { hpMax: 600 },
     waypoints: [[119.20, 23.10], [119.90, 23.10], [120.30, 23.10]],
   }),
-  mkUnit("RED-LST-C3", "red", "landing_ship", "072-C3", "072 戰車登陸艦 C3", 118.30, 23.25, {
+  mkUnit("RED-LST-C3", "red", "landing_ship", "072-C3", "072A 戰車登陸艦 C3", 117.85, 23.65, {
     speedKnots: 16,
     coreOverride: { hpMax: 450 },
     waypoints: [[119.20, 23.20], [120.00, 23.15], [120.30, 23.10]],
   }),
 
   // ══════════ 護衛艦群（隨同 + 反艦壓制）══════════
-  // 4 Type 055 強力驅逐艦
-  mkUnit("RED-055-01", "red", "ship_surface", "055-101", "055 - A 編隊護衛", 118.60, 25.20, {
+  // 055 型（鷹擊-18 反艦飛彈公開射程約 540 km，遊戲內折算 250 km）
+  mkUnit("RED-055-01", "red", "ship_surface", "055-101", "055 南昌級 - A 編隊", 120.05, 25.35, {
     speedKnots: 24,
     coreOverride: { rangeKm: 250, detectionRangeKm: 350, hpMax: 600 },
-    waypoints: [[119.40, 25.20], [120.20, 25.10]],
+    waypoints: [[120.40, 25.20], [120.70, 25.10]],
   }),
-  mkUnit("RED-055-02", "red", "ship_surface", "055-102", "055 - B 編隊護衛", 118.60, 24.40, {
+  mkUnit("RED-055-02", "red", "ship_surface", "055-102", "055 南昌級 - B 編隊", 119.00, 24.55, {
     speedKnots: 24,
     coreOverride: { rangeKm: 250, detectionRangeKm: 350, hpMax: 600 },
     waypoints: [[119.40, 24.40], [120.10, 24.30]],
   }),
-  mkUnit("RED-055-03", "red", "ship_surface", "055-103", "055 - C 編隊護衛", 118.60, 23.30, {
+  mkUnit("RED-055-03", "red", "ship_surface", "055-103", "055 南昌級 - C 編隊", 117.90, 23.50, {
     speedKnots: 24,
     coreOverride: { rangeKm: 250, detectionRangeKm: 350, hpMax: 600 },
     waypoints: [[119.40, 23.20], [120.10, 23.10]],
   }),
-  mkUnit("RED-055-04", "red", "ship_surface", "055-104", "055 機動", 118.50, 24.00, {
+  mkUnit("RED-055-04", "red", "ship_surface", "055-104", "055 南昌級 - 機動", 119.00, 24.10, {
     speedKnots: 24,
     coreOverride: { rangeKm: 250, detectionRangeKm: 350, hpMax: 600 },
     waypoints: [[119.50, 23.90], [120.20, 23.80]],
   }),
 
-  // 4 Type 052D
-  mkUnit("RED-052D-01", "red", "ship_surface", "052D-201", "052D", 118.50, 25.05, {
-    speedKnots: 26, waypoints: [[119.40, 25.05], [120.20, 25.00]],
+  // 052D 型
+  mkUnit("RED-052D-01", "red", "ship_surface", "052D-201", "052D 昆明級 - A", 119.95, 25.30, {
+    speedKnots: 26, waypoints: [[120.40, 25.15], [120.70, 25.00]],
   }),
-  mkUnit("RED-052D-02", "red", "ship_surface", "052D-202", "052D", 118.50, 24.50, {
+  mkUnit("RED-052D-02", "red", "ship_surface", "052D-202", "052D 昆明級 - B", 118.98, 24.65, {
     speedKnots: 26, waypoints: [[119.40, 24.50], [120.20, 24.40]],
   }),
-  mkUnit("RED-052D-03", "red", "ship_surface", "052D-203", "052D", 118.50, 23.60, {
+  mkUnit("RED-052D-03", "red", "ship_surface", "052D-203", "052D 昆明級 - C", 117.95, 23.60, {
     speedKnots: 26, waypoints: [[119.40, 23.60], [120.20, 23.50]],
   }),
-  mkUnit("RED-052D-04", "red", "ship_surface", "052D-204", "052D", 118.50, 23.10, {
+  mkUnit("RED-052D-04", "red", "ship_surface", "052D-204", "052D 昆明級 - C 後衛", 118.00, 23.42, {
     speedKnots: 26, waypoints: [[119.40, 23.05], [120.10, 23.00]],
   }),
 
+  // 901 型綜合補給艦（中線後方）
+  mkUnit("RED-AOE-01", "red", "supply_ship", "901-965", "901 型綜合補給艦", 118.95, 24.30, {
+    speedKnots: 0,
+  }),
+
   // ══════════ 潛艦群（包夾藍方艦隊）══════════
-  mkUnit("RED-SSN-01", "red", "submarine", "093A-501", "093A - 北線", 119.20, 25.40, {
+  mkUnit("RED-SSN-01", "red", "submarine", "093A-501", "093A - 北線", 120.20, 25.80, {
     speedKnots: 18, stealth: 0.75,
-    waypoints: [[120.00, 25.30], [120.80, 25.20]],
+    waypoints: [[120.60, 25.50], [120.80, 25.20]],
   }),
   mkUnit("RED-SSN-02", "red", "submarine", "093A-502", "093A - 中線", 119.00, 24.00, {
     speedKnots: 18, stealth: 0.75,
@@ -319,113 +330,129 @@ const RED_UNITS: Unit[] = [
     waypoints: [[120.00, 22.80], [120.50, 22.90]],
   }),
 
-  // ══════════ 制空兵力 ══════════
-  // 8 J-20 隱形戰機
-  mkUnit("RED-J20-01", "red", "fighter", "J20-N1", "殲-20 - 北 1", 118.80, 25.30, {
+  // ══════════ 制空兵力（自前沿機場起飛）══════════
+  // 殲-20：龍田（北）、惠安（中）、漳州（南）
+  mkUnit("RED-J20-01", "red", "fighter", "J20-N1", "殲-20 - 北 1", 119.48, 25.64, {
     speedKnots: 650,
     coreOverride: { detectionRangeKm: 220, hpMax: 70 },
-    waypoints: [[119.50, 25.20], [120.30, 25.10]],
+    waypoints: [[119.90, 25.30], [120.30, 25.10]],
   }),
-  mkUnit("RED-J20-02", "red", "fighter", "J20-N2", "殲-20 - 北 2", 118.80, 25.10, {
-    speedKnots: 650, waypoints: [[119.50, 25.00], [120.30, 24.95]],
+  mkUnit("RED-J20-02", "red", "fighter", "J20-N2", "殲-20 - 北 2", 119.48, 25.64, {
+    speedKnots: 650, waypoints: [[119.90, 25.10], [120.30, 24.95]],
   }),
-  mkUnit("RED-J20-03", "red", "fighter", "J20-C1", "殲-20 - 中 1", 118.80, 24.30, {
+  mkUnit("RED-J20-03", "red", "fighter", "J20-C1", "殲-20 - 中 1", 118.80, 25.03, {
     speedKnots: 650, waypoints: [[119.40, 24.30], [120.20, 24.20]],
   }),
-  mkUnit("RED-J20-04", "red", "fighter", "J20-C2", "殲-20 - 中 2", 118.80, 24.10, {
+  mkUnit("RED-J20-04", "red", "fighter", "J20-C2", "殲-20 - 中 2", 118.80, 25.03, {
     speedKnots: 650, waypoints: [[119.40, 24.10], [120.20, 24.05]],
   }),
-  mkUnit("RED-J20-05", "red", "fighter", "J20-S1", "殲-20 - 南 1", 118.80, 23.20, {
+  mkUnit("RED-J20-05", "red", "fighter", "J20-S1", "殲-20 - 南 1", 117.68, 24.56, {
     speedKnots: 650, waypoints: [[119.50, 23.20], [120.20, 23.10]],
   }),
-  mkUnit("RED-J20-06", "red", "fighter", "J20-S2", "殲-20 - 南 2", 118.80, 23.00, {
+  mkUnit("RED-J20-06", "red", "fighter", "J20-S2", "殲-20 - 南 2", 117.68, 24.56, {
     speedKnots: 650, waypoints: [[119.50, 23.00], [120.20, 22.95]],
   }),
-  mkUnit("RED-J20-07", "red", "fighter", "J20-RSV1", "殲-20 預備 1", 118.50, 24.70, {
+  mkUnit("RED-J20-07", "red", "fighter", "J20-RSV1", "殲-20 預備 1", 118.80, 25.03, {
     speedKnots: 600, waypoints: [[119.20, 24.70], [120.00, 24.60]],
   }),
-  mkUnit("RED-J20-08", "red", "fighter", "J20-RSV2", "殲-20 預備 2", 118.50, 23.70, {
+  mkUnit("RED-J20-08", "red", "fighter", "J20-RSV2", "殲-20 預備 2", 117.68, 24.56, {
     speedKnots: 600, waypoints: [[119.20, 23.70], [120.00, 23.60]],
   }),
 
-  // 4 J-16 SEAD / 對地攻擊
-  mkUnit("RED-J16-01", "red", "fighter", "J16-N1", "殲-16 SEAD - 北", 118.50, 25.05, {
+  // 殲-16 SEAD / 對地攻擊
+  mkUnit("RED-J16-01", "red", "fighter", "J16-N1", "殲-16 SEAD - 北", 119.48, 25.64, {
     speedKnots: 600,
     coreOverride: { rangeKm: 150, hpMax: 75 },
-    waypoints: [[119.40, 25.05], [120.50, 25.05]],
+    waypoints: [[119.90, 25.20], [120.50, 25.05]],
   }),
-  mkUnit("RED-J16-02", "red", "fighter", "J16-C1", "殲-16 SEAD - 中", 118.50, 24.20, {
+  mkUnit("RED-J16-02", "red", "fighter", "J16-C1", "殲-16 SEAD - 中", 118.80, 25.03, {
     speedKnots: 600,
     coreOverride: { rangeKm: 150, hpMax: 75 },
     waypoints: [[119.40, 24.20], [120.50, 24.20]],
   }),
-  mkUnit("RED-J16-03", "red", "fighter", "J16-S1", "殲-16 SEAD - 南", 118.50, 23.10, {
+  mkUnit("RED-J16-03", "red", "fighter", "J16-S1", "殲-16 SEAD - 南", 117.68, 24.56, {
     speedKnots: 600,
     coreOverride: { rangeKm: 150, hpMax: 75 },
     waypoints: [[119.40, 23.10], [120.30, 23.05]],
   }),
-  mkUnit("RED-J16-04", "red", "fighter", "J16-RSV", "殲-16 預備", 118.30, 24.50, {
+  mkUnit("RED-J16-04", "red", "fighter", "J16-RSV", "殲-16 預備", 118.80, 25.03, {
     speedKnots: 600,
     coreOverride: { rangeKm: 150, hpMax: 75 },
     waypoints: [[119.20, 24.50], [120.00, 24.40]],
   }),
 
-  // 2 KJ-500 AWACS（用 drone 模擬）
-  mkUnit("RED-AWACS-01", "red", "drone", "KJ500-A", "空警 500 - 北", 118.00, 25.00, {
+  // 空警-500 預警機（用 drone 模擬，福建沿海上空盤旋）
+  mkUnit("RED-AWACS-01", "red", "drone", "KJ500-A", "空警-500 - 北", 118.80, 25.40, {
     speedKnots: 280,
     coreOverride: { detectionRangeKm: 500, hpMax: 100, rangeKm: 0 },
-    waypoints: [[118.50, 24.80], [118.50, 25.10]],
+    waypoints: [[119.20, 25.20], [119.20, 25.60]],
   }),
-  mkUnit("RED-AWACS-02", "red", "drone", "KJ500-B", "空警 500 - 南", 118.00, 23.50, {
+  mkUnit("RED-AWACS-02", "red", "drone", "KJ500-B", "空警-500 - 南", 117.90, 24.00, {
     speedKnots: 280,
     coreOverride: { detectionRangeKm: 500, hpMax: 100, rangeKm: 0 },
-    waypoints: [[118.50, 23.20], [118.50, 23.80]],
+    waypoints: [[118.20, 23.80], [118.20, 24.20]],
   }),
 
-  // 4 翼龍 UAV ISR
-  mkUnit("RED-WL-01", "red", "drone", "WL-N1", "翼龍偵察 - 北", 119.00, 25.20, {
+  // 無人機 ISR（國防部共機動態常見：無偵-7 / TB-001）
+  mkUnit("RED-WL-01", "red", "drone", "WZ7-N1", "無偵-7 - 北", 119.48, 25.64, {
     speedKnots: 200,
     waypoints: [[120.00, 25.20], [120.80, 25.10]],
   }),
-  mkUnit("RED-WL-02", "red", "drone", "WL-C1", "翼龍偵察 - 中", 119.00, 24.30, {
+  mkUnit("RED-WL-02", "red", "drone", "WZ7-C1", "無偵-7 - 中", 118.80, 25.03, {
     speedKnots: 200,
     waypoints: [[120.00, 24.30], [120.50, 24.25]],
   }),
-  mkUnit("RED-WL-03", "red", "drone", "WL-S1", "翼龍偵察 - 南", 119.00, 23.20, {
+  mkUnit("RED-WL-03", "red", "drone", "TB001-S1", "TB-001 - 南", 117.68, 24.56, {
     speedKnots: 200,
     waypoints: [[120.00, 23.20], [120.30, 23.10]],
   }),
-  mkUnit("RED-WL-04", "red", "drone", "WL-RSV", "翼龍預備", 119.00, 22.80, {
+  mkUnit("RED-WL-04", "red", "drone", "TB001-RSV", "TB-001 預備", 117.68, 24.56, {
     speedKnots: 200,
     waypoints: [[120.00, 22.80], [120.30, 22.80]],
   }),
 
-  // ══════════ 彈道飛彈打擊 ══════════
-  // 4 DF-26 ASBM（針對美軍 + 戰略目標，超大射程）
-  mkUnit("RED-DF26-01", "red", "missile_launcher", "DF-26-01", "東風 26 - 福建北", 118.20, 26.30, {
+  // ══════════ 防空 / 遠程火力 ══════════
+  // 紅旗-9B（福建沿海，遊戲射程 200 km）
+  mkUnit("RED-HQ9-01", "red", "sam_coastal", "HQ9B-N", "紅旗-9B - 福清", 119.40, 25.70, {
+    coreOverride: { rangeKm: 200, detectionRangeKm: 250, hpMax: 120 },
+  }),
+  mkUnit("RED-HQ9-02", "red", "sam_coastal", "HQ9B-S", "紅旗-9B - 廈門", 118.05, 24.60, {
+    coreOverride: { rangeKm: 200, detectionRangeKm: 250, hpMax: 120 },
+  }),
+  // PHL-16 遠程火箭砲（第 73 集團軍，公開射程 300 km 級）
+  mkUnit("RED-PHL16-01", "red", "missile_launcher", "PHL16-01", "PHL-16 - 晉江", 118.60, 24.75, {
+    coreOverride: { rangeKm: 300, hpMax: 60 },
+  }),
+  mkUnit("RED-PHL16-02", "red", "missile_launcher", "PHL16-02", "PHL-16 - 漳浦", 117.65, 24.15, {
+    coreOverride: { rangeKm: 300, hpMax: 60 },
+  }),
+
+  // ══════════ 彈道飛彈打擊（火箭軍）══════════
+  // DF-26 中程（清遠 626 旅、信陽 666 旅）
+  mkUnit("RED-DF26-01", "red", "missile_launcher", "DF-26-01", "東風-26 - 清遠 626 旅", 113.05, 23.70, {
     coreOverride: { rangeKm: 4000, hpMax: 60 }, weaponProfile: "ballistic",
   }),
-  mkUnit("RED-DF26-02", "red", "missile_launcher", "DF-26-02", "東風 26 - 福建中", 117.80, 25.50, {
+  mkUnit("RED-DF26-02", "red", "missile_launcher", "DF-26-02", "東風-26 - 清遠 626 旅", 113.15, 23.75, {
     coreOverride: { rangeKm: 4000, hpMax: 60 }, weaponProfile: "ballistic",
   }),
-  mkUnit("RED-DF26-03", "red", "missile_launcher", "DF-26-03", "東風 26 - 廣東北", 117.00, 24.50, {
+  mkUnit("RED-DF26-03", "red", "missile_launcher", "DF-26-03", "東風-26 - 信陽 666 旅", 114.07, 32.13, {
     coreOverride: { rangeKm: 4000, hpMax: 60 }, weaponProfile: "ballistic",
   }),
-  mkUnit("RED-DF26-04", "red", "missile_launcher", "DF-26-04", "東風 26 - 廣東南", 116.50, 23.80, {
+  mkUnit("RED-DF26-04", "red", "missile_launcher", "DF-26-04", "東風-26 - 信陽 666 旅", 114.15, 32.05, {
     coreOverride: { rangeKm: 4000, hpMax: 60 }, weaponProfile: "ballistic",
   }),
 
-  // 4 DF-17 高超音速（壓制機場 / 雷達）
-  mkUnit("RED-DF17-01", "red", "missile_launcher", "DF-17-01", "東風 17 - A", 117.50, 25.00, {
+  // DF-17 高超音速（贛州 616 旅、普寧 627 旅；壓制機場 / 雷達）
+  mkUnit("RED-DF17-01", "red", "missile_launcher", "DF-17-01", "東風-17 - 贛州 616 旅", 114.93, 25.83, {
     coreOverride: { rangeKm: 1800, hpMax: 50 }, weaponProfile: "ballistic",
   }),
-  mkUnit("RED-DF17-02", "red", "missile_launcher", "DF-17-02", "東風 17 - B", 117.50, 24.00, {
+  mkUnit("RED-DF17-02", "red", "missile_launcher", "DF-17-02", "東風-17 - 贛州 616 旅", 115.02, 25.90, {
     coreOverride: { rangeKm: 1800, hpMax: 50 }, weaponProfile: "ballistic",
   }),
-  mkUnit("RED-DF17-03", "red", "missile_launcher", "DF-17-03", "東風 17 - C", 117.20, 23.50, {
+  mkUnit("RED-DF17-03", "red", "missile_launcher", "DF-17-03", "東風-17 - 普寧 627 旅", 116.17, 23.30, {
     coreOverride: { rangeKm: 1800, hpMax: 50 }, weaponProfile: "ballistic",
   }),
-  mkUnit("RED-DF17-04", "red", "missile_launcher", "DF-17-04", "東風 17 - D", 117.00, 23.00, {
+  mkUnit("RED-DF17-04", "red", "missile_launcher", "DF-17-04", "東風-17 - 普寧 627 旅", 116.25, 23.36, {
     coreOverride: { rangeKm: 1800, hpMax: 50 }, weaponProfile: "ballistic",
   }),
 ];

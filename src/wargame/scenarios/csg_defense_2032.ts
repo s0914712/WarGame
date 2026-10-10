@@ -238,11 +238,11 @@ const RED_UNITS: Unit[] = [
   }),
 
   // 2 DF-26 ASBM 反艦彈道飛彈車（部署於東南沿海，模擬大射程）
-  mkUnit("RED-DF26-01", "red", "missile_launcher", "DF-26-01", "東風 26 (ASBM)", 117.50, 24.00, {
+  mkUnit("RED-DF26-01", "red", "missile_launcher", "DF-26-01", "東風-26 (ASBM) - 清遠 626 旅", 113.05, 23.70, {
     coreOverride: { rangeKm: 4000, hpMax: 60 },   // ASBM 大射程
     weaponProfile: "ballistic",                   // B7：彈道剖面，只有愛國者攔得到
   }),
-  mkUnit("RED-DF26-02", "red", "missile_launcher", "DF-26-02", "東風 26 (ASBM)", 117.30, 23.50, {
+  mkUnit("RED-DF26-02", "red", "missile_launcher", "DF-26-02", "東風-26 (ASBM) - 清遠 626 旅", 113.15, 23.75, {
     coreOverride: { rangeKm: 4000, hpMax: 60 },
     weaponProfile: "ballistic",
   }),

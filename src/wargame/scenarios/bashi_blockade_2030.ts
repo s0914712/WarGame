@@ -168,7 +168,7 @@ const RED_UNITS: Unit[] = [
   }),
 
   // 1 紅方雷達（廣東沿海）
-  mkUnit("RED-RAD-01", "red", "radar_station", "RAD-GD-S", "粵南雷達", 119.50, 22.00),
+  mkUnit("RED-RAD-01", "red", "radar_station", "RAD-GD-S", "南澳島雷達（廣東）", 117.05, 23.43),
 ];
 
 const NEUTRAL_UNITS: Unit[] = [

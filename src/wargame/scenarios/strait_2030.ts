@@ -245,8 +245,8 @@ const RED_UNITS: Unit[] = [
   }),
 
   // 紅方 2 空軍基地（J-20 RTB）
-  mkUnit("RED-AB-01", "red", "airbase", "AB-FZ",  "福州機場", 119.31, 26.07),
-  mkUnit("RED-AB-02", "red", "airbase", "AB-XM",  "廈門機場", 118.13, 24.54),
+  mkUnit("RED-AB-01", "red", "airbase", "AB-FZ",  "福州基地", 119.31, 26.07),
+  mkUnit("RED-AB-02", "red", "airbase", "AB-ZZ",  "漳州基地", 117.68, 24.56),
 ];
 
 // ── 中立：商船 ──
