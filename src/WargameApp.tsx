@@ -341,8 +341,8 @@ export default function WargameApp() {
             onOpenCheat={() => setCheatOpen(true)}
           />
           <HexToolbar top={TOP_BAR_HEIGHT + 12} />
-          {/* 資產面板（攻擊優序）：入口在頂部列「資產」鈕 */}
-          <AssetPanel top={TOP_BAR_HEIGHT + 12} />
+          {/* 資產面板（攻擊優序）：入口在頂部列「資產」鈕；高度停在底部控制台之上 */}
+          <AssetPanel top={TOP_BAR_HEIGHT + 12} maxHeight={`calc(100vh - ${TOP_BAR_HEIGHT + 12 + consoleH + 12}px)`} />
           {/* 入口在頂部列「尺規」鈕；這裡只在量測中顯示控制面板（資產面板開著時讓到右側） */}
           <RulerControl hideLauncher withDraw lang={uiLang}
             style={{ top: TOP_BAR_HEIGHT + 12, left: assetOpen ? 16 + ASSET_PANEL_WIDTH + 12 : 16 }} />
