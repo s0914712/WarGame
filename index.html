@@ -13,9 +13,164 @@
       .layer-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
       .layer-sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
       .layer-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.35); }
+
+      /* ── 開機載入畫面（JS bundle 下載前就顯示；由 src/lib/bootLoader.ts 接手更新進度） ── */
+      #wg-boot {
+        position: fixed; inset: 0; z-index: 2147483000;
+        display: flex; align-items: center; justify-content: center;
+        background: radial-gradient(ellipse at 65% 40%, #0f1d3a 0%, #020617 70%);
+        color: #e2e8f0; font-family: ui-sans-serif, system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+        transition: opacity 0.45s ease, visibility 0.45s;
+      }
+      #wg-boot.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
+      #wg-boot .wgb-grid {
+        position: absolute; inset: 0; pointer-events: none; opacity: 0.35;
+        background-image:
+          linear-gradient(rgba(100, 170, 255, 0.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(100, 170, 255, 0.07) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+        -webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+      }
+      #wg-boot .wgb-scan {
+        position: absolute; left: 0; right: 0; height: 120px; top: -120px; pointer-events: none;
+        background: linear-gradient(180deg, transparent, rgba(233, 113, 50, 0.07), transparent);
+        animation: wgb-scan 3.2s linear infinite;
+      }
+      @keyframes wgb-scan { to { transform: translateY(calc(100vh + 120px)); } }
+      #wg-boot .wgb-box { position: relative; width: min(440px, 84vw); animation: wgb-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      @keyframes wgb-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+      #wg-boot .wgb-title { font-size: clamp(40px, 9vw, 64px); font-weight: 900; line-height: 0.95; letter-spacing: 3px; text-shadow: 0 4px 24px rgba(0,0,0,0.6); }
+      #wg-boot .wgb-sub { display: flex; align-items: center; gap: 12px; margin-top: 6px; color: #E97132; font-weight: 700; letter-spacing: 7px; text-transform: uppercase; font-size: clamp(16px, 3.4vw, 22px); }
+      #wg-boot .wgb-sub i { display: block; height: 3px; width: 44px; background: #E97132; border-radius: 2px; box-shadow: 0 0 12px #E97132; }
+      #wg-boot .wgb-bar {
+        position: relative; overflow: hidden; margin-top: 34px; height: 6px; border-radius: 3px;
+        background: rgba(148, 163, 184, 0.16); box-shadow: inset 0 0 0 1px rgba(233, 113, 50, 0.25);
+      }
+      #wg-boot .wgb-fill {
+        position: absolute; inset: 0 auto 0 0; width: 0%; border-radius: 3px;
+        background: linear-gradient(90deg, #E97132, #f59e0b);
+        box-shadow: 0 0 14px rgba(233, 113, 50, 0.75);
+        transition: width 0.25s ease-out;
+      }
+      #wg-boot .wgb-fill::after {
+        content: ""; position: absolute; inset: 0; width: 40%;
+        background: linear-gradient(90deg, transparent, rgba(255, 237, 213, 0.7), transparent);
+        animation: wgb-shine 1.4s ease-in-out infinite;
+      }
+      @keyframes wgb-shine { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+      #wg-boot .wgb-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; font-size: 13px; color: #94a3b8; letter-spacing: 1px; }
+      #wg-boot .wgb-pct { font-variant-numeric: tabular-nums; color: #fdba74; font-weight: 700; }
+      #wg-boot .wgb-hint { margin-top: 8px; min-height: 18px; font-size: 12px; color: #64748b; }
+      #wg-boot .wgb-err { margin-top: 18px; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; color: #fecaca; background: rgba(127, 29, 29, 0.35); border: 1px solid rgba(248, 113, 113, 0.45); }
+      #wg-boot .wgb-err button {
+        margin-top: 10px; padding: 6px 14px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 700;
+        color: #fff; background: #E97132; border: none;
+      }
+      #wg-boot .wgb-err button:active { transform: scale(0.96); }
+      #wg-boot.is-failed .wgb-fill { background: #ef4444; box-shadow: none; }
+      #wg-boot.is-failed .wgb-fill::after, #wg-boot.is-failed .wgb-scan { animation: none; display: none; }
+      @media (prefers-reduced-motion: reduce) {
+        #wg-boot .wgb-scan, #wg-boot .wgb-fill::after { animation: none; display: none; }
+        #wg-boot .wgb-box { animation: none; }
+      }
     </style>
   </head>
   <body>
+    <div id="wg-boot" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Loading">
+      <div class="wgb-grid"></div>
+      <div class="wgb-scan"></div>
+      <div class="wgb-box">
+        <div class="wgb-title">WarGame</div>
+        <div class="wgb-sub"><i></i><span>of Taiwan</span></div>
+        <div class="wgb-bar"><div class="wgb-fill"></div></div>
+        <div class="wgb-row"><span class="wgb-label"></span><span class="wgb-pct">0%</span></div>
+        <div class="wgb-hint"></div>
+        <div class="wgb-err" hidden><div class="wgb-err-msg"></div><button type="button"></button></div>
+      </div>
+    </div>
+    <script>
+      // 開機進度：bundle 下載期間緩慢逼近 base→ceil；React 端以 window.__wgBoot 回報真實階段
+      (function () {
+        var el = document.getElementById("wg-boot");
+        if (!el) return;
+        var zh = true;
+        try {
+          var saved = localStorage.getItem("wargame.lang.v1");
+          zh = saved ? saved === "zh" : (navigator.language || "").toLowerCase().indexOf("zh") === 0;
+        } catch (e) { zh = (navigator.language || "").toLowerCase().indexOf("zh") === 0; }
+        var q = function (s) { return el.querySelector(s); };
+        var fill = q(".wgb-fill"), pct = q(".wgb-pct"), label = q(".wgb-label"), hint = q(".wgb-hint");
+        var shown = 0, base = 0, ceil = 40, finished = false, failed = false;
+        label.textContent = zh ? "下載程式模組…" : "Downloading program…";
+        function paint() {
+          fill.style.width = shown.toFixed(1) + "%";
+          pct.textContent = Math.floor(shown) + "%";
+          el.setAttribute("aria-valuenow", String(Math.floor(shown)));
+        }
+        var timer = setInterval(function () {
+          if (finished || failed) return;
+          // 先快速追上 base，再以遞減速度往 ceil 爬（永遠到不了 ceil，等真實階段推進）
+          if (shown < base) shown += (base - shown) * 0.35 + 0.2;
+          else shown += (ceil - shown) * 0.025;
+          if (shown > ceil) shown = ceil;
+          paint();
+        }, 60);
+        // 網路慢：12 秒後提示仍在載入
+        var slow = setTimeout(function () {
+          if (!finished && !failed) hint.textContent = zh ? "網路較慢，仍在載入中，請稍候…" : "Slow network — still loading, please wait…";
+        }, 12000);
+        function fail(msg) {
+          if (finished || failed) return;
+          failed = true;
+          el.classList.add("is-failed");
+          var box = q(".wgb-err");
+          box.hidden = false;
+          q(".wgb-err-msg").textContent = (zh ? "載入失敗：" : "Failed to load: ") + msg;
+          var btn = q(".wgb-err button");
+          btn.textContent = zh ? "重新整理" : "Reload";
+          btn.onclick = function () { location.reload(); };
+        }
+        window.__wgBoot = {
+          /** 推進到 [b, c) 區間並更新階段文字 */
+          stage: function (b, c, zhText, enText) {
+            if (finished || failed) return;
+            base = Math.max(base, b); ceil = Math.max(ceil, c, base);
+            if (zhText) label.textContent = zh ? zhText : (enText || zhText);
+            hint.textContent = "";
+          },
+          hint: function (zhText, enText) { if (!finished && !failed) hint.textContent = zh ? zhText : (enText || zhText); },
+          done: function () {
+            if (finished || failed) return;
+            finished = true; clearInterval(timer); clearTimeout(slow);
+            shown = 100; paint();
+            label.textContent = zh ? "完成" : "Ready";
+            setTimeout(function () {
+              el.classList.add("is-done");
+              setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 500);
+            }, 220);
+          },
+          fail: fail,
+        };
+        // 程式錯誤（bundle 載入失敗 / 啟動時例外）→ 停在錯誤畫面並提供重新整理，不讓使用者對著卡住的進度條。
+        // 一般執行期錯誤只在 React 根節點已被清空（= app 崩潰）時才算致命，避免非致命錯誤蓋掉可用的畫面。
+        window.addEventListener("error", function (e) {
+          var t = e && e.target;
+          if (t && t.tagName === "SCRIPT") { fail(zh ? "程式檔下載失敗" : "program file failed to download"); return; }
+          var msg = (e && e.message) || "";
+          setTimeout(function () {
+            var root = document.getElementById("root");
+            if (!finished && root && root.childElementCount === 0) fail(msg || (zh ? "未知錯誤" : "unknown error"));
+          }, 150);
+        }, true);
+        window.addEventListener("unhandledrejection", function (e) {
+          var r = e && e.reason;
+          if (!finished && r && /dynamically imported module|Failed to fetch|Importing a module script failed/i.test(String(r.message || r))) {
+            fail(zh ? "程式檔下載失敗" : "program file failed to download");
+          }
+        });
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

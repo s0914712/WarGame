@@ -8,6 +8,8 @@
  *
  * 動畫：背景緩慢推鏡、標題 / 選單交錯滑入、hover 右移 + 橘色光條、點擊掃光 + 按壓、
  *       面板滑入、進入遊戲時整頁放大淡出。鍵盤 ↑↓ 選擇、Enter 確認、Esc 返回。
+ * 輸入回饋：按下「進入戰役」等動作後按鈕轉為「部署中」並鎖住（防連點），
+ *       頂部部署進度條一路跑到地圖鏡頭飛抵戰區才收起。
  *
  * 預設首次開頁顯示；遊戲內可從「返回主選單」按鈕重新打開。
  */
@@ -94,6 +96,10 @@ export function LandingScreen({ map }: Props) {
   // 點擊掃光：每個選單各自的點擊次數（只有被點的那顆換 key 重播動畫，其他不重掛）
   const [presses, setPresses] = useState<Partial<Record<MenuId, number>>>({});
   const leaveTimer = useRef<number | null>(null);
+  // 部署進度條：按下動作 → 載入場景 → 鏡頭飛抵戰區（選單關閉後仍顯示）
+  const [deploy, setDeploy] = useState<{ label: string; done: boolean } | null>(null);
+  const beginDeploy = (label: string) => setDeploy({ label, done: false });
+  const finishDeploy = () => setDeploy((d) => (d ? { ...d, done: true } : d));
 
   // 預載四張預覽圖：hover / ↑↓ 切換時不閃白
   useEffect(() => {
@@ -116,8 +122,9 @@ export function LandingScreen({ map }: Props) {
 
   // ── 多人：房間開打 → 關選單、飛鏡頭；host 設定聲學環境（client 由 snapshot 同步） ──
   const onMatchStart = (scenario: Scenario, isHost: boolean) => {
+    beginDeploy(scenario.displayName);
     withExit(() => {
-      flyToScenario(map, scenario);
+      void flyToScenario(map, scenario).then(finishDeploy);
       uiStore.setLandingOpen(false);
       if (isHost && scenario.acousticModel) uiStore.setAcousticConfigOpen(true);
     });
@@ -126,13 +133,14 @@ export function LandingScreen({ map }: Props) {
   // ── 進入戰役 ──
   const startCampaign = () => {
     const entry = SCENARIO_REGISTRY.find((e) => e.scenario.id === selectedScenarioId);
-    if (!entry) return;
+    if (!entry || leaving) return;
+    beginDeploy(entry.scenario.displayName);
     withExit(() => {
       leaveMultiplayerIfAny();
       wargameClock.reset();
       scenarioStore.loadScenario(entry.scenario);
       viewStore.setActiveView(selectedSide);
-      flyToScenario(map, entry.scenario);
+      void flyToScenario(map, entry.scenario).then(finishDeploy);
       uiStore.setLandingOpen(false);
       // 反潛場景：開戰前先跳出聲學環境設定畫面
       if (entry.scenario.acousticModel) uiStore.setAcousticConfigOpen(true);
@@ -141,15 +149,19 @@ export function LandingScreen({ map }: Props) {
   };
 
   // ── 自訂（Plan Mode） ──
-  const startPlanMode = () => withExit(() => {
-    leaveMultiplayerIfAny();
-    wargameClock.reset();
-    scenarioStore.loadScenario(EMPTY_SCENARIO);
-    viewStore.setActiveView("blue");
-    uiStore.setLandingOpen(false);
-    // 進放置模式（會自動暫停 clock）
-    setTimeout(() => editorStore.enterPlaceMode(), 50);
-  });
+  const startPlanMode = () => {
+    if (leaving) return;
+    beginDeploy(lang === "en" ? "Empty battlefield" : "空白戰場");
+    withExit(() => {
+      leaveMultiplayerIfAny();
+      wargameClock.reset();
+      scenarioStore.loadScenario(EMPTY_SCENARIO);
+      viewStore.setActiveView("blue");
+      uiStore.setLandingOpen(false);
+      // 進放置模式（會自動暫停 clock）
+      setTimeout(() => { editorStore.enterPlaceMode(); finishDeploy(); }, 50);
+    });
+  };
 
   // ── 遊戲教學 ──
   const startTutorial = () => withExit(() => {
@@ -160,7 +172,8 @@ export function LandingScreen({ map }: Props) {
   // ── 戰史紀錄片直入（823 砲戰）：載場景 → 觀察視角 → 跳過 briefing → 自動運鏡 + 播放 ──
   const startDocumentary = () => {
     const entry = SCENARIO_REGISTRY.find((e) => e.scenario.id === "kinmen_823_1958");
-    if (!entry) return;
+    if (!entry || leaving) return;
+    beginDeploy(entry.scenario.displayName);
     withExit(() => {
       leaveMultiplayerIfAny();
       uiStore.setSuppressBriefingOnce();
@@ -173,6 +186,7 @@ export function LandingScreen({ map }: Props) {
         cinemaDirector.start(map);
         wargameClock.setRate(30);
         wargameClock.resume();
+        finishDeploy();
       }, 250);
     });
   };
@@ -205,12 +219,17 @@ export function LandingScreen({ map }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  if (!open) return null;
+  const deployBar = deploy && (
+    <DeployBar label={deploy.label} done={deploy.done} lang={lang} onGone={() => setDeploy(null)} />
+  );
+  if (!open) return deployBar;
 
   const activeMenu: MenuId = pane === "main" ? MENU[focus]!.id : pane;
   const focusItem = MENU.find((m) => m.id === activeMenu)!;
 
   return (
+    <>
+    {deployBar}
     <div className={leaving ? "wg-ld-exit" : undefined} style={{
       position: "fixed", inset: 0, zIndex: 180, overflow: "hidden",
       background: "#020617", color: "#e2e8f0",
@@ -318,6 +337,7 @@ export function LandingScreen({ map }: Props) {
               onBack={() => setPane("main")}
               onStart={startCampaign}
               onDocumentary={startDocumentary}
+              busy={leaving}
             />
           )}
         </div>
@@ -330,6 +350,7 @@ export function LandingScreen({ map }: Props) {
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -413,7 +434,7 @@ function CampaignPane({
   isMobile,
   selectedScenarioId, setSelectedScenarioId,
   selectedSide, setSelectedSide,
-  onBack, onStart, onDocumentary,
+  onBack, onStart, onDocumentary, busy,
 }: {
   isMobile: boolean;
   selectedScenarioId: string | null;
@@ -423,6 +444,8 @@ function CampaignPane({
   onBack: () => void;
   onStart: () => void;
   onDocumentary: () => void;
+  /** 已按下進入（轉場中）→ 鎖住所有選擇，開始鈕顯示「部署中」 */
+  busy: boolean;
 }) {
   const lang = useLang();
   const stepTwoRef = useRef<HTMLDivElement>(null);
@@ -449,7 +472,7 @@ function CampaignPane({
       </div>
 
       {/* 戰史紀錄片快速入口 */}
-      <button onClick={onDocumentary} className="wg-btn wg-ld-feature" style={{
+      <button onClick={onDocumentary} disabled={busy} className="wg-btn wg-ld-feature" style={{
         width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", marginBottom: 18,
         borderRadius: 8, border: `1px solid ${ACCENT}88`, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
         background: `linear-gradient(90deg, ${ACCENT}33, rgba(15,23,42,0.4))`, color: "#e2e8f0",
@@ -475,6 +498,8 @@ function CampaignPane({
               key={entry.scenario.id}
               data-testid={`landing-scenario-${entry.scenario.id}`}
               onClick={() => setSelectedScenarioId(entry.scenario.id)}
+              disabled={busy}
+              aria-pressed={active}
               className="wg-btn"
               style={{
                 padding: "11px 14px",
@@ -510,27 +535,32 @@ function CampaignPane({
               const c = SIDE_COLORS[s.id].primary;
               const active = s.id === selectedSide;
               return (
-                <button key={s.id} onClick={() => setSelectedSide(s.id)} className="wg-btn" style={sideBtn(active, c, isMobile)}>
+                <button key={s.id} onClick={() => setSelectedSide(s.id)} disabled={busy} aria-pressed={active}
+                  className="wg-btn" style={sideBtn(active, c, isMobile)}>
                   <span style={{ width: 10, height: 10, borderRadius: "50%", background: c, boxShadow: active ? `0 0 8px ${c}` : "none" }} />
                   {s.displayName}
                 </button>
               );
             })}
-            <button onClick={() => setSelectedSide("spectator")} className="wg-btn"
+            <button onClick={() => setSelectedSide("spectator")} disabled={busy} aria-pressed={selectedSide === "spectator"}
+              className="wg-btn"
               style={sideBtn(selectedSide === "spectator", "#475569", isMobile)}>
               <Globe size={14} />
               {lang === "en" ? "Spectator" : "全局觀察"}
             </button>
           </div>
 
-          <button onClick={onStart} data-testid="landing-start" className="wg-btn wg-ld-start" style={{
+          <button onClick={onStart} data-testid="landing-start" disabled={busy} aria-busy={busy}
+            className={`wg-btn wg-ld-start${busy ? " is-busy" : ""}`} style={{
             width: "100%", padding: isMobile ? "12px 20px" : "14px 24px",
             background: `linear-gradient(90deg, ${ACCENT}, #f59e0b)`, color: "#fff", border: "none", borderRadius: 8,
             fontSize: isMobile ? 16 : 20, fontWeight: 800, letterSpacing: 2, cursor: "pointer", fontFamily: "inherit",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
             boxShadow: `0 8px 24px ${ACCENT}55`,
           }}>
-            <Play size={16} fill="currentColor" /> {lang === "en" ? "Deploy" : "進入戰役"}
+            {busy
+              ? <><span className="wg-spin" aria-hidden /> {lang === "en" ? "Deploying…" : "部署中…"}</>
+              : <><Play size={16} fill="currentColor" /> {lang === "en" ? "Deploy" : "進入戰役"}</>}
           </button>
         </div>
       )}
@@ -553,13 +583,50 @@ function sideBtn(active: boolean, c: string, isMobile: boolean): React.CSSProper
   };
 }
 
-function flyToScenario(map: MapboxMap | null, scenario: { camera: { center: [number, number]; zoom: number; pitch: number; bearing: number } }) {
-  if (!map) return;
-  map.flyTo({
-    center: scenario.camera.center,
-    zoom: scenario.camera.zoom,
-    pitch: scenario.camera.pitch,
-    bearing: scenario.camera.bearing,
-    duration: 1500,
+const FLY_MS = 1500;
+
+/** 鏡頭飛往場景；鏡頭停妥（moveend）或逾時後 resolve —— 部署進度條以此收尾 */
+function flyToScenario(map: MapboxMap | null, scenario: { camera: { center: [number, number]; zoom: number; pitch: number; bearing: number } }): Promise<void> {
+  if (!map) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(finish, FLY_MS + 1500);   // 被使用者拖動打斷 / 不觸發 moveend 時的保險
+    function finish() { window.clearTimeout(timer); map!.off("moveend", finish); resolve(); }
+    map.once("moveend", finish);
+    map.flyTo({
+      center: scenario.camera.center,
+      zoom: scenario.camera.zoom,
+      pitch: scenario.camera.pitch,
+      bearing: scenario.camera.bearing,
+      duration: FLY_MS,
+    });
   });
+}
+
+/**
+ * 部署進度條：頂部細條 + 置中提示「部署中 · 場景名」。
+ * 進行中緩慢爬向 90%（場景載入 + 鏡頭飛行），done → 補滿 100% 並淡出。
+ */
+function DeployBar({ label, done, lang, onGone }: { label: string; done: boolean; lang: string; onGone: () => void }) {
+  const [pct, setPct] = useState(6);
+  useEffect(() => {
+    if (done) {
+      setPct(100);
+      const t = window.setTimeout(onGone, 700);
+      return () => window.clearTimeout(t);
+    }
+    const t = window.setInterval(() => setPct((p) => p + (90 - p) * 0.08), 60);
+    return () => window.clearInterval(t);
+    // onGone 每次 render 都是新函式；只在 done 轉換時重設計時
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
+  return (
+    <div className={`wg-deploy${done ? " is-done" : ""}`} role="status" aria-live="polite">
+      <div className="wg-deploy-bar"><div className="wg-deploy-fill" style={{ width: `${pct}%` }} /></div>
+      <div className="wg-deploy-pill">
+        {done ? <span className="wg-deploy-check" aria-hidden>✓</span> : <span className="wg-spin" aria-hidden />}
+        <span>{done ? (lang === "en" ? "In position" : "部署完成") : (lang === "en" ? "Deploying" : "部署中")}</span>
+        <span className="wg-deploy-label">· {label}</span>
+      </div>
+    </div>
+  );
 }

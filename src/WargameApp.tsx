@@ -57,6 +57,9 @@ import { DesktopTopBar, TOP_BAR_HEIGHT } from "./components/wargame/DesktopTopBa
 import { CommandConsole, CONSOLE_HEIGHT } from "./components/wargame/CommandConsole";
 import { PlanModeUnitCard } from "./components/wargame/PlanModeUnitCard";
 import { AiCommanderHud } from "./components/wargame/AiCommanderHud";
+import { LANDING_BG, LANDING_ART } from "./components/landingArt";
+import { bootLoader } from "./lib/bootLoader";
+import { installPressFeedback } from "./lib/pressFeedback";
 
 /**
  * 兵推模式頂層 app。
@@ -91,11 +94,42 @@ function unitAtPoint(map: mapboxgl.Map, pt: mapboxgl.Point): string | null {
 
 function isPlaceMode(): boolean { return editorStore.getMode() === "placeUnit"; }
 
+/** 開機載入逾時：底圖遲遲載不完（網路慢 / token 失效）時，仍讓使用者先進主選單 */
+const BOOT_SLOW_MS = 9000;
+const BOOT_TIMEOUT_MS = 20000;
+
+/** 預載並解碼主選單美術（背景 + 預覽插圖），避免選單出現後才逐張閃入 */
+function preloadLandingArt(): Promise<void> {
+  const srcs = [LANDING_BG, ...Object.values(LANDING_ART).map((a) => a.src)];
+  return Promise.all(srcs.map((src) => {
+    const img = new Image();
+    img.src = src;
+    return img.decode().catch(() => undefined);   // 單張失敗不擋開機
+  })).then(() => undefined);
+}
+
+/**
+ * 開機階段 → 進度條。依序：主選單美術 / 底圖樣式 / 地圖圖磚 / 兵棋符號與圖層（mapReady）。
+ * 回傳 [base, ceil, 中文, 英文]：base = 已完成比例，ceil = 等待下一階段時緩慢爬升的上限。
+ */
+function bootStage(s: { art: boolean; style: boolean; tiles: boolean }): [number, number, string, string] {
+  const base = 55 + (s.art ? 8 : 0) + (s.style ? 12 : 0) + (s.tiles ? 15 : 0);
+  const ceil = base + 10;
+  if (!s.style) return [base, ceil, "載入底圖樣式…", "Loading basemap style…"];
+  if (!s.tiles) return [base, ceil, "載入地圖圖磚…", "Loading map tiles…"];
+  if (!s.art) return [base, ceil, "載入主選單美術…", "Loading menu artwork…"];
+  return [base, ceil, "建立兵棋符號與圖層…", "Building unit symbols & layers…"];
+}
+
 export default function WargameApp() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const detachersRef = useRef<(() => void)[]>([]);
   const [mapReady, setMapReady] = useState(false);
+  // 開機畫面收起後才掛主選單 → 選單進場動畫在使用者眼前播放（而不是藏在載入畫面後面）
+  const [bootDone, setBootDone] = useState(false);
+  const [artReady, setArtReady] = useState(false);
+  const bootRef = useRef({ art: false, style: false, tiles: false });
   const [llmOpen, setLlmOpen] = useState(false);
   const [styleId, setStyleId] = useState(DEFAULT_STYLE_ID);
   const [briefingOpen, setBriefingOpen] = useState(false);
@@ -112,6 +146,35 @@ export default function WargameApp() {
   useCameraFollow(mapRef.current);
   const openCheat = useCallback(() => setCheatOpen(true), []);
   useWargameHotkeys({ onOpenCheat: openCheat });
+
+  // 按壓回饋：按鈕點擊光環 + 行動裝置 :active 生效
+  useEffect(() => installPressFeedback(), []);
+
+  // 開機：預載主選單美術，並回報進度
+  useEffect(() => {
+    let alive = true;
+    void preloadLandingArt().then(() => {
+      if (!alive) return;
+      bootRef.current.art = true;
+      bootLoader.stage(...bootStage(bootRef.current));
+      setArtReady(true);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  // 開機完成（底圖 + 圖層 + 美術都就緒）→ 收起載入畫面；逾時則先放行進主選單
+  useEffect(() => {
+    if (bootDone) return;
+    if (mapReady && artReady) {
+      bootLoader.done();
+      const t = window.setTimeout(() => setBootDone(true), 260);   // 與載入畫面淡出交疊
+      return () => window.clearTimeout(t);
+    }
+    const slow = window.setTimeout(() => bootLoader.hint(
+      "底圖載入較慢，請稍候…", "The basemap is loading slowly, please wait…"), BOOT_SLOW_MS);
+    const giveUp = window.setTimeout(() => { bootLoader.done(); setBootDone(true); }, BOOT_TIMEOUT_MS);
+    return () => { window.clearTimeout(slow); window.clearTimeout(giveUp); };
+  }, [mapReady, artReady, bootDone]);
 
   function mountAllLayers(map: mapboxgl.Map) {
     // 清掉先前的（safety — 不該有，但保險）
@@ -159,10 +222,23 @@ export default function WargameApp() {
       antialias: true,
     });
     mapRef.current = map;
+    bootLoader.stage(...bootStage(bootRef.current));
+    map.once("style.load", () => {
+      bootRef.current.style = true;
+      bootLoader.stage(...bootStage(bootRef.current));
+    });
     // 開發模式：讓自動化測試能用經緯度換算點擊位置（map.project），不必猜像素；production 不暴露
     if (import.meta.env.DEV) (window as unknown as { __wgMap?: mapboxgl.Map }).__wgMap = map;
 
     map.on("load", () => {
+      bootRef.current.tiles = true;
+      bootLoader.stage(...bootStage(bootRef.current));
+      // 兵棋符號（110 個 milsymbol canvas）是同步重工作：延後一幀，讓「建立兵棋符號」階段先畫到載入畫面上
+      window.setTimeout(() => onMapLoaded(map), 30);
+    });
+
+    function onMapLoaded(map: mapboxgl.Map) {
+      if (mapRef.current !== map) return;   // effect 已清除（StrictMode 重掛 / 卸載）
       mountAllLayers(map);
 
       // Click：三種模式（view / planRoute / placeUnit）
@@ -243,7 +319,7 @@ export default function WargameApp() {
       });
 
       setMapReady(true);
-    });
+    }
 
     return () => {
       for (const d of detachersRef.current) d();
@@ -308,7 +384,7 @@ export default function WargameApp() {
       )}
       <UICheatSheet open={cheatOpen} onClose={() => setCheatOpen(false)} />
       <AcousticEnvironmentConfigModal />
-      <LandingScreen map={mapRef.current} />
+      {bootDone && <LandingScreen map={mapRef.current} />}
       <PlayerRosterHUD isMobile={isMobile} top={isMobile ? undefined : TOP_BAR_HEIGHT + 12} />
       {/* LLM 面板：桌面 / 行動版共用（行動版由選單抽屜開啟），故移出 !demoMode 分支 */}
       <LLMPanel open={llmOpen} onClose={() => setLlmOpen(false)} />
@@ -357,20 +433,27 @@ export default function WargameApp() {
         )
       )}
 
+      {/* 開機逾時放行後才可能看到：底圖仍在載入 */}
       {!mapReady && (
         <div
+          role="status"
           style={{
             position: "absolute",
             inset: 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            gap: 10,
             color: "#94a3b8",
             background: "#020617",
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            fontSize: 14,
+            letterSpacing: 1,
             zIndex: 10,
           }}
         >
-          Loading…
+          <span className="wg-spin" aria-hidden />
+          {uiLang === "en" ? "Loading map…" : "地圖載入中…"}
         </div>
       )}
     </div>

@@ -171,7 +171,65 @@ button.wg-btn:active {
 .wg-ld-start { animation: wg-ld-glow 2s ease-in-out infinite; }
 .wg-ld-feature:hover { border-color: #E97132 !important; }
 
+/* 已按下進入 → 開始鈕停止呼吸光、轉為「部署中」 */
+.wg-ld-start.is-busy { animation: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .wg-ld-bg, .wg-ld-start { animation: none; }
   .wg-ld-in, .wg-ld-panel, .wg-ld-art, .wg-ld-menu.is-pressed { animation-duration: 0.01s; }
+}
+
+/* ── 輸入回饋 ── */
+/* 停用中的按鈕：不再 hover 變亮 / 按下縮放，游標提示忙碌 */
+button.wg-btn:disabled { cursor: progress; filter: none; transform: none; }
+button.wg-btn:disabled:not(.is-busy) { opacity: 0.55; }
+
+/* 按壓光環（src/lib/pressFeedback.ts）：在點擊 / 觸控點擴散後淡出 */
+@keyframes wg-tap {
+  from { transform: translate(-50%, -50%) scale(0.3); opacity: 0.9; }
+  to   { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+.wg-tap {
+  position: fixed; z-index: 2147483600; pointer-events: none;
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 2px solid rgba(253, 186, 116, 0.95);
+  background: radial-gradient(circle, rgba(233, 113, 50, 0.28), transparent 70%);
+  box-shadow: 0 0 12px rgba(233, 113, 50, 0.55);
+  animation: wg-tap 0.45s ease-out forwards;
+}
+
+/* 小型轉圈（載入 / 部署中） */
+@keyframes wg-spin { to { transform: rotate(360deg); } }
+.wg-spin {
+  display: inline-block; flex-shrink: 0; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: wg-spin 0.7s linear infinite;
+}
+
+/* 部署進度條（LandingScreen DeployBar）：頂部細條 + 置中提示 */
+.wg-deploy {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 190; pointer-events: none;
+  transition: opacity 0.35s ease 0.3s;
+}
+.wg-deploy.is-done { opacity: 0; }
+.wg-deploy-bar { height: 3px; background: rgba(148, 163, 184, 0.15); }
+.wg-deploy-fill {
+  height: 100%; background: linear-gradient(90deg, #E97132, #f59e0b);
+  box-shadow: 0 0 10px rgba(233, 113, 50, 0.8);
+  transition: width 0.2s ease-out;
+}
+.wg-deploy-pill {
+  display: flex; align-items: center; gap: 8px; width: fit-content; max-width: calc(100vw - 32px);
+  margin: calc(env(safe-area-inset-top, 0px) + 12px) auto 0; padding: 7px 14px; border-radius: 999px;
+  font: 600 14px ui-sans-serif, system-ui, sans-serif; letter-spacing: 1px; color: #fde6d3;
+  background: rgba(8, 13, 30, 0.86); border: 1px solid rgba(233, 113, 50, 0.6);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  animation: wg-ld-panel-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.wg-deploy-label { color: #fdba74; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wg-deploy-check { color: #4ade80; font-weight: 900; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wg-tap { display: none; }
+  .wg-spin { animation-duration: 1.6s; }
 }
