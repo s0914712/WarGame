@@ -600,6 +600,182 @@ export const UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry> = {
       targetStrengthDb: 30,
     },
   },
+
+  // ── 以下 5 種依公開資料（IISS Military Balance、美國防部《中國軍力報告》、
+  //    國防部《國防報告書》、美國 DSCA 對台軍售公告）補齊兩方裝備缺口 ──
+
+  // 空中預警機：國軍 E-2K 鷹眼（6 架，APS-145 雷達）/ 美軍 E-2D / 解放軍 空警-500（Y-9 平台）。
+  // 公開性能：巡航 ~300 kn、滯空 ~6 hr（E-2K）；對戰機級目標偵蒐 ~450 km（空警-500 報導 ~470 km）。
+  // 無武裝；高空 → 雷達地平線遠，是雙方的高價值目標。
+  aew: {
+    kind: "aew",
+    displayName: "預警機",
+    domain: "air",
+    defaultAltitudeM: 9000,
+    iconShape: "triangle_inverted",
+    defaultCore: {
+      rangeKm: 0,
+      speedKnots: 300,
+      movementRangeKm: 2700,           // E-2K 轉場航程 ~2,700 km
+      detectionRangeKm: 450,
+      hpMax: 60,
+    },
+    defaultExtensions: { endurance: 6 },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 50,    step: 5,   unit: "km" },
+      speedKnots:       { min: 150, max: 400,   step: 10,  unit: "kn" },
+      movementRangeKm:  { min: 500, max: 8000,  step: 100, unit: "km" },
+      detectionRangeKm: { min: 150, max: 700,   step: 10,  unit: "km" },
+      hpMax:            { min: 20,  max: 150,   step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 21600,  // 6 hr 任務
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 0,                 // 無武裝
+  },
+
+  // 定翼反潛巡邏機：國軍 P-3C 獵戶座（12 架）/ 美軍 P-8A / 解放軍 運-8Q（空潛-200）。
+  // P-3C 公開性能：巡航 328 kn、滯空 12+ hr、APS-137 搜索雷達；
+  // 彈艙 Mk-46/54 輕型魚雷（~10 km）+ 翼下 AGM-84 魚叉（~120 km）。可佈放聲標（sonobuoy）。
+  mpa: {
+    kind: "mpa",
+    displayName: "反潛巡邏機",
+    domain: "air",
+    defaultAltitudeM: 1500,
+    iconShape: "triangle_inverted",
+    defaultCore: {
+      rangeKm: 120,
+      speedKnots: 330,
+      movementRangeKm: 5000,
+      detectionRangeKm: 250,
+      hpMax: 60,
+    },
+    defaultExtensions: { endurance: 12 },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 300,   step: 10,  unit: "km" },
+      speedKnots:       { min: 150, max: 500,   step: 10,  unit: "kn" },
+      movementRangeKm:  { min: 500, max: 9000,  step: 100, unit: "km" },
+      detectionRangeKm: { min: 50,  max: 400,   step: 10,  unit: "km" },
+      hpMax:            { min: 20,  max: 150,   step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 43200,  // 12 hr 巡邏
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 6,
+    defaultLoadout: [
+      { weaponId: "torpedo", ammoMax: 4, rangeKm: 10 },
+      { weaponId: "asm", ammoMax: 2, rangeKm: "core" },
+    ],
+    // 與反潛無人機相同：投放聲標被動聽音；空中載台本身水下不發聲
+    acoustics: {
+      sourceLevelDb: 80,
+      targetStrengthDb: 0,
+      passive: { arrayGainDb: 16, dtDb: 6, selfNoiseDb: 38 },
+    },
+  },
+
+  // 轟炸機：解放軍 轟-6K / 轟-6J（國軍無此類裝備）。
+  // 公開性能：巡航 ~420 kn、作戰半徑 ~3,500 km；翼下最多 6 枚 鷹擊-12（~400 km）或 長劍-20 對陸巡弋飛彈。
+  bomber: {
+    kind: "bomber",
+    displayName: "轟炸機",
+    domain: "air",
+    defaultAltitudeM: 10000,
+    iconShape: "triangle_inverted",
+    defaultCore: {
+      rangeKm: 400,
+      speedKnots: 420,
+      movementRangeKm: 7000,
+      detectionRangeKm: 150,
+      hpMax: 80,
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,    max: 2000,  step: 50,  unit: "km" },
+      speedKnots:       { min: 200,  max: 600,   step: 10,  unit: "kn" },
+      movementRangeKm:  { min: 1000, max: 12000, step: 250, unit: "km" },
+      detectionRangeKm: { min: 50,   max: 300,   step: 10,  unit: "km" },
+      hpMax:            { min: 30,   max: 200,   step: 5,   unit: "點" },
+    },
+    constraints: {
+      defaultPlanTimeLimitSec: 28800,  // 8 hr 任務
+      requireRoundTrip: true,
+    },
+    defaultAmmoMax: 6,
+    defaultLoadout: [{ weaponId: "asm_super", ammoMax: 6, rangeKm: "core" }],
+  },
+
+  // 飛彈快艇 / 輕型巡邏艦：國軍 光華六號（31 艘，雄二 ×4）、沱江 / 塔江級（雄二 ×8 + 雄三 ×8）；
+  // 解放軍 022 型（~60 艘，鷹擊-83 ×8）。小、快、HP 低，只有反艦飛彈，無區域防空。
+  // 預設依光華六號（雄二 ×4、~150 km、33 kn）；沱江 / 022 由場景單位覆寫掛載。
+  missile_boat: {
+    kind: "missile_boat",
+    displayName: "飛彈快艇",
+    domain: "sea",
+    defaultAltitudeM: 0,
+    iconShape: "diamond",
+    defaultCore: {
+      rangeKm: 150,
+      speedKnots: 33,
+      movementRangeKm: 1500,
+      detectionRangeKm: 60,
+      hpMax: 60,
+    },
+    uiRanges: {
+      rangeKm:          { min: 0,   max: 300,   step: 10,  unit: "km" },
+      speedKnots:       { min: 10,  max: 45,    step: 1,   unit: "kn" },
+      movementRangeKm:  { min: 200, max: 5000,  step: 100, unit: "km" },
+      detectionRangeKm: { min: 10,  max: 200,   step: 5,   unit: "km" },
+      hpMax:            { min: 20,  max: 300,   step: 10,  unit: "點" },
+    },
+    constraints: {
+      forbidDomains: ["land"],
+      defaultPlanTimeLimitSec: 14400,
+    },
+    defaultAmmoMax: 4,
+    defaultLoadout: [{ weaponId: "asm", ammoMax: 4, rangeKm: "core" }],
+    // 小艇高速柴油主機：吵、目標強度小；無聲納
+    acoustics: {
+      sourceLevelDb: 145,
+      noisePerKnotDb: 1.2,
+      targetStrengthDb: 18,
+    },
+  },
+
+  // 多管火箭 / 戰術彈道飛彈車：國軍 M142 HIMARS（29 輛）、雷霆-2000；解放軍 PHL-16 / PCH-191。
+  // HIMARS 公開性能：GMLRS 導引火箭 ×6（~70 km）或 ATACMS ×1（~300 km）；道路 85 km/h、航程 480 km。
+  // 只打陸上目標；無自有雷達，靠友軍目獲。
+  mlrs: {
+    kind: "mlrs",
+    displayName: "多管火箭車",
+    domain: "land",
+    defaultAltitudeM: 0,
+    iconShape: "cone",
+    defaultCore: {
+      rangeKm: 300,
+      speedKnots: 45,
+      movementRangeKm: 480,
+      detectionRangeKm: 0,
+      hpMax: 60,
+    },
+    uiRanges: {
+      rangeKm:          { min: 30,  max: 600,   step: 10,  unit: "km" },
+      speedKnots:       { min: 0,   max: 60,    step: 1,   unit: "kn" },
+      movementRangeKm:  { min: 100, max: 1500,  step: 50,  unit: "km" },
+      detectionRangeKm: { min: 0,   max: 100,   step: 5,   unit: "km" },
+      hpMax:            { min: 20,  max: 200,   step: 10,  unit: "點" },
+    },
+    constraints: {
+      forbidDomains: ["sea", "subsurface"],
+      defaultPlanTimeLimitSec: 3600,
+    },
+    defaultAmmoMax: 7,
+    defaultLoadout: [
+      { weaponId: "rocket", ammoMax: 6, rangeKm: 70 },
+      { weaponId: "srbm", ammoMax: 1, rangeKm: "core" },
+    ],
+  },
 };
 
 /** 內建數值快照（套用資產表覆寫前）— assets:import 用來算差異 */
@@ -624,7 +800,7 @@ export const CORE_ATTRIBUTE_LABELS_EN: Record<keyof UnitCatalogEntry["defaultCor
   hpMax: "HP",
 };
 
-/** 14 個 unit kind 的英文 displayName — 集中在這裡比加 displayNameEn 到每個 catalog entry 簡潔 */
+/** 各 unit kind 的英文 displayName — 集中在這裡比加 displayNameEn 到每個 catalog entry 簡潔 */
 export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
   missile_launcher: "Mobile Missile Launcher",
   drone: "Drone",
@@ -643,4 +819,9 @@ export const UNIT_KIND_DISPLAY_EN: Record<UnitKind, string> = {
   sowa: "SOWA Loitering Munition",
   mowa: "MOWA Loitering Munition",
   landing_ship: "Landing Ship",
+  aew: "AEW Aircraft",
+  mpa: "Maritime Patrol Aircraft",
+  bomber: "Bomber",
+  missile_boat: "Missile Boat",
+  mlrs: "Rocket Artillery (MLRS)",
 };

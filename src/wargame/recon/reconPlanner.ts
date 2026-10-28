@@ -24,7 +24,7 @@ import { weightOf, type TargetPriorityProfile } from "../sim/targetPriority";
 const KMH_PER_KN = 1.852;
 
 /** 可當偵察資產的單位：空中、有感測器、非一次性攻擊 */
-export const RECON_KINDS: UnitKind[] = ["uav_ruiyuan", "uav_ruihuo", "drone", "asw_helo", "fighter"];
+export const RECON_KINDS: UnitKind[] = ["uav_ruiyuan", "uav_ruihuo", "drone", "asw_helo", "fighter", "aew", "mpa"];
 
 /** 偵測距離 → 有效掃掠寬度的折扣（偵測距離是「看得到光點」的極限） */
 export const RECON_SWEEP_FACTOR = 0.5;

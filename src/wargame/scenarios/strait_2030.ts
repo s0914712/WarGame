@@ -56,6 +56,8 @@ function mkUnit(
     waypoints?: [number, number][];
     /** 隱蔽係數 0..0.95；潛艦預設 0.7、戰機預設 0 */
     stealth?: number;
+    /** 覆寫 catalog 預設掛載（如 022 型 鷹擊-83 ×8） */
+    loadout?: { weaponId: string; ammoMax: number; rangeKm?: number }[];
   } = {},
 ): Unit {
   const cat = UNIT_CATALOG[kind];
@@ -67,6 +69,11 @@ function mkUnit(
 
   const extensions: Unit["extensions"] = {};
   if (opts.stealth !== undefined) extensions.stealth = opts.stealth;
+  const weapons = opts.unarmed ? [] : opts.loadout?.map((l) => ({
+    weaponId: l.weaponId, ammoMax: l.ammoMax, ammoCurrent: l.ammoMax,
+    ...(l.rangeKm != null ? { rangeKm: l.rangeKm } : {}),
+  }));
+  const ammoMax = weapons ? weapons.reduce((n, w) => n + w.ammoMax, 0) : cat.defaultAmmoMax;
 
   return {
     id,
@@ -86,15 +93,15 @@ function mkUnit(
     extensions,
     distanceTravelledKm: 0,
     hpCurrent: core.hpMax,
-    ammoMax: opts.unarmed ? 0 : cat.defaultAmmoMax,
-    ammoCurrent: opts.unarmed ? 0 : cat.defaultAmmoMax,
-    ...(opts.unarmed ? { weapons: [] } : {}),
+    ammoMax,
+    ammoCurrent: ammoMax,
+    ...(weapons ? { weapons } : {}),
     detectedBy: {},
     lastTickSimSec: 0,
   };
 }
 
-// ── 藍方：5 飛彈車 + 5 無人機 + 5 船艦 ──
+// ── 藍方：5 飛彈車 + 5 無人機 + 5 船艦 + 支援兵力 ──
 const BLUE_UNITS: Unit[] = [
   // 5 飛彈發射車（西部沿海）
   mkUnit("BLUE-ML-01", "blue", "missile_launcher", "雄三-01", "雄三反艦飛彈車 1", 120.20, 22.95),
@@ -149,7 +156,7 @@ const BLUE_UNITS: Unit[] = [
     speedKnots: 20,
     waypoints: [[119.90, 22.80], [119.70, 23.20]],
   }),
-  mkUnit("BLUE-SH-05", "blue", "ship_surface", "PG-3804", "光華六號", 120.55, 24.10, { speedKnots: 25 }),
+  mkUnit("BLUE-SH-05", "blue", "missile_boat", "PG-3804", "光華六號", 120.40, 24.25, { speedKnots: 25 }),
 
   // ── 2 雷達站（ISR 核心：樂山 + 大漢山，覆蓋整個海峽）──
   mkUnit("BLUE-RAD-01", "blue", "radar_station", "PAVE PAWS", "樂山雷達站", 121.42, 24.81),
@@ -195,6 +202,17 @@ const BLUE_UNITS: Unit[] = [
   mkUnit("BLUE-AB-02", "blue", "airbase", "AB-CCK", "清泉崗基地", 120.62, 24.27),
   mkUnit("BLUE-AB-03", "blue", "airbase", "AB-CYI", "嘉義基地", 120.39, 23.46),
   mkUnit("BLUE-AB-04", "blue", "airbase", "AB-HLN", "花蓮基地", 121.61, 24.02),
+
+  // ── 依公開編裝補充：E-2K 預警機、P-3C 反潛機（屏東基地）、HIMARS（購 29 輛）──
+  mkUnit("BLUE-AEW-01", "blue", "aew", "E2K-01", "E-2K 鷹眼預警機", 120.47, 22.70, {
+    speedKnots: 300,
+    waypoints: [[120.95, 23.40], [121.05, 24.30], [120.95, 23.40]],
+  }),
+  mkUnit("BLUE-MPA-01", "blue", "mpa", "P3C-01", "P-3C 獵戶座反潛機", 120.47, 22.70, {
+    speedKnots: 330,
+    waypoints: [[119.90, 22.70], [119.60, 23.10], [119.90, 23.30], [119.90, 22.70]],
+  }),
+  mkUnit("BLUE-HIM-01", "blue", "mlrs", "HIMARS-01", "HIMARS - 新竹", 121.00, 24.80),
 ];
 
 // ── 紅方：海空遠程向中線逼近 ──
@@ -244,6 +262,43 @@ const RED_UNITS: Unit[] = [
     waypoints: [[119.50, 23.20], [120.20, 23.20]],
   }),
 
+  // ── 依公開資料補充（美國防部《中國軍力報告》、國防部共機 / 共艦動態）──
+  // 空警-500 預警機：福建沿海上空盤旋
+  mkUnit("RED-AEW-01", "red", "aew", "KJ500-01", "空警-500 預警機", 118.60, 24.80, {
+    speedKnots: 280,
+    detectionRangeKm: 470,
+    waypoints: [[119.00, 24.40], [118.60, 24.80]],
+  }),
+  // 轟-6K ×2（自安慶起飛、已進入福建空域；鷹擊-12 ×6）
+  mkUnit("RED-BM-01", "red", "bomber", "H6K-01", "轟-6K 轟炸機 1", 118.60, 25.60, {
+    speedKnots: 420,
+    waypoints: [[119.40, 25.20], [119.20, 24.60]],
+  }),
+  mkUnit("RED-BM-02", "red", "bomber", "H6K-02", "轟-6K 轟炸機 2", 118.30, 25.40, {
+    speedKnots: 420,
+    waypoints: [[119.10, 24.40], [119.00, 23.60]],
+  }),
+  // 運-8Q 反潛機（共機動態常見於西南空域；只掛魚雷）
+  mkUnit("RED-MPA-01", "red", "mpa", "Y8Q-01", "運-8Q 反潛機", 118.80, 23.40, {
+    speedKnots: 300,
+    rangeKm: 10,
+    loadout: [{ weaponId: "torpedo", ammoMax: 4, rangeKm: 10 }],
+    waypoints: [[119.60, 22.80], [120.00, 22.50], [119.60, 22.80]],
+  }),
+  // 022 型飛彈快艇 ×2（鷹擊-83 ×8、AK-630）
+  mkUnit("RED-PB-01", "red", "missile_boat", "022-01", "022 型飛彈快艇 1", 119.20, 24.70, {
+    speedKnots: 32,
+    rangeKm: 180,
+    loadout: [{ weaponId: "asm", ammoMax: 8, rangeKm: 180 }, { weaponId: "ciws", ammoMax: 100 }],
+    waypoints: [[119.80, 24.70], [120.20, 24.60]],
+  }),
+  mkUnit("RED-PB-02", "red", "missile_boat", "022-02", "022 型飛彈快艇 2", 119.10, 23.90, {
+    speedKnots: 32,
+    rangeKm: 180,
+    loadout: [{ weaponId: "asm", ammoMax: 8, rangeKm: 180 }, { weaponId: "ciws", ammoMax: 100 }],
+    waypoints: [[119.70, 23.90], [120.00, 23.80]],
+  }),
+
   // 紅方 2 空軍基地（J-20 RTB）
   mkUnit("RED-AB-01", "red", "airbase", "AB-FZ",  "福州基地", 119.31, 26.07),
   mkUnit("RED-AB-02", "red", "airbase", "AB-ZZ",  "漳州基地", 117.68, 24.56),
@@ -265,8 +320,8 @@ export const STRAIT_2030: Scenario = {
   id: "strait_2030",
   displayName: "台海中線對峙 2030",
   briefing: {
-    zh: "解放軍海空兵力越過中線，藍方反艦飛彈車與海軍進入備戰。",
-    en: "PLA naval and air forces cross the Taiwan Strait median line. ROC anti-ship missile TELs and navy go to combat readiness.",
+    zh: "解放軍海空兵力（含空警-500、轟-6K、022 快艇）越過中線，藍方反艦飛彈車、海軍與 E-2K / P-3C 進入備戰。",
+    en: "PLA naval and air forces (incl. KJ-500, H-6K, Type 022 missile boats) cross the Taiwan Strait median line. ROC anti-ship missile TELs, navy and E-2K / P-3C go to combat readiness.",
   },
   startSimTimeSec: 0,
   durationSec: 3600,

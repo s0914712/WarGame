@@ -26,7 +26,7 @@ export interface ScenarioEntry {
 export const SCENARIO_REGISTRY: ScenarioEntry[] = [
   {
     scenario: STRAIT_2030,
-    shortDescription: "全台海峽對峙 · ~35 單位 · 60 分鐘",
+    shortDescription: "全台海峽對峙 · ~55 單位 · 60 分鐘",
     tags: ["ROC", "PLA"],
   },
   {
@@ -56,7 +56,7 @@ export const SCENARIO_REGISTRY: ScenarioEntry[] = [
   },
   {
     scenario: INVASION_H_HOUR_2030,
-    shortDescription: "三線兩棲登陸 + 彈道飛彈壓制 · ~70 單位 · 90 分鐘",
+    shortDescription: "三線兩棲登陸 + 彈道飛彈壓制 · ~120 單位 · 90 分鐘",
     tags: ["高難度", "登島", "ROC", "USN", "PLA", "全要素"],
   },
   {
