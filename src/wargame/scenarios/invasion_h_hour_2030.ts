@@ -119,16 +119,17 @@ const BLUE_UNITS: Unit[] = [
 
   // ── 6 水面艦 ──
   mkUnit("BLUE-SH-01", "blue", "ship_surface", "DDG-1801", "紀德級 - 基隆", 121.75, 25.15, {
-    speedKnots: 22, waypoints: [[121.40, 25.20], [121.00, 25.10], [120.60, 25.00]],
+    speedKnots: 22, waypoints: [[121.70, 25.30], [121.40, 25.35], [121.00, 25.15], [120.60, 25.00]],
   }),
   mkUnit("BLUE-SH-02", "blue", "ship_surface", "DDG-1803", "紀德級 - 蘇澳", 121.95, 24.50, {
-    speedKnots: 22, waypoints: [[121.50, 24.40], [121.00, 24.30]],
+    // 經三貂角、富貴角繞北部進入海峽
+    speedKnots: 22, waypoints: [[122.10, 24.95], [121.80, 25.35], [121.20, 25.30], [120.90, 25.10]],
   }),
   mkUnit("BLUE-SH-03", "blue", "ship_surface", "FFG-1108", "成功級 1", 119.60, 23.60, {
     speedKnots: 20, waypoints: [[119.90, 23.70], [120.20, 23.80]],
   }),
-  mkUnit("BLUE-SH-04", "blue", "ship_surface", "FFG-1109", "成功級 2", 120.40, 22.80, {
-    speedKnots: 20, waypoints: [[120.20, 23.00], [120.10, 23.20]],
+  mkUnit("BLUE-SH-04", "blue", "ship_surface", "FFG-1109", "成功級 2", 120.15, 22.60, {
+    speedKnots: 20, waypoints: [[120.05, 22.90], [119.95, 23.20]],
   }),
   mkUnit("BLUE-SH-05", "blue", "ship_surface", "PFG-1207", "康定級", 120.10, 22.60, {
     speedKnots: 22, waypoints: [[119.90, 22.80], [119.70, 23.10]],
@@ -138,9 +139,10 @@ const BLUE_UNITS: Unit[] = [
   }),
 
   // ── 2 潛艦 ──
-  mkUnit("BLUE-SUB-01", "blue", "submarine", "SS-793", "海龍劍龍級", 121.95, 24.20, {
+  mkUnit("BLUE-SUB-01", "blue", "submarine", "SS-793", "海龍劍龍級", 121.60, 25.40, {
+    // 北部海域伏擊北線（桃園）兩棲艦群
     speedKnots: 10, stealth: 0.7,
-    waypoints: [[121.50, 24.00], [121.00, 23.80], [120.50, 23.50]],
+    waypoints: [[121.20, 25.35], [120.80, 25.20]],
   }),
   mkUnit("BLUE-SUB-02", "blue", "submarine", "IDS-001", "海鯤 IDS", 120.10, 22.30, {
     speedKnots: 12, stealth: 0.75,
@@ -169,7 +171,7 @@ const BLUE_UNITS: Unit[] = [
   mkUnit("BLUE-AO-01", "blue", "supply_ship", "AOE-530", "武夷油彈船", 121.85, 24.40, {
     speedKnots: 12,
     coreOverride: { hpMax: 500 },
-    waypoints: [[121.90, 24.30], [121.80, 24.50], [121.85, 24.40]],
+    waypoints: [[121.90, 24.30], [121.92, 24.50], [121.85, 24.40]],
   }),
 
   // ── 一次性攻擊無人機（灘岸反登陸）──
@@ -304,12 +306,12 @@ const RED_UNITS: Unit[] = [
   mkUnit("RED-LHA-B1", "red", "landing_ship", "075-B1", "075 兩棲攻擊艦 B1", 118.90, 24.70, {
     speedKnots: 18,
     coreOverride: { hpMax: 700 },
-    waypoints: [[119.30, 24.30], [120.10, 24.25], [120.50, 24.20]],
+    waypoints: [[119.30, 24.30], [120.10, 24.25], [120.42, 24.20]],
   }),
   mkUnit("RED-LPD-B2", "red", "landing_ship", "071-B2", "071 船塢登陸艦 B2", 118.85, 24.60, {
     speedKnots: 18,
     coreOverride: { hpMax: 600 },
-    waypoints: [[119.20, 24.20], [120.00, 24.20], [120.50, 24.15]],
+    waypoints: [[119.20, 24.20], [120.00, 24.20], [120.42, 24.15]],
   }),
   mkUnit("RED-LST-B3", "red", "landing_ship", "072-B3", "072A 戰車登陸艦 B3", 118.95, 24.65, {
     speedKnots: 16,
@@ -319,24 +321,24 @@ const RED_UNITS: Unit[] = [
   mkUnit("RED-LST-B4", "red", "landing_ship", "072-B4", "072A 戰車登陸艦 B4", 118.92, 24.55, {
     speedKnots: 16,
     coreOverride: { hpMax: 450 },
-    waypoints: [[119.25, 24.15], [120.05, 24.10], [120.50, 24.10]],
+    waypoints: [[119.25, 24.15], [120.05, 24.10], [120.40, 24.10]],
   }),
 
   // ══════════ 兩棲艦群 C：南線（東山外海集結 → 台南外海登陸）══════════
   mkUnit("RED-LHA-C1", "red", "landing_ship", "075-C1", "075 兩棲攻擊艦 C1", 117.80, 23.60, {
     speedKnots: 18,
     coreOverride: { hpMax: 700 },
-    waypoints: [[119.30, 23.15], [120.00, 23.10], [120.30, 23.05]],
+    waypoints: [[119.30, 23.15], [120.00, 23.10], [120.10, 23.05]],
   }),
   mkUnit("RED-LPD-C2", "red", "landing_ship", "071-C2", "071 船塢登陸艦 C2", 117.75, 23.52, {
     speedKnots: 18,
     coreOverride: { hpMax: 600 },
-    waypoints: [[119.20, 23.10], [119.90, 23.10], [120.30, 23.10]],
+    waypoints: [[119.20, 23.10], [119.90, 23.10], [120.08, 23.10]],
   }),
   mkUnit("RED-LST-C3", "red", "landing_ship", "072-C3", "072A 戰車登陸艦 C3", 117.85, 23.65, {
     speedKnots: 16,
     coreOverride: { hpMax: 450 },
-    waypoints: [[119.20, 23.20], [120.00, 23.15], [120.30, 23.10]],
+    waypoints: [[119.20, 23.20], [120.00, 23.15], [120.08, 23.12]],
   }),
 
   // ══════════ 護衛艦群（隨同 + 反艦壓制）══════════
@@ -370,7 +372,7 @@ const RED_UNITS: Unit[] = [
     speedKnots: 26, waypoints: [[119.40, 24.50], [120.20, 24.40]],
   }),
   mkUnit("RED-052D-03", "red", "ship_surface", "052D-203", "052D 昆明級 - C", 117.95, 23.60, {
-    speedKnots: 26, waypoints: [[119.40, 23.60], [120.20, 23.50]],
+    speedKnots: 26, waypoints: [[119.40, 23.60], [120.00, 23.50]],
   }),
   mkUnit("RED-052D-04", "red", "ship_surface", "052D-204", "052D 昆明級 - C 後衛", 118.00, 23.42, {
     speedKnots: 26, waypoints: [[119.40, 23.05], [120.10, 23.00]],
@@ -388,11 +390,11 @@ const RED_UNITS: Unit[] = [
   }),
   mkUnit("RED-SSN-02", "red", "submarine", "093A-502", "093A - 中線", 119.00, 24.00, {
     speedKnots: 18, stealth: 0.75,
-    waypoints: [[120.00, 24.00], [120.80, 24.00]],
+    waypoints: [[120.00, 24.00], [120.25, 24.05]],
   }),
   mkUnit("RED-SSN-03", "red", "submarine", "093B-503", "093B - 南線", 119.00, 22.80, {
     speedKnots: 20, stealth: 0.78,
-    waypoints: [[120.00, 22.80], [120.50, 22.90]],
+    waypoints: [[120.00, 22.80], [120.15, 22.50]],
   }),
 
   // ══════════ 制空兵力（自前沿機場起飛）══════════

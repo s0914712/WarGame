@@ -142,11 +142,12 @@ const BLUE_UNITS: Unit[] = [
   // 5 船艦（藍方艦隊向中線推進）
   mkUnit("BLUE-SH-01", "blue", "ship_surface", "DDG-1801", "紀德級 - 基隆", 121.75, 25.15, {
     speedKnots: 18,
-    waypoints: [[121.40, 25.30], [121.00, 25.20], [120.70, 25.00]],
+    waypoints: [[121.65, 25.33], [121.40, 25.30], [121.00, 25.20], [120.70, 25.00]],
   }),
-  mkUnit("BLUE-SH-02", "blue", "ship_surface", "DDG-1803", "紀德級 - 蘇澳", 121.85, 24.60, {
+  mkUnit("BLUE-SH-02", "blue", "ship_surface", "DDG-1803", "紀德級 - 蘇澳", 121.90, 24.60, {
+    // 經三貂角、富貴角繞北部進入海峽
     speedKnots: 18,
-    waypoints: [[121.50, 24.40], [121.10, 24.30]],
+    waypoints: [[122.10, 24.95], [121.80, 25.35], [121.20, 25.30]],
   }),
   mkUnit("BLUE-SH-03", "blue", "ship_surface", "FFG-1108", "成功級 - 馬公", 119.60, 23.60, {
     speedKnots: 20,
@@ -176,7 +177,7 @@ const BLUE_UNITS: Unit[] = [
   mkUnit("BLUE-SUB-01", "blue", "submarine", "SS-793", "海龍 (劍龍級)", 121.95, 24.20, {
     speedKnots: 8,
     stealth: 0.7,
-    waypoints: [[121.70, 24.20], [121.40, 24.00]],
+    waypoints: [[121.75, 24.10], [121.70, 23.80]],
   }),
   mkUnit("BLUE-SUB-02", "blue", "submarine", "IDS-001", "海鯤 (IDS)", 120.10, 22.30, {
     speedKnots: 10,
@@ -218,7 +219,7 @@ const BLUE_UNITS: Unit[] = [
 // ── 紅方：海空遠程向中線逼近 ──
 const RED_UNITS: Unit[] = [
   mkUnit("RED-ML-01", "red", "missile_launcher", "DF-17-01", "東風 17-01", 118.10, 24.50),
-  mkUnit("RED-ML-02", "red", "missile_launcher", "DF-17-02", "東風 17-02", 117.90, 23.50),
+  mkUnit("RED-ML-02", "red", "missile_launcher", "DF-17-02", "東風 17-02", 117.60, 24.10),
 
   // 翼龍無人機朝東逼近台灣海岸
   mkUnit("RED-DR-01", "red", "drone", "WL-10-01", "翼龍 10 偵察", 119.40, 24.20, {
@@ -237,11 +238,11 @@ const RED_UNITS: Unit[] = [
   // 紅方艦隊向中線推進
   mkUnit("RED-SH-01", "red", "ship_surface", "052D-101", "052D 型驅逐艦", 119.50, 24.00, {
     speedKnots: 22,
-    waypoints: [[120.00, 24.00], [120.40, 24.00]],
+    waypoints: [[120.00, 24.00], [120.25, 24.00]],
   }),
   mkUnit("RED-SH-02", "red", "ship_surface", "054A-579", "054A 型護衛艦", 119.30, 23.60, {
     speedKnots: 22,
-    waypoints: [[119.80, 23.60], [120.20, 23.60]],
+    waypoints: [[119.80, 23.60], [120.05, 23.60]],
   }),
   mkUnit("RED-SH-03", "red", "ship_surface", "055-103", "055 型驅逐艦", 119.40, 24.50, {
     speedKnots: 22,
@@ -259,7 +260,7 @@ const RED_UNITS: Unit[] = [
   mkUnit("RED-SUB-01", "red", "submarine", "041-101", "元級 041 潛艦", 118.80, 23.20, {
     speedKnots: 12,
     stealth: 0.75,
-    waypoints: [[119.50, 23.20], [120.20, 23.20]],
+    waypoints: [[119.50, 23.20], [119.95, 23.20]],
   }),
 
   // ── 依公開資料補充（美國防部《中國軍力報告》、國防部共機 / 共艦動態）──
@@ -306,11 +307,11 @@ const RED_UNITS: Unit[] = [
 
 // ── 中立：商船 ──
 const NEUTRAL_UNITS: Unit[] = [
-  mkUnit("NEU-SH-01", "neutral", "ship_surface", "MV-EVER01", "長榮貨櫃 EVER GIVEN", 121.20, 23.50, {
+  mkUnit("NEU-SH-01", "neutral", "ship_surface", "MV-EVER01", "長榮貨櫃 EVER GIVEN", 121.65, 23.50, {
     speedKnots: 16,
-    waypoints: [[121.20, 22.50], [121.20, 21.50]],
+    waypoints: [[121.40, 22.80], [121.30, 21.50]],
   }),
-  mkUnit("NEU-SH-02", "neutral", "ship_surface", "MV-OOCL", "OOCL 貨櫃", 121.40, 24.80, {
+  mkUnit("NEU-SH-02", "neutral", "ship_surface", "MV-OOCL", "OOCL 貨櫃", 121.30, 25.25, {
     speedKnots: 14,
     waypoints: [[121.40, 25.50]],
   }),
