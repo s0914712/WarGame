@@ -8,7 +8,7 @@
 
 本 repo 並存兩個 app，由 URL 決定：
 - **`?mode=civilian`（預設）**：原 Mini Taiwan Pulse — 23 圖層即時資料視覺化
-- **`?mode=wargame`**：軍事兵棋推演 — 14 種單位 / 戰鬥模擬 / LLM 介接
+- **`?mode=wargame`**：軍事兵棋推演 — 22 種單位 / 戰鬥模擬 / LLM 介接
 - **`?mode=search`**：獨立無人機搜索規劃器 — IAMSAR 掃掠寬度 / POD / 蒙地卡羅 / 六大圖形（中英雙語）
 
 兵棋部分的完整文件見 [`WARGAME.md`](./WARGAME.md)（專案說明 / 模組地圖 / 架構 / 多方對戰 roadmap）。

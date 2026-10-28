@@ -36,6 +36,21 @@ export const WEAPONS: Record<string, WeaponSpec> = {
     id: "asbm", name: "反艦彈道飛彈", rangeKm: "core", pKill: 0.5,
     targetDomains: ["sea", "land"], profile: "ballistic", speedKnots: 3200, damageFrac: 0.7,
   },
+  // 超音速反艦飛彈（鷹擊-12 / 雄風三型，Mach 2.5–3）：比 asm 快、彈頭大，同樣掠海可被點防禦攔截
+  asm_super: {
+    id: "asm_super", name: "超音速反艦飛彈", rangeKm: "core", pKill: 0.6,
+    targetDomains: ["sea", "land"], profile: "sea_skim", speedKnots: 1700, damageFrac: 0.7,
+  },
+  // 導引火箭（GMLRS 70–84 km / PHL-16 制導火箭）：GPS 導引、對地，彈道剖面只有反彈道 SAM 能攔
+  rocket: {
+    id: "rocket", name: "導引火箭", rangeKm: "core", pKill: 0.7,
+    targetDomains: ["land"], profile: "ballistic", speedKnots: 1800, damageFrac: 0.25,
+  },
+  // 戰術彈道飛彈（ATACMS ~300 km / PHL-16 750mm）：對地，HIMARS 一次只掛 1 枚
+  srbm: {
+    id: "srbm", name: "戰術彈道飛彈", rangeKm: "core", pKill: 0.6,
+    targetDomains: ["land"], profile: "ballistic", speedKnots: 3000, damageFrac: 0.6,
+  },
   // 火砲（岸砲 / 艦砲，1958 等非飛彈年代場景用）。
   // 命中 / 傷害 / 速度沿用 asm 的數值 → 換掉 asm 佔位不改變既有場景平衡；
   // 彈道剖面 → 只有反彈道 SAM 能攔（現代點防禦不會攔砲彈）。

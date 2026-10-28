@@ -50,6 +50,13 @@ function roleOf(kind: UnitKind): Role {
     case "mowa":             return "striker";
     // 登陸艦：跟水面艦一樣隨編隊（依航點前往登陸區）
     case "landing_ship":     return "escort";
+    // 預警機：照場景航線盤旋，不前推（無武裝、高價值）
+    case "aew":              return "static";
+    // 反潛巡邏機：同反潛直升機，隨巡邏航線、分配到目標才接近
+    case "mpa":              return "escort";
+    case "bomber":           return "striker";
+    case "missile_boat":     return "striker";
+    case "mlrs":             return "striker";
   }
 }
 
@@ -58,6 +65,7 @@ function isHighValue(u: Unit): boolean {
   if (u.kind === "supply_ship") return true;
   if (u.kind === "airbase") return true;
   if (u.kind === "radar_station") return true;
+  if (u.kind === "aew") return true;
   // 航母 heuristic — 水面艦 HP > 800 視為 CVN
   if (u.kind === "ship_surface" && u.core.hpMax >= 800) return true;
   return false;

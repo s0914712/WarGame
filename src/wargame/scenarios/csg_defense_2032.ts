@@ -166,9 +166,9 @@ const US_UNITS: Unit[] = [
 
 // ── ROC 國軍少量配合 ──
 const BLUE_UNITS: Unit[] = [
-  mkUnit("BLUE-DDG-1801", "blue", "ship_surface", "DDG-1801", "紀德級 - 基隆", 121.80, 25.10, {
+  mkUnit("BLUE-DDG-1801", "blue", "ship_surface", "DDG-1801", "紀德級 - 基隆", 121.80, 25.18, {
     speedKnots: 18,
-    waypoints: [[122.00, 24.50], [122.30, 23.80]],
+    waypoints: [[122.10, 25.08], [122.05, 24.50], [122.30, 23.80]],
   }),
   mkUnit("BLUE-DDG-1803", "blue", "ship_surface", "DDG-1803", "紀德級 - 蘇澳", 121.90, 24.50, {
     speedKnots: 18,
@@ -183,27 +183,27 @@ const BLUE_UNITS: Unit[] = [
 
 // ── 紅方大規模兵力 ──
 const RED_UNITS: Unit[] = [
-  // 6 PLA 水面艦群從台灣海峽中段向東突穿
-  mkUnit("RED-055-101", "red", "ship_surface", "055-101", "055 型驅逐艦", 120.40, 23.80, {
+  // PLA 水面艦群自台灣海峽中段出發，分經鵝鑾鼻（南）/ 富貴角（北）繞行向東突穿
+  mkUnit("RED-055-101", "red", "ship_surface", "055-101", "055 型驅逐艦", 119.95, 23.80, {
     speedKnots: 24,
     coreOverride: { rangeKm: 250, detectionRangeKm: 300, hpMax: 500 },
-    waypoints: [[121.00, 23.80], [121.60, 23.80]],
+    waypoints: [[120.00, 22.90], [120.40, 22.00], [121.00, 21.75], [121.60, 22.20]],
   }),
-  mkUnit("RED-052D-201", "red", "ship_surface", "052D-201", "052D 驅逐艦", 120.30, 23.60, {
+  mkUnit("RED-052D-201", "red", "ship_surface", "052D-201", "052D 驅逐艦", 119.90, 23.60, {
     speedKnots: 24,
-    waypoints: [[120.90, 23.60], [121.50, 23.60]],
+    waypoints: [[119.95, 22.80], [120.40, 21.95], [121.10, 21.70], [121.50, 22.30]],
   }),
-  mkUnit("RED-052D-202", "red", "ship_surface", "052D-202", "052D 驅逐艦", 120.30, 24.00, {
+  mkUnit("RED-052D-202", "red", "ship_surface", "052D-202", "052D 驅逐艦", 119.95, 24.00, {
     speedKnots: 24,
-    waypoints: [[120.90, 24.00], [121.50, 24.00]],
+    waypoints: [[120.40, 24.90], [121.00, 25.35], [121.70, 25.45], [122.10, 25.00]],
   }),
-  mkUnit("RED-054A-301", "red", "ship_surface", "054A-301", "054A 護衛艦", 120.20, 23.40, {
+  mkUnit("RED-054A-301", "red", "ship_surface", "054A-301", "054A 護衛艦", 119.85, 23.40, {
     speedKnots: 26,
-    waypoints: [[120.80, 23.40], [121.40, 23.40]],
+    waypoints: [[120.00, 22.60], [120.50, 21.80], [121.30, 21.80]],
   }),
-  mkUnit("RED-054A-302", "red", "ship_surface", "054A-302", "054A 護衛艦", 120.20, 24.20, {
+  mkUnit("RED-054A-302", "red", "ship_surface", "054A-302", "054A 護衛艦", 119.90, 24.20, {
     speedKnots: 26,
-    waypoints: [[120.80, 24.20], [121.40, 24.20]],
+    waypoints: [[120.50, 25.10], [121.20, 25.40], [121.90, 25.30]],
   }),
 
   // 4 J-20 隱形戰機
@@ -229,12 +229,12 @@ const RED_UNITS: Unit[] = [
   mkUnit("RED-SSN-093A", "red", "submarine", "093A-501", "093A 型攻擊潛艦", 119.80, 23.20, {
     speedKnots: 18,
     stealth: 0.75,
-    waypoints: [[120.50, 23.10], [121.20, 23.00], [122.00, 22.90]],
+    waypoints: [[120.00, 22.50], [120.60, 21.70], [121.40, 21.90], [122.00, 22.90]],
   }),
   mkUnit("RED-SSN-093B", "red", "submarine", "093B-502", "093B 型攻擊潛艦", 119.80, 24.30, {
     speedKnots: 18,
     stealth: 0.75,
-    waypoints: [[120.50, 24.20], [121.20, 24.00]],
+    waypoints: [[120.60, 25.20], [121.40, 25.50], [122.00, 25.10]],
   }),
 
   // 2 DF-26 ASBM 反艦彈道飛彈車（部署於東南沿海，模擬大射程）

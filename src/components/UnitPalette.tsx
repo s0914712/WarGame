@@ -8,7 +8,7 @@
  * - [💾 Export]：當前場景下載為 JSON
  */
 import { useSyncExternalStore } from "react";
-import { ClipboardList, Rocket, Plane, Ship, Anchor, PlaneTakeoff, Radio, Download, X, Shield, ShieldCheck, Radar, Truck, Building2, Wind, Bird, Send, Crosshair, Bomb, ShipWheel } from "lucide-react";
+import { ClipboardList, Rocket, Plane, Ship, Anchor, PlaneTakeoff, Radio, Download, X, Shield, ShieldCheck, Radar, Truck, Building2, Wind, Bird, Send, Crosshair, Bomb, ShipWheel, ScanEye, Waves, Swords, Sailboat, Flame } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { editorStore } from "../wargame/editor/editorStore";
 import { scenarioStore } from "../wargame/scenarioStore";
@@ -77,6 +77,11 @@ const KIND_OPTIONS: { kind: UnitKind; Icon: LucideIcon }[] = [
   { kind: "sowa",             Icon: Crosshair },
   { kind: "mowa",             Icon: Bomb },
   { kind: "landing_ship",     Icon: ShipWheel },
+  { kind: "aew",              Icon: ScanEye },
+  { kind: "mpa",              Icon: Waves },
+  { kind: "bomber",           Icon: Swords },
+  { kind: "missile_boat",     Icon: Sailboat },
+  { kind: "mlrs",             Icon: Flame },
 ];
 
 /** 多人模式隱藏（換場景 / 放單位 / replay seek 會破壞 host 權威同步） */

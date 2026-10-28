@@ -75,6 +75,21 @@ const TEMPLATES: Record<UnitKind, SidcTemplate> = {
 
   // 登陸艦 — Sea Surface, Combatant, Amphibious Warfare, Landing Ship
   landing_ship: { dimension: "S", functionId: "CALS--" },
+
+  // 預警機 — Air, Military, Fixed-wing, Reconnaissance, Airborne Early Warning
+  aew: { dimension: "A", functionId: "MFRW--" },
+
+  // 反潛巡邏機 — Air, Military, Fixed-wing, Patrol, ASW
+  mpa: { dimension: "A", functionId: "MFPN--" },
+
+  // 轟炸機 — Air, Military, Fixed-wing, Bomber
+  bomber: { dimension: "A", functionId: "MFB---" },
+
+  // 飛彈快艇 — Sea Surface, Combatant, Patrol, Anti-surface, Guided Missile
+  missile_boat: { dimension: "S", functionId: "CPSUM-" },
+
+  // 多管火箭 — Ground Equipment, Weapon, Rocket Launcher, Multiple (Heavy)
+  mlrs: { dimension: "G", functionId: "EWRH--" },
 };
 
 export function buildSidc(kind: UnitKind, side: SideId): string {
@@ -92,6 +107,7 @@ const ALL_KINDS: UnitKind[] = [
   "supply_ship", "airbase", "asw_helo",
   "uav_ruiyuan", "uav_ruihuo",
   "sowa", "mowa", "landing_ship",
+  "aew", "mpa", "bomber", "missile_boat", "mlrs",
 ];
 
 const ALL_SIDES: SideId[] = ["blue", "red", "neutral", "us", "japan"];

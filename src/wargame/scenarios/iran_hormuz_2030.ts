@@ -131,15 +131,15 @@ const RED_UNITS: Unit[] = [
     { coreOverride: { rangeKm: 300, hpMax: 80, detectionRangeKm: 0 } }),
   mkUnit("RED-ASBM-2", "red", "missile_launcher", "Khalij Fars #2", "改型反艦彈道", 56.45, 27.18,
     { coreOverride: { rangeKm: 300, hpMax: 80, detectionRangeKm: 0 } }),
-  mkUnit("RED-ASBM-3", "red", "missile_launcher", "Khorramshahr-4", "戰略中程", 56.95, 25.61,
+  mkUnit("RED-ASBM-3", "red", "missile_launcher", "Khorramshahr-4", "戰略中程", 57.80, 25.70,
     { coreOverride: { rangeKm: 800, hpMax: 100, detectionRangeKm: 0 } }),
-  mkUnit("RED-ASBM-4", "red", "missile_launcher", "Khorramshahr-5", "戰略中程", 57.05, 25.55,
+  mkUnit("RED-ASBM-4", "red", "missile_launcher", "Khorramshahr-5", "戰略中程", 57.85, 25.75,
     { coreOverride: { rangeKm: 800, hpMax: 100, detectionRangeKm: 0 } }),
 
   // ── 海岸反艦巡弋（Noor / Qader / Hoot）──
-  mkUnit("RED-CSL-1", "red", "sam_coastal", "Noor Bty A", "海岸反艦 Noor", 56.20, 27.10,
+  mkUnit("RED-CSL-1", "red", "sam_coastal", "Noor Bty A", "海岸反艦 Noor", 56.15, 27.22,
     { coreOverride: { rangeKm: 120, detectionRangeKm: 200 } }),
-  mkUnit("RED-CSL-2", "red", "sam_coastal", "Noor Bty B", "海岸反艦 Noor", 56.60, 26.95,
+  mkUnit("RED-CSL-2", "red", "sam_coastal", "Noor Bty B", "海岸反艦 Noor", 56.65, 27.18,
     { coreOverride: { rangeKm: 120, detectionRangeKm: 200 } }),
   mkUnit("RED-CSL-3", "red", "sam_coastal", "Qader Bty A", "海岸反艦 Qader", 57.30, 26.50,
     { coreOverride: { rangeKm: 200, detectionRangeKm: 220 } }),
@@ -156,7 +156,7 @@ const RED_UNITS: Unit[] = [
   }),
 
   // ── Kilo 級攻擊潛艦（IRIN）──
-  mkUnit("RED-SSK-1", "red", "submarine", "Tareq 901", "Kilo class", 57.50, 26.40,
+  mkUnit("RED-SSK-1", "red", "submarine", "Tareq 901", "Kilo class", 57.40, 25.70,
     { stealth: 0.7, coreOverride: { hpMax: 250, rangeKm: 80 } }),
   mkUnit("RED-SSK-2", "red", "submarine", "Noor 902", "Kilo class", 56.20, 26.60,
     { stealth: 0.7, coreOverride: { hpMax: 250, rangeKm: 80 } }),
@@ -194,7 +194,8 @@ const RED_UNITS: Unit[] = [
 // 中立 — 商船 / 油輪
 const NEUTRAL_UNITS: Unit[] = [
   mkUnit("NEU-MV-1", "neutral", "ship_surface", "MV Lima", "商船", 55.50, 25.80,
-    { speedKnots: 12, coreOverride: { hpMax: 150 }, waypoints: [[58.00, 25.50]] }),
+    // 經荷莫茲海峽航道出灣（直線會穿過穆桑丹半島）
+    { speedKnots: 12, coreOverride: { hpMax: 150 }, waypoints: [[55.90, 26.30], [56.45, 26.55], [56.80, 26.20], [57.20, 25.80], [58.00, 25.50]] }),
   mkUnit("NEU-MV-2", "neutral", "ship_surface", "MV Mike", "油輪", 56.50, 26.20,
     { speedKnots: 10, coreOverride: { hpMax: 200 }, waypoints: [[59.00, 25.00]] }),
 ];

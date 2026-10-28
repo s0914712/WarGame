@@ -26,7 +26,7 @@ export type SideId = "blue" | "red" | "neutral" | "us" | "japan";
 export type CommandId = string;
 export type LngLat = [number, number];
 
-// ── v4 catalog（14 種） ──────────────────────────────────
+// ── v4 catalog（22 種） ──────────────────────────────────
 export type UnitKind =
   | "missile_launcher" // 機動飛彈車（射程 70 浬 ≈ 129.6 km）
   | "drone"            // 無人機（偵察 / 攻擊）
@@ -44,7 +44,12 @@ export type UnitKind =
   | "uav_ruihuo"       // 無人機 銳穫（滯空 6 hr、作戰半徑 50 浬 ≈ 92.6 km）
   | "sowa"             // 小型一次性攻擊無人機（Small One-Way Attack）
   | "mowa"             // 中型一次性攻擊無人機（Medium One-Way Attack）
-  | "landing_ship";    // 登陸艦（075 / 071 / 072 等兩棲艦）
+  | "landing_ship"     // 登陸艦（075 / 071 / 072 等兩棲艦）
+  | "aew"              // 空中預警機（E-2K / E-2D / 空警-500）
+  | "mpa"              // 定翼反潛巡邏機（P-3C / P-8A / 運-8Q）
+  | "bomber"           // 轟炸機（轟-6K / 轟-6J，掛載遠程反艦 / 對陸巡弋飛彈）
+  | "missile_boat"     // 飛彈快艇 / 輕型巡邏艦（光華六號 / 沱江級 / 022 型）
+  | "mlrs";            // 多管火箭 / 戰術彈道飛彈車（HIMARS / 雷霆-2000 / PHL-16）
 export type Domain = "land" | "air" | "sea" | "subsurface";
 
 export interface UnitCatalogEntry {

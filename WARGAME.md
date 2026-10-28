@@ -9,8 +9,9 @@
 
 把原本「資料視覺化 demo」變成可推演的戰場：
 - 可暫停即時制（1×/5×/30×/60× 加速）
-- 14 種單位（機動飛彈車 / 無人機 / 銳鳶 UAV / 銳穫 UAV / 船艦 / 潛艦 / 戰機 / 反潛直升機 /
-  雷達站 / 機動雷達車 / 海岸 SAM / 愛國者 SAM / 補給艦 / 空軍基地）
+- 22 種單位（機動飛彈車 / 無人機 / 銳鳶 UAV / 銳穫 UAV / 船艦 / 潛艦 / 戰機 / 反潛直升機 /
+  雷達站 / 機動雷達車 / 海岸 SAM / 愛國者 SAM / 補給艦 / 空軍基地 / SOWA / MOWA / 登陸艦 /
+  預警機 / 反潛巡邏機 / 轟炸機 / 飛彈快艇 / 多管火箭車）；陣營型號名稱見 `catalog/sideCatalog.ts`
 - NATO APP-6 軍事符號（藍方 / 紅方 / 中立分色與形狀）
 - 偵測 + 戰爭迷霧 + 隱身（stealth）
 - 航線規劃編輯器 + 驗證（地形 / 油料 / 時間）
@@ -30,7 +31,7 @@
 ### `src/wargame/types.ts` — 中央型別
 | 型別 | 用途 |
 |---|---|
-| `UnitKind` | 14 種：`missile_launcher` / `drone` / `uav_ruiyuan` / `uav_ruihuo` / `ship_surface` / `submarine` / `fighter` / `asw_helo` / `radar_station` / `mobile_radar` / `sam_coastal` / `sam_patriot` / `supply_ship` / `airbase` |
+| `UnitKind` | 22 種：`missile_launcher` / `drone` / `uav_ruiyuan` / `uav_ruihuo` / `ship_surface` / `submarine` / `fighter` / `asw_helo` / `radar_station` / `mobile_radar` / `sam_coastal` / `sam_patriot` / `supply_ship` / `airbase` / `sowa` / `mowa` / `landing_ship` / `aew` / `mpa` / `bomber` / `missile_boat` / `mlrs` |
 | `Domain` | `land` / `air` / `sea` / `subsurface` |
 | `CoreAttributes` | 5 個 UI 可調屬性：rangeKm / speedKnots / movementRangeKm / detectionRangeKm / hpMax |
 | `ExtensionKey` | 15 個保留 enum（armor / stealthRcs / ecmStrength / ...） |
@@ -58,7 +59,7 @@
 - `subscribe(cb)` — symbol / route / radar / log 層全部訂閱
 
 ### `src/wargame/catalog/units.ts` — 單位目錄
-`UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry>` 一個物件管全 14 種：
+`UNIT_CATALOG: Record<UnitKind, UnitCatalogEntry>` 一個物件管全 22 種：
 - `domain` / `iconShape` / `defaultAltitudeM`
 - `defaultCore` — 場景未指定就用這套
 - `defaultExtensions` — 放置 / 載入場景時預填的 extension（如 UAV 的 `endurance` 滯空時數、`commandRadiusKm` 作戰半徑）
@@ -101,7 +102,7 @@
 ### `src/wargame/symbology/` — NATO 符號
 | 檔 | 用途 |
 |---|---|
-| `sidc.ts` | 14 種 × 5 陣營 = 70 SIDC，iconNameOf() 對應 |
+| `sidc.ts` | 22 種 × 5 陣營 = 110 SIDC，iconNameOf() 對應 |
 | `loadSymbols.ts` | 啟動時用 milsymbol 產 SVG → Mapbox `addImage` |
 
 ### `src/wargame/search/` — 無人機搜索規劃（IAMSAR）

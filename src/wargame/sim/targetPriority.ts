@@ -50,6 +50,11 @@ export const CATEGORY_OF: Record<UnitKind, TargetCategory> = {
   sowa: "uav",
   mowa: "uav",
   missile_launcher: "missile_launcher",
+  aew: "sensor",
+  mpa: "aircraft",
+  bomber: "aircraft",
+  missile_boat: "surface_combatant",
+  mlrs: "missile_launcher",
 };
 
 /** 各類別包含的單位種類（UI 說明用） */
